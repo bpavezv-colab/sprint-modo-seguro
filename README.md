@@ -21,6 +21,15 @@ MVP para la Prueba 2 del Talent Tech Hack 2026 (Personas y organizaciones). Chec
 - `estado_onboarding` que no coincide con los hitos; vacíos en turno, canal y estado.
 - Permisos del archivo que se acotan por mínimo privilegio (TI asignar/métricas).
 
+## Manejo de errores y casos borde
+Probado con 24 tests (`tests/core.test.mjs`, `tests/excepciones.test.mjs`) y pruebas en navegador:
+- Rol desconocido o inconsistente → acceso denegado (no cae en ninguna vista por defecto).
+- Carga de CSV con IDs duplicados, mal formados o con HTML/JS inyectado → rechazada completa, datos intactos.
+- Almacenamiento del navegador corrupto o bloqueado → se descarta lo inválido y se avisa.
+- Vacíos y fechas inválidas → alerta "dato faltante", nunca un valor inventado; las vistas siguen funcionando.
+- Manipular la página para forzar acciones (completar hitos ajenos, entrar como colaborador por el acceso interno) → denegado y registrado.
+- Cualquier error inesperado → pantalla de recuperación y registro en la bitácora, sin pantalla en blanco.
+
 ## Recorrido de demo (3 minutos)
 1. **Camila Rojas (COL-002)** en el teléfono: 1 de 5 listo, 4 atrasos que no dependen de ella; envía "Mis tareas no coinciden".
 2. **Felipe Jefatura 02**: ve solo a sus 5 personas; marca la Reunión de Camila; busca COL-006 → "fuera de tu alcance" (queda en la bitácora).

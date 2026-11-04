@@ -17,11 +17,12 @@ const ui = {
   busqueda: null,       // { id, ok }
   exportTexto: null,
   alertaAbierta: null,
+  cargaErrores: null,
 };
 let store; let root;
 
 // ---------- utilidades de presentación ----------
-const nombreDe = (id) => { const u = store.state.auth.users.get(id); return u ? u.nombre_ficticio : id; };
+const nombreDe = (id) => { const u = store.state.auth.users.get(id); return (u && u.nombre_ficticio) || id; };
 const funcion = { Personas: 'Equipo de Personas', TI: 'Soporte TI', Jefatura: 'Jefatura' };
 
 function chip(ev) {
@@ -53,7 +54,7 @@ function header() {
     <div class="top-in">
       <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>Sprint</strong><small>Onboarding · Modo Seguro</small></div></div>
       ${u ? `<div class="who">
-          <div class="who-txt"><strong>${esc(u.nombre_ficticio)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
+          <div class="who-txt"><strong>${esc(u.nombre_ficticio || u.usuario_id)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
           <button class="btn btn-ghost" data-act="logout">Cambiar usuario</button>
         </div>` : ''}
     </div>
@@ -61,15 +62,37 @@ function header() {
   </header>`;
 }
 
+const VISTAS = { Colaborador: u => vColaborador(u), Jefatura: u => vJefatura(u), TI: u => vTI(u), Personas: u => vPersonas(u), Administrador: u => vPersonas(u) };
+
+function vDenegado() {
+  return `<section class="card"><h1>No tienes acceso</h1><p>Tu cuenta no tiene un rol válido para esta herramienta. Contacta al equipo de Personas.</p>
+    <div><button class="btn btn-primary" data-act="logout">Volver al inicio</button></div></section>`;
+}
+function vError() {
+  return `<section class="card"><h1>Algo no funcionó en esta vista</h1>
+    <p>No se perdió ningún dato y el error quedó en la bitácora. Puedes volver al inicio o, si se repite, reiniciar la demo.</p>
+    <div class="row"><button class="btn btn-primary" data-act="logout">Volver al inicio</button><button class="btn btn-ghost" data-act="reset">Reiniciar demo</button></div></section>`;
+}
+function avisos() {
+  const s = store.state; const out = [];
+  if (!s.almacenamiento) out.push('Este navegador no permite guardar datos: los cambios se pierden al recargar la página.');
+  if (s.estadoDescartado && s.user && s.auth.puedeVerCalidad(s.user)) out.push('Se ignoró información guardada inválida en este navegador. Quedó registrado en la bitácora.');
+  return out.map(t => `<p class="notice notice-bad" role="status">${esc(t)}</p>`).join('');
+}
+
 function render() {
   const s = store.state; const u = s.user;
   let body;
-  if (!u) body = vLogin();
-  else if (u.rol === 'Colaborador') body = vColaborador(u);
-  else if (u.rol === 'Jefatura') body = vJefatura(u);
-  else if (u.rol === 'TI') body = vTI(u);
-  else body = vPersonas(u);
-  root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : '');
+  try {
+    if (!u) body = vLogin();
+    else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) body = vDenegado(); // denegar por defecto
+    else body = VISTAS[u.rol](u);
+  } catch (err) {
+    console.error(err);
+    try { store.registrarError(`vista ${u ? u.rol : 'ingreso'}`, err && err.message); } catch { /* noop */ }
+    body = vError();
+  }
+  root.innerHTML = header() + `<main class="wrap">${avisos()}${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
 }
 
 function modal() {
@@ -143,7 +166,7 @@ function vColaborador(u) {
   return `<div class="mobile">
     <section class="card hello">
       <p class="eyebrow">${esc(c.area)} · ${esc(c.sede)} · ${esc(c.modalidad)}</p>
-      <h1>Hola, ${esc(u.nombre_ficticio.split(' ')[0])}</h1>
+      <h1>Hola${u.nombre_ficticio ? `, ${esc(String(u.nombre_ficticio).split(' ')[0])}` : ''}</h1>
       <p>Ingreso: <b>${fmt(c.fecha_ingreso)}</b> · Turno: ${c.tipo_turno ? `<b>${esc(c.tipo_turno)}</b>` : '<span class="missing">por confirmar (Personas lo está validando)</span>'}</p>
       <div class="progress"><span><b>${av.cumplidos}</b> de ${av.total} listos</span>${barra(av)}</div>
       ${vencidos.length ? `<p class="notice notice-bad">${vencidos.length} ${vencidos.length === 1 ? 'tarea está atrasada' : 'tareas están atrasadas'}, y ninguna depende de ti. Los responsables las tienen en su bandeja.</p>` : ''}
@@ -179,7 +202,7 @@ function vColaborador(u) {
 // ---------- jefatura ----------
 function vJefatura(u) {
   const s = store.state; const { auth, idx, hoy } = s;
-  const equipo = [...auth.scope(u)].map(id => idx.colab.get(id)).filter(Boolean).sort((a, b) => b.fecha_ingreso.localeCompare(a.fecha_ingreso));
+  const equipo = [...auth.scope(u)].map(id => idx.colab.get(id)).filter(Boolean).sort((a, b) => String(b.fecha_ingreso || '').localeCompare(String(a.fecha_ingreso || '')));
   const items = hitosVisibles(u);
   const mias = items.filter(x => x.h.responsable_id === u.usuario_id && x.ev.estadoReal !== 'Cumplido')
     .sort((a, b) => b.ev.diasVencido - a.ev.diasVencido);
@@ -197,7 +220,7 @@ function vJefatura(u) {
     </div>
     <section class="card"><h2 class="h-sm">Tus acciones</h2>
       ${mias.length ? `<ul class="actions">${mias.map(({ h, ev }) => `<li><div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b> · ${esc(nombreDe(h.colaborador_id))}<small>Plazo ${fmt(ev.limite)}${ev.flags.includes('plazo_corrido') ? ` · registrado para ${fmt(ev.limiteRegistrado)}` : ''}</small></div>
-        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar como cumplido</button></div></li>`).join('')}</ul>`
+        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar como cumplido</button></div></li>`).join('')}</ul>`
         : '<p class="empty">No tienes acciones pendientes.</p>'}
     </section>
     <section class="card"><h2 class="h-sm">Próximos ingresos</h2>
@@ -207,10 +230,10 @@ function vJefatura(u) {
     <section class="card"><h2 class="h-sm">Personas de tu equipo</h2>
       <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
       ${equipo.map(c => { const av = avanceColaborador(c.colaborador_id, idx, hoy); return `<tr>
-        <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
+        <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
         <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
         <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
-        <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Ver hitos'}</button></td></tr>
+        <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Ver hitos'}</button></td></tr>
         ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
       <p class="hint">No ves canales de contacto ni los reportes que las personas envían a Personas.</p>
@@ -225,12 +248,12 @@ function tablaHitos(u, colId) {
   const rows = (s.idx.hitosPorColab.get(colId) || []).filter(h => s.auth.puedeVerHito(u, h));
   return `<div class="table-wrap"><table class="inner"><thead><tr><th>Hito</th><th>Responsable</th><th>Plazo (catálogo)</th><th>Fecha registrada</th><th>Estado</th><th></th></tr></thead><tbody>
   ${rows.map(h => { const ev = evaluarHito(h, s.idx, s.hoy); const pc = s.auth.puedeCompletar(u, h, s.hoy); const pr = s.auth.puedeReasignar(u, h);
-    return `<tr><td><b>${esc(h.tipo_hito)}</b><br><code>${h.hito_id}</code></td>
+    return `<tr><td><b>${esc(h.tipo_hito)}</b><br><code>${esc(h.hito_id)}</code></td>
       <td>${esc(funcion[h.responsable_tipo])}${s.auth.puedeVerResponsableId(u, h) ? `<br><code>${h.responsable_id ? esc(h.responsable_id) : '<span class="missing">sin responsable</span>'}</code>` : ''}</td>
       <td class="num">${fmt(ev.limite)}</td><td class="num">${fmt(ev.limiteRegistrado)}${ev.flags.includes('plazo_corrido') ? ' <span class="chip chip-warn">movida</span>' : ''}</td>
       <td>${chip(ev)}</td>
-      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Cumplido</button>` : ''}
-        ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ''}
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Cumplido</button>` : ''}
+        ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}
         ${!pc.ok && !pr.ok && ev.estadoReal !== 'Cumplido' ? `<small class="muted">${esc(pc.motivo)}</small>` : ''}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="6">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('')}
   </tbody></table></div>`;
@@ -239,11 +262,11 @@ function tablaHitos(u, colId) {
 function formReasignar(u, h) {
   const cands = store.state.auth.candidatos(u, h);
   if (!cands.length) return `<p class="notice notice-bad">No hay cuentas válidas para este hito. ${h.responsable_tipo === 'Jefatura' ? 'Ninguna jefatura tiene a esta persona en su equipo_asignado: hay que corregirlo en el sistema de origen.' : ''}</p>`;
-  return `<form data-form="reasignar" data-arg="${h.hito_id}" class="inline-form">
-    <label for="re-${h.hito_id}">Nuevo responsable</label>
-    <select id="re-${h.hito_id}" name="nuevo">${cands.map(c => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)} · ${esc(u.rol === 'TI' ? c.nombre_ficticio : c.nombre_ficticio)}</option>`).join('')}</select>
-    <label for="rm-${h.hito_id}">Motivo (queda en la bitácora)</label>
-    <input id="rm-${h.hito_id}" name="motivo" required minlength="5" placeholder="Ej.: responsable vacío desde la carga">
+  return `<form data-form="reasignar" data-arg="${esc(h.hito_id)}" class="inline-form">
+    <label for="re-${esc(h.hito_id)}">Nuevo responsable</label>
+    <select id="re-${esc(h.hito_id)}" name="nuevo">${cands.map(c => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)} · ${esc(u.rol === 'TI' ? c.nombre_ficticio : c.nombre_ficticio)}</option>`).join('')}</select>
+    <label for="rm-${esc(h.hito_id)}">Motivo (queda en la bitácora)</label>
+    <input id="rm-${esc(h.hito_id)}" name="motivo" required minlength="5" placeholder="Ej.: responsable vacío desde la carga">
     <div class="row"><button class="btn btn-primary btn-sm" type="submit">Reasignar</button><button class="btn btn-ghost btn-sm" type="button" data-act="reasignar-close">Cancelar</button></div>
   </form>`;
 }
@@ -276,13 +299,13 @@ function vTI(u) {
     <div class="segs" role="group" aria-label="Filtro">${btnF('todos', 'Todos')}${btnF('mios', 'Mis casos')}${btnF('sin', 'Sin responsable')}</div>
     <section class="card"><div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
     ${lista.map(({ h, ev }) => { const c = s.idx.colab.get(h.colaborador_id); const pc = s.auth.puedeCompletar(u, h, s.hoy); const pr = s.auth.puedeReasignar(u, h);
-      return `<tr><td><code>${h.hito_id}</code><br><small><code>${h.colaborador_id}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
-      <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal).toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
+      return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
+      <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal || 'dispositivo sin dato').toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
       <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
-      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar entregado</button>` : ''}
-        ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${h.hito_id}">Tomar caso</button>` : ''}
-        ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ''}</div></td></tr>
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ''}
+        ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${esc(h.hito_id)}">Tomar caso</button>` : ''}
+        ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
 }
@@ -328,25 +351,26 @@ function porSede(items) {
 
 function tCasos(u) {
   const s = store.state;
-  const lista = s.data.colaboradores.map(c => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) }))
+  const lista = s.data.colaboradores.filter(c => s.auth.puedeVerColaborador(u, c.colaborador_id)).map(c => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) }))
     .filter(x => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id)
     .sort((a, b) => (!b.c.jefatura_id) - (!a.c.jefatura_id) || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
   return `<p class="hint">${lista.length} personas con atrasos, hitos por verificar o sin jefatura. Abre un caso para reasignar responsables.</p>
   <section class="card"><div class="table-wrap"><table><thead><tr><th>Persona</th><th>Área · sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
-  ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td>
+  ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td>
     <td>${esc(c.area)}<br><small>${esc(c.sede)}</small></td>
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
     <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small>(${av.vencidosAltos} críticos)</small>` : ''}${av.porVerificar ? `<br><small>${av.porVerificar} por verificar</small>` : ''}</td>
-    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button></td></tr>
+    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`).join('')}
   </tbody></table></div></section>`;
 }
 
-function tCalidad() {
+function tCalidad(u) {
+  if (!store.state.auth.puedeVerCalidad(u)) return vDenegado();
   const grupos = agruparAlertas(store.state.alertas);
   return `<p class="hint">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige automáticamente: cada alerta indica qué hacer.</p>
-  <div class="alerts">${grupos.map(g => `<details class="alert alert-${g.sev}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${g.regla}">
+  <div class="alerts">${grupos.map(g => `<details class="alert alert-${esc(g.sev)}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${esc(g.regla)}">
     <summary><span class="sev">${g.sev === 'alta' ? 'Alta' : g.sev === 'media' ? 'Media' : 'Info'}</span><b>${esc(g.titulo)}</b><span class="num count">${g.items.length}</span></summary>
     <p class="accion">${esc(g.accion)}</p>
     <ul class="mini">${g.items.slice(0, 60).map(a => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join('')}${g.items.length > 60 ? `<li>… y ${g.items.length - 60} más</li>` : ''}</ul>
@@ -357,8 +381,8 @@ function tReportes() {
   const reps = store.reportesVisibles();
   if (!reps.length) return `<section class="card"><p class="empty">Aún no hay reportes. Para verlos en la demo, entra como un colaborador (por ejemplo Camila Rojas) y usa "¿Algo no coincide?".</p></section>`;
   return `<section class="card"><p class="hint">Contenido sensible: lo ve solo Personas. No se comparte con la jefatura y no se usa para evaluar ni seleccionar.</p>
-  <ul class="actions">${reps.map(r => `<li><div><b>${esc(r.tipo)}</b> · ${esc(nombreDe(r.colaborador_id))} <code>${r.colaborador_id}</code><small>${fmt(r.fecha)} · ${esc(r.id)}${r.texto ? ` · “${esc(r.texto)}”` : ''}</small></div>
-    <div class="row"><label for="st-${r.id}" class="sr">Estado</label><select id="st-${r.id}" data-change="rep-estado" data-arg="${r.id}">${['Nuevo', 'En gestión', 'Cerrado'].map(e => `<option ${e === r.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></div></li>`).join('')}</ul></section>`;
+  <ul class="actions">${reps.map(r => `<li><div><b>${esc(r.tipo)}</b> · ${esc(nombreDe(r.colaborador_id))} <code>${esc(r.colaborador_id)}</code><small>${fmt(r.fecha)} · ${esc(r.id)}${r.texto ? ` · “${esc(r.texto)}”` : ''}</small></div>
+    <div class="row"><label for="st-${esc(r.id)}" class="sr">Estado</label><select id="st-${esc(r.id)}" data-change="rep-estado" data-arg="${esc(r.id)}">${['Nuevo', 'En gestión', 'Cerrado'].map(e => `<option ${e === r.estado ? 'selected' : ''}>${e}</option>`).join('')}</select></div></li>`).join('')}</ul></section>`;
 }
 
 function tPermisos() {
@@ -391,12 +415,14 @@ function tDatos() {
     <form data-form="hoy" class="inline-form"><label for="hoy">Calcular atrasos al</label><input type="date" id="hoy" name="hoy" value="${s.hoy}" required><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></form></section>
   <section class="card"><h2 class="h-sm">Cargar archivos nuevos</h2>
     <p class="hint">Sube uno o más CSV con el nombre original (colaboradores.csv, hitos_onboarding.csv, usuarios_roles.csv, catalogo_hitos.csv). Se validan antes de usarse.</p>
-    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form></section>
+    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form>
+    ${ui.cargaErrores ? `<div class="notice notice-bad" role="alert"><b>No se cargó nada.</b> Corrige esto y vuelve a intentar:<ul class="mini">${ui.cargaErrores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}</section>
   <section class="card"><h2 class="h-sm">Reiniciar la demo</h2><p class="hint">Vuelve a los datos originales y borra la bitácora y los reportes de este navegador.</p>
     <button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></section>`;
 }
 
 // ---------- eventos ----------
+const MAX_ARCHIVO = 2 * 1024 * 1024;
 const ARCHIVOS = {
   'colaboradores.csv': ['colaboradores', ['colaborador_id', 'fecha_ingreso', 'area', 'sede', 'modalidad', 'tipo_turno', 'jefatura_id', 'canal_contacto', 'correo_corporativo_activo', 'dispositivo_principal', 'estado_onboarding']],
   'hitos_onboarding.csv': ['hitos', ['hito_id', 'colaborador_id', 'tipo_hito', 'responsable_tipo', 'responsable_id', 'fecha_limite', 'fecha_cumplimiento', 'estado', 'nivel_criticidad', 'ultima_actualizacion']],
@@ -417,9 +443,9 @@ async function onSubmit(e) {
   }
   if (kind === 'col-code') {
     if (String(fd.get('code')).trim() !== '123456') { ui.loginError = 'El código no es correcto. En la demo es 123456.'; return render(); }
-    store.login(ui.loginStep.id, `código por ${ui.loginStep.canal || 'Personas'}`); ui.loginStep = null; ui.loginError = ''; return render();
+    const r = store.login(ui.loginStep.id, `código por ${ui.loginStep.canal || 'Personas'}`); if (!r.ok) { ui.loginError = r.motivo; return render(); } ui.loginStep = null; ui.loginError = ''; return render();
   }
-  if (kind === 'staff') { store.login(String(fd.get('id'))); resetUi(); return render(); }
+  if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); if (!r.ok) return toastMsg(r.motivo); resetUi(); return render(); }
   if (kind === 'reporte') { const r = store.reportar(String(fd.get('tipo')), String(fd.get('texto') || '')); return toastMsg(r.ok ? 'Enviado a Personas. Lo verás aquí con su estado.' : r.motivo); }
   if (kind === 'buscar') {
     const id = String(fd.get('q') || '').trim().toUpperCase(); if (!id) return;
@@ -429,21 +455,28 @@ async function onSubmit(e) {
     const r = store.reasignar(f.dataset.arg, String(fd.get('nuevo')), String(fd.get('motivo') || ''));
     if (r.ok) ui.reasignando = null; return toastMsg(r.ok ? 'Responsable reasignado y registrado en la bitácora.' : r.motivo);
   }
-  if (kind === 'hoy') { const v = String(fd.get('hoy')); if (isISO(v)) { store.setHoy(v); toastMsg(`Atrasos recalculados al ${fmt(v)}.`); } return; }
+  if (kind === 'hoy') { const v = String(fd.get('hoy')); const r = store.setHoy(v); return toastMsg(r.ok ? `Atrasos recalculados al ${fmt(v)}.` : r.motivo); }
   if (kind === 'carga') {
     const files = [...(f.querySelector('input[type=file]').files || [])];
+    ui.cargaErrores = null;
     if (!files.length) return toastMsg('Elige al menos un archivo CSV.');
     const nuevo = {}; const errores = [];
     for (const file of files) {
       const def = ARCHIVOS[file.name.toLowerCase()];
-      if (!def) { errores.push(`${file.name}: nombre no reconocido`); continue; }
-      const rows = parseCSV(await file.text());
+      if (!def) { errores.push(`${file.name}: nombre no reconocido. Usa el nombre original del archivo.`); continue; }
+      if (file.size > MAX_ARCHIVO) { errores.push(`${file.name}: pesa más de 2 MB.`); continue; }
+      let rows;
+      try { rows = parseCSV(await file.text()); } catch { errores.push(`${file.name}: no se pudo leer como texto UTF-8.`); continue; }
       const faltan = def[1].filter(c => !(rows[0] && c in rows[0]));
-      if (!rows.length || faltan.length) { errores.push(`${file.name}: faltan columnas ${faltan.join(', ') || '(archivo vacío)'}`); continue; }
+      if (!rows.length) { errores.push(`${file.name}: no tiene filas.`); continue; }
+      if (faltan.length) { errores.push(`${file.name}: faltan columnas ${faltan.join(', ')}.`); continue; }
       nuevo[def[0]] = rows;
     }
-    if (errores.length) return toastMsg(`No se cargó: ${errores.join(' · ')}`);
-    store.cargarArchivos(nuevo, `Archivos: ${files.map(x => x.name).join(', ')}`); ui.tab = 'calidad'; return toastMsg('Archivos cargados. Revisa las alertas de calidad.');
+    if (errores.length) { ui.cargaErrores = errores; render(); return toastMsg('Carga rechazada. Los datos actuales no cambiaron.'); }
+    const r = store.cargarArchivos(nuevo, `Archivos: ${files.map(x => x.name).join(', ')}`);
+    if (!r.ok) { ui.cargaErrores = (r.errores || []).slice(0, 30).map(a => `${a.titulo}: ${a.id} · ${a.detalle}`); render(); return toastMsg(r.motivo); }
+    if (r.sesionCerrada) { resetUi(); render(); return toastMsg('Archivos cargados. Tu cuenta ya no existe en los datos nuevos: ingresa de nuevo.'); }
+    ui.tab = 'calidad'; return toastMsg('Archivos cargados. Revisa las alertas de calidad.');
   }
 }
 
@@ -453,8 +486,9 @@ function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act; const arg = b.dataset.arg; const s = store.state;
   const h = arg ? s.data.hitos.find(x => x.hito_id === arg) : null;
+  if (['completar', 'tomar', 'reasignar-open'].includes(act) && !h) { toastMsg('Ese hito ya no existe. La vista se actualizó.'); return; }
   switch (act) {
-    case 'quick': store.login(arg, 'recorrido de demo'); resetUi(); return render();
+    case 'quick': { const r = store.login(arg, 'recorrido de demo'); if (!r.ok) return toastMsg(r.motivo); resetUi(); return render(); }
     case 'logout': store.logout(); resetUi(); ui.loginStep = null; return render();
     case 'login-back': ui.loginStep = null; ui.loginError = ''; return render();
     case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; return render();
@@ -462,8 +496,8 @@ function onClick(e) {
     case 'ti-filtro': ui.tiFiltro = arg; return render();
     case 'reasignar-open': ui.reasignando = arg; return render();
     case 'reasignar-close': ui.reasignando = null; return render();
-    case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${h.colaborador_id} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
-    case 'tomar': ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${h.colaborador_id}). La asignación queda en la bitácora.`, act: 'tomar', arg }; return render();
+    case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
+    case 'tomar': ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${esc(h.colaborador_id)}). La asignación queda en la bitácora.`, act: 'tomar', arg }; return render();
     case 'reset': ui.confirm = { texto: 'Volver a los datos originales y borrar la bitácora y los reportes de este navegador.', act: 'reset' }; return render();
     case 'cancel': ui.confirm = null; return render();
     case 'confirm-ok': {
@@ -487,16 +521,27 @@ function selExport() { const t = root.querySelector('#exp'); if (t) { t.focus();
 
 function onChange(e) {
   const el = e.target.closest('[data-change]'); if (!el) return;
-  if (el.dataset.change === 'rep-estado') { store.cambiarEstadoReporte(el.dataset.arg, el.value); toastMsg('Estado actualizado.'); }
+  if (el.dataset.change === 'rep-estado') { const r = store.cambiarEstadoReporte(el.dataset.arg, el.value); toastMsg(r.ok ? 'Estado actualizado.' : r.motivo); }
 }
 function onToggle(e) { const d = e.target; if (d.matches && d.matches('details[data-regla]')) ui.alertaAbierta = d.open ? d.dataset.regla : (ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta); }
 
+// Ningún error de un botón o formulario deja la pantalla rota: se informa, se registra y se vuelve a dibujar.
+function fallo(contexto, err) {
+  console.error(err);
+  try { store.registrarError(contexto, err && err.message); } catch { /* noop */ }
+  ui.confirm = null; ui.toast = 'No se pudo completar la acción. Quedó registrado en la bitácora.';
+  try { render(); } catch { root.textContent = 'Error al dibujar la página. Recarga para continuar.'; }
+}
+const seguro = (nombre, fn) => (e) => { try { const r = fn(e); if (r && typeof r.catch === 'function') r.catch(err => fallo(nombre, err)); } catch (err) { fallo(nombre, err); } };
+
 export function mount(el, st) {
   root = el; store = st;
-  root.addEventListener('click', onClick);
-  root.addEventListener('submit', onSubmit);
-  root.addEventListener('change', onChange);
-  root.addEventListener('toggle', onToggle, true);
+  root.addEventListener('click', seguro('clic', onClick));
+  root.addEventListener('submit', seguro('formulario', onSubmit));
+  root.addEventListener('change', seguro('cambio', onChange));
+  root.addEventListener('toggle', seguro('detalle', onToggle), true);
+  window.addEventListener('error', e => fallo('global', e.error || new Error(e.message)));
+  window.addEventListener('unhandledrejection', e => fallo('promesa', e.reason instanceof Error ? e.reason : new Error(String(e.reason))));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.confirm) { ui.confirm = null; render(); } });
   render();
 }

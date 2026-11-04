@@ -36,6 +36,15 @@ Comandos: `npm install` · `npm test` · `npm run build` (luego abre `dist/index
 11. Métricas agregadas cuando no se necesita identificar personas.
 12. No usar `area`, `modalidad`, `dispositivo_principal` ni el atraso para evaluar desempeño o inferir atributos.
 
+## Manejo de errores (obligatorio en código nuevo)
+- **Denegar por defecto:** rol desconocido o ID que no calza con su rol (`cuentaValida`) → sin alcance, sin ingreso, vista "No tienes acceso".
+- Las acciones del store **nunca lanzan**: devuelven `{ ok, motivo }` y registran el intento (`ok`, `denegado` o `error`) en la bitácora.
+- La UI tiene error boundary (`render` → `vError`) y todos los handlers pasan por `seguro()`; errores globales y promesas rechazadas van a `fallo()`.
+- **Carga de CSV atómica:** si hay errores bloqueantes (`BLOQUEANTES` en `rules.js`: IDs duplicados o mal formados, relaciones rotas, roles inválidos, catálogo inválido) se rechaza todo y no cambia nada. Límite de 2 MB por archivo.
+- El estado guardado en el navegador se sanea (`sanearGuardado`); lo inválido se descarta y se avisa a Personas.
+- Todo texto dinámico pasa por `esc()` (también IDs en atributos `data-arg`).
+- Mensajes de error: qué pasó y qué hacer, en español, sin culpar al usuario.
+
 ## Cómo trabajar
 - Cambios de lógica → primero un test en `tests/` que falle, luego el código, luego `npm test`.
 - No agregues dependencias de runtime (el HTML final debe funcionar offline con doble clic). Dev deps OK.

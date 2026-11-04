@@ -3,6 +3,12 @@
 // Un "Sí" del archivo nunca concede acceso global por sí solo (diccionario, convenciones generales).
 
 export const HITOS_TECNICOS = ['Equipo', 'Acceso'];
+export const ROLES_VALIDOS = ['Colaborador', 'Jefatura', 'Personas', 'TI', 'Administrador'];
+const PREFIJO_CUENTA = { Colaborador: 'COL-', Jefatura: 'JEF-', Personas: 'PER-', TI: 'TI-', Administrador: 'ADM-' };
+// Denegar por defecto: una cuenta con rol desconocido o con un ID que no calza con su rol no tiene alcance.
+export function cuentaValida(u) {
+  return !!u && ROLES_VALIDOS.includes(u.rol) && typeof u.usuario_id === 'string' && u.usuario_id.startsWith(PREFIJO_CUENTA[u.rol]);
+}
 const PREFIJO_ROL = { Personas: 'PER-', TI: 'TI-', Jefatura: 'JEF-' };
 
 // "COL-001|COL-013", "COL-001 a COL-060", "COL-001 a COL-060 (solo hitos Equipo y Acceso)", "Todos los usuarios"
@@ -22,6 +28,7 @@ export function crearAuth(data) {
   const ids = data.colaboradores.map(c => c.colaborador_id);
   const scopes = new Map();
   for (const u of data.usuarios) {
+    if (!cuentaValida(u)) { scopes.set(u.usuario_id, new Set()); continue; }
     let s = parseEquipo(u.equipo_asignado, ids);
     if (u.rol === 'Colaborador') s = new Set(s.has(u.usuario_id) ? [u.usuario_id] : []); // solo uno mismo
     scopes.set(u.usuario_id, s);
@@ -32,7 +39,8 @@ export function crearAuth(data) {
 
   const auth = {
     users,
-    scope(u) { return scopes.get(u.usuario_id) || new Set(); },
+    cuentaValida,
+    scope(u) { return u && cuentaValida(u) ? scopes.get(u.usuario_id) || new Set() : new Set(); },
     enAlcance(u, colId) { return auth.scope(u).has(colId); },
 
     puedeVerColaborador(u, colId) { return !!u && auth.enAlcance(u, colId); },
@@ -105,17 +113,17 @@ export function crearAuth(data) {
       return [...users.values()].filter(x => auth.puedeReasignar(u, h, x.usuario_id).ok && x.usuario_id !== h.responsable_id);
     },
 
-    puedeVerMetricas(u) { return u.rol !== 'Colaborador' && si(u, 'puede_ver_metricas'); },
+    puedeVerMetricas(u) { return cuentaValida(u) && u.rol !== 'Colaborador' && si(u, 'puede_ver_metricas'); },
     alcanceMetricas(u) {
       if (!auth.puedeVerMetricas(u)) return 'ninguno';
       if (u.rol === 'TI') return 'tecnico';
       if (u.rol === 'Jefatura') return 'equipo';
       return 'global';
     },
-    puedeVerReportes(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; }, // comentarios sensibles
-    puedeReportar(u, colId) { return u.rol === 'Colaborador' && u.usuario_id === colId; },
-    puedeVerCalidad(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; },
-    puedeCargarArchivos(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; },
+    puedeVerReportes(u) { return cuentaValida(u) && (u.rol === 'Personas' || u.rol === 'Administrador'); }, // comentarios sensibles
+    puedeReportar(u, colId) { return cuentaValida(u) && u.rol === 'Colaborador' && u.usuario_id === colId; },
+    puedeVerCalidad(u) { return cuentaValida(u) && (u.rol === 'Personas' || u.rol === 'Administrador'); },
+    puedeCargarArchivos(u) { return cuentaValida(u) && (u.rol === 'Personas' || u.rol === 'Administrador'); },
   };
   return auth;
 }

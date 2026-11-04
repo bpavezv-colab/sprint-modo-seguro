@@ -262,8 +262,22 @@ td .row { min-width: 140px; }
     estado_onboarding: ["No iniciado", "En proceso", "Completado"],
     estado: ["Pendiente", "Cumplido", "Atrasado"],
     responsable_tipo: ["Personas", "TI", "Jefatura"],
-    nivel_criticidad: ["Bajo", "Medio", "Alto"]
+    nivel_criticidad: ["Bajo", "Medio", "Alto"],
+    rol: ["Colaborador", "Jefatura", "Personas", "TI", "Administrador"],
+    si_no: ["S\xED", "No"],
+    responsable_inicial: ["Personas", "TI", "Jefatura"],
+    plazo_ficticio: ["Antes del d\xEDa 1", "D\xEDa 1", "Primera semana"],
+    criticidad: ["Alta", "Media"]
   };
+  var FORMATO = {
+    colaborador_id: /^COL-\d{3}$/,
+    hito_id: /^HITO-\d{3}$/,
+    usuario_id: /^(COL|JEF|PER|TI|ADM)-\d{3}$/,
+    jefatura_id: /^JEF-\d{3}$/,
+    responsable_id: /^(PER|TI|JEF)-\d{3}$/
+  };
+  var PREFIJO_POR_ROL = { Colaborador: "COL-", Jefatura: "JEF-", Personas: "PER-", TI: "TI-", Administrador: "ADM-" };
+  var BLOQUEANTES = ["id_duplicado", "formato_id", "relacion_inexistente", "tipo_fuera_catalogo", "rol_invalido", "catalogo_invalido"];
   var PREFIJO_ROL = { Personas: "PER-", TI: "TI-", Jefatura: "JEF-" };
   var CRIT_NORM = { Alta: "Alto", Alto: "Alto", Media: "Medio", Medio: "Medio", Bajo: "Bajo", Baja: "Bajo" };
   var CRIT_PESO = { Alto: 3, Medio: 2, Bajo: 1 };
@@ -380,7 +394,11 @@ td .row { min-width: 140px; }
     fuera_de_equipo: { titulo: "Colaborador no aparece en el equipo de su jefatura", sev: "alta", accion: "Corregir equipo_asignado o jefatura_id." },
     campo_vacio: { titulo: "Dato operativo faltante", sev: "media", accion: "Validar con el colaborador; no suponer un valor." },
     estado_onboarding_inconsistente: { titulo: "Estado general no coincide con los hitos", sev: "media", accion: "El avance se calcula desde los hitos." },
-    permiso_acotado: { titulo: "Permiso del archivo acotado por m\xEDnimo privilegio", sev: "info", accion: "Se aplica rol + equipo_asignado + tipo de hito." }
+    permiso_acotado: { titulo: "Permiso del archivo acotado por m\xEDnimo privilegio", sev: "info", accion: "Se aplica rol + equipo_asignado + tipo de hito." },
+    formato_id: { titulo: "Identificador con formato inv\xE1lido", sev: "alta", accion: "Usar el formato del diccionario (COL-###, HITO-###, JEF-###\u2026)." },
+    rol_invalido: { titulo: "Cuenta con rol inv\xE1lido o inconsistente", sev: "alta", accion: "La cuenta queda bloqueada hasta corregir el rol." },
+    catalogo_invalido: { titulo: "Regla de cat\xE1logo inv\xE1lida", sev: "alta", accion: "Corregir plazo, responsable o criticidad del cat\xE1logo." },
+    equipo_inexistente: { titulo: "equipo_asignado incluye personas que no existen", sev: "media", accion: "Depurar el equipo en el sistema de origen." }
   };
   function validar(data, idx, hoy) {
     const out = [];
@@ -395,6 +413,31 @@ td .row { min-width: 140px; }
     dup(data.colaboradores, "colaborador_id", "colaborador");
     dup(data.hitos, "hito_id", "hito");
     dup(data.usuarios, "usuario_id", "usuario");
+    const fmtId = (v, campo, ent, id) => {
+      if (v !== null && v !== void 0 && !FORMATO[campo].test(v)) add("formato_id", ent, id ?? v, `${campo} = "${v}"`);
+    };
+    for (const c of data.colaboradores) {
+      fmtId(c.colaborador_id, "colaborador_id", "colaborador");
+      fmtId(c.jefatura_id, "jefatura_id", "colaborador", c.colaborador_id);
+    }
+    for (const h of data.hitos) {
+      fmtId(h.hito_id, "hito_id", "hito");
+      fmtId(h.responsable_id, "responsable_id", "hito", h.hito_id);
+    }
+    for (const u of data.usuarios) {
+      fmtId(u.usuario_id, "usuario_id", "usuario");
+      if (!DOMINIOS.rol.includes(u.rol)) add("rol_invalido", "usuario", u.usuario_id, `rol = "${u.rol}"`);
+      else if (u.usuario_id && !u.usuario_id.startsWith(PREFIJO_POR_ROL[u.rol])) add("rol_invalido", "usuario", u.usuario_id, `rol ${u.rol} con identificador ${u.usuario_id}`);
+      for (const f of ["puede_ver_datos_personales", "puede_editar_hitos", "puede_asignar_responsables", "puede_ver_metricas"]) if (!DOMINIOS.si_no.includes(u[f])) add("valor_fuera_dominio", "usuario", u.usuario_id, `${f} = "${u[f] ?? "vac\xEDo"}" (se trata como No)`);
+      if (!u.nombre_ficticio) add("campo_vacio", "usuario", u.usuario_id, "Nombre vac\xEDo");
+      if (u.rol === "Jefatura") {
+        for (const id of (u.equipo_asignado || "").split("|").map((x) => x.trim()).filter(Boolean)) if (!idx.colab.has(id)) add("equipo_inexistente", "usuario", u.usuario_id, `${id} no existe`);
+      }
+    }
+    for (const k of data.catalogo) {
+      if (!TIPOS_HITO.includes(k.tipo_hito) || !DOMINIOS.responsable_inicial.includes(k.responsable_inicial) || !DOMINIOS.plazo_ficticio.includes(k.plazo_ficticio) || !DOMINIOS.criticidad.includes(k.criticidad)) add("catalogo_invalido", "cat\xE1logo", k.tipo_hito ?? "\u2014", `${k.responsable_inicial} \xB7 ${k.plazo_ficticio} \xB7 ${k.criticidad}`);
+    }
+    dup(data.catalogo, "tipo_hito", "cat\xE1logo");
     const camposDom = ["area", "sede", "modalidad", "tipo_turno", "canal_contacto", "correo_corporativo_activo", "dispositivo_principal", "estado_onboarding"];
     const vaciosOperativos = { tipo_turno: "Turno", canal_contacto: "Canal de contacto", estado_onboarding: "Estado de onboarding" };
     const equipoDe = /* @__PURE__ */ new Map();
@@ -464,6 +507,11 @@ td .row { min-width: 140px; }
 
   // src/permissions.js
   var HITOS_TECNICOS = ["Equipo", "Acceso"];
+  var ROLES_VALIDOS = ["Colaborador", "Jefatura", "Personas", "TI", "Administrador"];
+  var PREFIJO_CUENTA = { Colaborador: "COL-", Jefatura: "JEF-", Personas: "PER-", TI: "TI-", Administrador: "ADM-" };
+  function cuentaValida(u) {
+    return !!u && ROLES_VALIDOS.includes(u.rol) && typeof u.usuario_id === "string" && u.usuario_id.startsWith(PREFIJO_CUENTA[u.rol]);
+  }
   var PREFIJO_ROL2 = { Personas: "PER-", TI: "TI-", Jefatura: "JEF-" };
   function parseEquipo(texto, todosLosColabs) {
     if (!texto) return /* @__PURE__ */ new Set();
@@ -483,6 +531,10 @@ td .row { min-width: 140px; }
     const ids = data.colaboradores.map((c) => c.colaborador_id);
     const scopes = /* @__PURE__ */ new Map();
     for (const u of data.usuarios) {
+      if (!cuentaValida(u)) {
+        scopes.set(u.usuario_id, /* @__PURE__ */ new Set());
+        continue;
+      }
       let s = parseEquipo(u.equipo_asignado, ids);
       if (u.rol === "Colaborador") s = new Set(s.has(u.usuario_id) ? [u.usuario_id] : []);
       scopes.set(u.usuario_id, s);
@@ -492,8 +544,9 @@ td .row { min-width: 140px; }
     const si = (u, f) => u && u[f] === "S\xED";
     const auth = {
       users,
+      cuentaValida,
       scope(u) {
-        return scopes.get(u.usuario_id) || /* @__PURE__ */ new Set();
+        return u && cuentaValida(u) ? scopes.get(u.usuario_id) || /* @__PURE__ */ new Set() : /* @__PURE__ */ new Set();
       },
       enAlcance(u, colId) {
         return auth.scope(u).has(colId);
@@ -581,7 +634,7 @@ td .row { min-width: 140px; }
         return [...users.values()].filter((x) => auth.puedeReasignar(u, h, x.usuario_id).ok && x.usuario_id !== h.responsable_id);
       },
       puedeVerMetricas(u) {
-        return u.rol !== "Colaborador" && si(u, "puede_ver_metricas");
+        return cuentaValida(u) && u.rol !== "Colaborador" && si(u, "puede_ver_metricas");
       },
       alcanceMetricas(u) {
         if (!auth.puedeVerMetricas(u)) return "ninguno";
@@ -590,17 +643,17 @@ td .row { min-width: 140px; }
         return "global";
       },
       puedeVerReportes(u) {
-        return u.rol === "Personas" || u.rol === "Administrador";
+        return cuentaValida(u) && (u.rol === "Personas" || u.rol === "Administrador");
       },
       // comentarios sensibles
       puedeReportar(u, colId) {
-        return u.rol === "Colaborador" && u.usuario_id === colId;
+        return cuentaValida(u) && u.rol === "Colaborador" && u.usuario_id === colId;
       },
       puedeVerCalidad(u) {
-        return u.rol === "Personas" || u.rol === "Administrador";
+        return cuentaValida(u) && (u.rol === "Personas" || u.rol === "Administrador");
       },
       puedeCargarArchivos(u) {
-        return u.rol === "Personas" || u.rol === "Administrador";
+        return cuentaValida(u) && (u.rol === "Personas" || u.rol === "Administrador");
       }
     };
     return auth;
@@ -619,6 +672,8 @@ td .row { min-width: 140px; }
 
   // src/store.js
   var KEY = "sprint-modo-seguro-v1";
+  var ESTADOS_REPORTE = ["Nuevo", "En gesti\xF3n", "Cerrado"];
+  var MAX_BITACORA = 2e3;
   function safeGet() {
     try {
       return JSON.parse(localStorage.getItem(KEY) || "null");
@@ -629,7 +684,9 @@ td .row { min-width: 140px; }
   function safeSet(v) {
     try {
       localStorage.setItem(KEY, JSON.stringify(v));
+      return true;
     } catch {
+      return false;
     }
   }
   function safeDel() {
@@ -638,20 +695,44 @@ td .row { min-width: 140px; }
     } catch {
     }
   }
-  function crearStore(base2, { persist = true, now = () => (/* @__PURE__ */ new Date()).toISOString() } = {}) {
-    const saved = persist ? safeGet() : null;
+  function sanearGuardado(saved, base) {
+    const out = { hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], descartado: false };
+    if (!saved || typeof saved !== "object" || Array.isArray(saved)) return { ...out, descartado: saved != null };
+    if (isISO(saved.hoy)) out.hoy = saved.hoy;
+    else if (saved.hoy !== void 0) out.descartado = true;
+    const ids = new Set(base.hitos.map((h) => h.hito_id));
+    const CAMPOS = ["estado", "fecha_cumplimiento", "ultima_actualizacion", "responsable_id"];
+    if (saved.overrides && typeof saved.overrides === "object" && !Array.isArray(saved.overrides)) {
+      for (const [id, o] of Object.entries(saved.overrides)) {
+        if (!ids.has(id) || !o || typeof o !== "object") {
+          out.descartado = true;
+          continue;
+        }
+        const limpio = {};
+        for (const c of CAMPOS) if (c in o && (o[c] === null || typeof o[c] === "string")) limpio[c] = o[c];
+        out.overrides[id] = limpio;
+      }
+    }
+    if (Array.isArray(saved.bitacora)) out.bitacora = saved.bitacora.filter((b) => b && typeof b.accion === "string" && typeof b.ts === "string").slice(0, MAX_BITACORA);
+    if (Array.isArray(saved.reportes)) out.reportes = saved.reportes.filter((r) => r && typeof r.id === "string" && typeof r.colaborador_id === "string" && ESTADOS_REPORTE.includes(r.estado));
+    return out;
+  }
+  function crearStore(base, { persist = true, now = () => (/* @__PURE__ */ new Date()).toISOString() } = {}) {
+    const saved = sanearGuardado(persist ? safeGet() : null, base);
     const s = {
-      base: base2,
+      base,
       data: null,
       idx: null,
       auth: null,
       alertas: [],
-      hoy: saved && saved.hoy || HOY_DEFAULT,
-      overrides: saved && saved.overrides || {},
-      // hito_id -> campos modificados
-      bitacora: saved && saved.bitacora || [],
-      reportes: saved && saved.reportes || [],
-      user: null
+      hoy: saved.hoy,
+      overrides: saved.overrides,
+      bitacora: saved.bitacora,
+      reportes: saved.reportes,
+      user: null,
+      almacenamiento: true,
+      // false si el navegador no deja guardar
+      estadoDescartado: saved.descartado
     };
     function rebuild() {
       const hitos = s.base.hitos.map((h) => s.overrides[h.hito_id] ? { ...h, ...s.overrides[h.hito_id] } : h);
@@ -659,12 +740,15 @@ td .row { min-width: 140px; }
       s.idx = indexData(s.data);
       s.auth = crearAuth(s.data);
       s.alertas = validar(s.data, s.idx, s.hoy);
+      if (s.user) s.user = s.auth.users.get(s.user.usuario_id) || null;
     }
     function save() {
-      if (persist) safeSet({ hoy: s.hoy, overrides: s.overrides, bitacora: s.bitacora, reportes: s.reportes });
+      if (!persist) return;
+      s.almacenamiento = safeSet({ hoy: s.hoy, overrides: s.overrides, bitacora: s.bitacora, reportes: s.reportes });
     }
     function log(accion, objetivo, detalle, resultado = "ok") {
-      s.bitacora.unshift({ ts: now(), usuario: s.user ? s.user.usuario_id : "\u2014", rol: s.user ? s.user.rol : "\u2014", accion, objetivo, detalle, resultado });
+      s.bitacora.unshift({ ts: now(), usuario: s.user ? s.user.usuario_id : "\u2014", rol: s.user ? s.user.rol : "\u2014", accion, objetivo: String(objetivo ?? "\u2014"), detalle: String(detalle ?? ""), resultado });
+      if (s.bitacora.length > MAX_BITACORA) s.bitacora.length = MAX_BITACORA;
       save();
     }
     function hito(id) {
@@ -675,14 +759,28 @@ td .row { min-width: 140px; }
       rebuild();
       save();
     }
+    const sinSesion = { ok: false, motivo: "Tu sesi\xF3n termin\xF3. Vuelve a ingresar." };
     rebuild();
+    if (s.estadoDescartado) log("estado_descartado", "\u2014", "Se ignor\xF3 informaci\xF3n guardada inv\xE1lida en este navegador", "error");
     const api = {
       get state() {
         return s;
       },
-      login(usuarioId, via) {
+      // opciones.soloInterno: el formulario de equipo interno no permite entrar como colaborador sin código.
+      login(usuarioId, via, opciones = {}) {
         const u = s.auth.users.get(usuarioId);
-        if (!u) return { ok: false, motivo: "Cuenta no encontrada" };
+        if (!u) {
+          log("ingreso", usuarioId, "Cuenta no encontrada", "denegado");
+          return { ok: false, motivo: "No encontramos esa cuenta." };
+        }
+        if (!s.auth.cuentaValida(u)) {
+          log("ingreso", usuarioId, `Rol inv\xE1lido: ${u.rol}`, "denegado");
+          return { ok: false, motivo: "Esta cuenta tiene un rol no v\xE1lido y est\xE1 bloqueada. Contacta al equipo de Personas." };
+        }
+        if (opciones.soloInterno && u.rol === "Colaborador") {
+          log("ingreso", usuarioId, "Colaborador por acceso interno", "denegado");
+          return { ok: false, motivo: "Los colaboradores ingresan con su c\xF3digo." };
+        }
         s.user = u;
         log("ingreso", usuarioId, via || "selector demo");
         return { ok: true };
@@ -703,7 +801,8 @@ td .row { min-width: 140px; }
       completar(hitoId) {
         const h = hito(hitoId);
         const u = s.user;
-        if (!h) return { ok: false, motivo: "Hito no existe" };
+        if (!u) return sinSesion;
+        if (!h) return { ok: false, motivo: "Ese hito ya no existe. Recarga la vista." };
         const p = s.auth.puedeCompletar(u, h, s.hoy);
         if (!p.ok) {
           log("completar", hitoId, p.motivo, "denegado");
@@ -717,8 +816,9 @@ td .row { min-width: 140px; }
       reasignar(hitoId, nuevoId, motivo) {
         const h = hito(hitoId);
         const u = s.user;
-        if (!h) return { ok: false, motivo: "Hito no existe" };
-        if (!motivo || motivo.trim().length < 5) return { ok: false, motivo: "Indica un motivo (m\xEDn. 5 caracteres)" };
+        if (!u) return sinSesion;
+        if (!h) return { ok: false, motivo: "Ese hito ya no existe. Recarga la vista." };
+        if (!motivo || String(motivo).trim().length < 5) return { ok: false, motivo: "Indica un motivo (m\xEDnimo 5 caracteres)." };
         const p = s.auth.puedeReasignar(u, h, nuevoId);
         if (!p.ok) {
           log("reasignar", hitoId, p.motivo, "denegado");
@@ -726,15 +826,17 @@ td .row { min-width: 140px; }
         }
         const antes = h.responsable_id || "sin responsable";
         patch(hitoId, { responsable_id: nuevoId, ultima_actualizacion: s.hoy });
-        log("reasignar", hitoId, `${antes} \u2192 ${nuevoId}. Motivo: ${motivo.trim()}`);
+        log("reasignar", hitoId, `${antes} \u2192 ${nuevoId}. Motivo: ${String(motivo).trim().slice(0, 200)}`);
         return { ok: true };
       },
       reportar(tipo, texto) {
         const u = s.user;
-        if (!u || !s.auth.puedeReportar(u, u.usuario_id)) return { ok: false, motivo: "Solo el colaborador puede reportar sobre s\xED mismo" };
-        const r = { id: `REP-${String(s.reportes.length + 1).padStart(3, "0")}`, colaborador_id: u.usuario_id, tipo, texto: (texto || "").slice(0, 500), estado: "Nuevo", fecha: s.hoy };
+        if (!u) return sinSesion;
+        if (!s.auth.puedeReportar(u, u.usuario_id)) return { ok: false, motivo: "Solo el colaborador puede reportar sobre s\xED mismo." };
+        const n = s.reportes.reduce((m, r2) => Math.max(m, Number(String(r2.id).slice(4)) || 0), 0) + 1;
+        const r = { id: `REP-${String(n).padStart(3, "0")}`, colaborador_id: u.usuario_id, tipo: String(tipo || "Otro").slice(0, 80), texto: String(texto || "").slice(0, 500), estado: "Nuevo", fecha: s.hoy };
         s.reportes.unshift(r);
-        log("reporte_creado", r.id, `${tipo} (contenido visible solo para Personas)`);
+        log("reporte_creado", r.id, `${r.tipo} (contenido visible solo para Personas)`);
         return { ok: true, id: r.id };
       },
       reportesVisibles() {
@@ -744,29 +846,53 @@ td .row { min-width: 140px; }
         return s.user ? s.reportes.filter((r) => r.colaborador_id === s.user.usuario_id) : [];
       },
       cambiarEstadoReporte(id, estado) {
-        if (!s.user || !s.auth.puedeVerReportes(s.user)) return { ok: false, motivo: "Sin permiso" };
+        if (!s.user || !s.auth.puedeVerReportes(s.user)) return { ok: false, motivo: "Sin permiso." };
+        if (!ESTADOS_REPORTE.includes(estado)) return { ok: false, motivo: "Estado no v\xE1lido." };
         const r = s.reportes.find((x) => x.id === id);
-        if (!r) return { ok: false };
+        if (!r) return { ok: false, motivo: "El reporte no existe." };
         const antes = r.estado;
         r.estado = estado;
         log("reporte_estado", id, `${antes} \u2192 ${estado}`);
         return { ok: true };
       },
       setHoy(iso) {
-        if (!s.user || !s.auth.puedeVerCalidad(s.user)) return { ok: false };
+        if (!s.user || !s.auth.puedeVerCalidad(s.user)) return { ok: false, motivo: "Sin permiso." };
+        if (!isISO(iso)) return { ok: false, motivo: "La fecha debe tener formato AAAA-MM-DD." };
         const antes = s.hoy;
         s.hoy = iso;
         rebuild();
         log("fecha_corte", "\u2014", `${antes} \u2192 ${iso}`);
         return { ok: true };
       },
+      // Carga atómica: se valida el conjunto completo y, si hay errores bloqueantes, no se reemplaza nada.
       cargarArchivos(nuevo, resumen) {
-        if (!s.user || !s.auth.puedeCargarArchivos(s.user)) return { ok: false, motivo: "Sin permiso" };
-        s.base = { ...s.base, ...nuevo };
+        if (!s.user || !s.auth.puedeCargarArchivos(s.user)) return { ok: false, motivo: "Sin permiso." };
+        const candidato = { ...s.base, ...nuevo };
+        let alertas;
+        try {
+          alertas = validar(candidato, indexData(candidato), s.hoy);
+        } catch (e) {
+          log("carga_archivos", "\u2014", `Archivo ilegible: ${e.message}`, "denegado");
+          return { ok: false, motivo: "No pudimos leer los archivos. Revisa que sean CSV v\xE1lidos.", errores: [] };
+        }
+        const bloq = alertas.filter((a) => BLOQUEANTES.includes(a.regla));
+        if (bloq.length) {
+          log("carga_archivos", "\u2014", `${resumen}: rechazada por ${bloq.length} errores bloqueantes`, "denegado");
+          return { ok: false, motivo: `Carga rechazada: ${bloq.length} errores bloqueantes. Los datos actuales no cambiaron.`, errores: bloq };
+        }
+        const yo = s.user.usuario_id;
+        s.base = candidato;
         s.overrides = {};
         rebuild();
         log("carga_archivos", "\u2014", resumen);
-        return { ok: true };
+        if (!s.user) {
+          s.bitacora[0].detalle += ` \xB7 la cuenta ${yo} ya no existe en los datos nuevos: sesi\xF3n cerrada`;
+          save();
+        }
+        return { ok: true, sesionCerrada: !s.user };
+      },
+      registrarError(contexto, mensaje) {
+        log("error", contexto, String(mensaje).slice(0, 300), "error");
       },
       reiniciar() {
         s.overrides = {};
@@ -774,6 +900,7 @@ td .row { min-width: 140px; }
         s.reportes = [];
         s.hoy = HOY_DEFAULT;
         s.user = null;
+        s.estadoDescartado = false;
         safeDel();
         rebuild();
       }
@@ -800,13 +927,14 @@ td .row { min-width: 140px; }
     busqueda: null,
     // { id, ok }
     exportTexto: null,
-    alertaAbierta: null
+    alertaAbierta: null,
+    cargaErrores: null
   };
   var store;
   var root;
   var nombreDe = (id) => {
     const u = store.state.auth.users.get(id);
-    return u ? u.nombre_ficticio : id;
+    return u && u.nombre_ficticio || id;
   };
   var funcion = { Personas: "Equipo de Personas", TI: "Soporte TI", Jefatura: "Jefatura" };
   function chip(ev) {
@@ -845,23 +973,47 @@ td .row { min-width: 140px; }
     <div class="top-in">
       <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>Sprint</strong><small>Onboarding \xB7 Modo Seguro</small></div></div>
       ${u ? `<div class="who">
-          <div class="who-txt"><strong>${esc(u.nombre_ficticio)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
+          <div class="who-txt"><strong>${esc(u.nombre_ficticio || u.usuario_id)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
           <button class="btn btn-ghost" data-act="logout">Cambiar usuario</button>
         </div>` : ""}
     </div>
     <div class="cut">Fecha de corte <b>${fmt(s.hoy)}</b> \xB7 datos 100% sint\xE9ticos \xB7 todo cambio queda en la bit\xE1cora</div>
   </header>`;
   }
+  var VISTAS = { Colaborador: (u) => vColaborador(u), Jefatura: (u) => vJefatura(u), TI: (u) => vTI(u), Personas: (u) => vPersonas(u), Administrador: (u) => vPersonas(u) };
+  function vDenegado() {
+    return `<section class="card"><h1>No tienes acceso</h1><p>Tu cuenta no tiene un rol v\xE1lido para esta herramienta. Contacta al equipo de Personas.</p>
+    <div><button class="btn btn-primary" data-act="logout">Volver al inicio</button></div></section>`;
+  }
+  function vError() {
+    return `<section class="card"><h1>Algo no funcion\xF3 en esta vista</h1>
+    <p>No se perdi\xF3 ning\xFAn dato y el error qued\xF3 en la bit\xE1cora. Puedes volver al inicio o, si se repite, reiniciar la demo.</p>
+    <div class="row"><button class="btn btn-primary" data-act="logout">Volver al inicio</button><button class="btn btn-ghost" data-act="reset">Reiniciar demo</button></div></section>`;
+  }
+  function avisos() {
+    const s = store.state;
+    const out = [];
+    if (!s.almacenamiento) out.push("Este navegador no permite guardar datos: los cambios se pierden al recargar la p\xE1gina.");
+    if (s.estadoDescartado && s.user && s.auth.puedeVerCalidad(s.user)) out.push("Se ignor\xF3 informaci\xF3n guardada inv\xE1lida en este navegador. Qued\xF3 registrado en la bit\xE1cora.");
+    return out.map((t) => `<p class="notice notice-bad" role="status">${esc(t)}</p>`).join("");
+  }
   function render() {
     const s = store.state;
     const u = s.user;
     let body;
-    if (!u) body = vLogin();
-    else if (u.rol === "Colaborador") body = vColaborador(u);
-    else if (u.rol === "Jefatura") body = vJefatura(u);
-    else if (u.rol === "TI") body = vTI(u);
-    else body = vPersonas(u);
-    root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : "");
+    try {
+      if (!u) body = vLogin();
+      else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) body = vDenegado();
+      else body = VISTAS[u.rol](u);
+    } catch (err) {
+      console.error(err);
+      try {
+        store.registrarError(`vista ${u ? u.rol : "ingreso"}`, err && err.message);
+      } catch {
+      }
+      body = vError();
+    }
+    root.innerHTML = header() + `<main class="wrap">${avisos()}${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : "");
   }
   function modal() {
     if (!ui.confirm) return "";
@@ -930,7 +1082,7 @@ td .row { min-width: 140px; }
     return `<div class="mobile">
     <section class="card hello">
       <p class="eyebrow">${esc(c.area)} \xB7 ${esc(c.sede)} \xB7 ${esc(c.modalidad)}</p>
-      <h1>Hola, ${esc(u.nombre_ficticio.split(" ")[0])}</h1>
+      <h1>Hola${u.nombre_ficticio ? `, ${esc(String(u.nombre_ficticio).split(" ")[0])}` : ""}</h1>
       <p>Ingreso: <b>${fmt(c.fecha_ingreso)}</b> \xB7 Turno: ${c.tipo_turno ? `<b>${esc(c.tipo_turno)}</b>` : '<span class="missing">por confirmar (Personas lo est\xE1 validando)</span>'}</p>
       <div class="progress"><span><b>${av.cumplidos}</b> de ${av.total} listos</span>${barra(av)}</div>
       ${vencidos.length ? `<p class="notice notice-bad">${vencidos.length} ${vencidos.length === 1 ? "tarea est\xE1 atrasada" : "tareas est\xE1n atrasadas"}, y ninguna depende de ti. Los responsables las tienen en su bandeja.</p>` : ""}
@@ -965,7 +1117,7 @@ td .row { min-width: 140px; }
   function vJefatura(u) {
     const s = store.state;
     const { auth, idx, hoy } = s;
-    const equipo = [...auth.scope(u)].map((id) => idx.colab.get(id)).filter(Boolean).sort((a, b) => b.fecha_ingreso.localeCompare(a.fecha_ingreso));
+    const equipo = [...auth.scope(u)].map((id) => idx.colab.get(id)).filter(Boolean).sort((a, b) => String(b.fecha_ingreso || "").localeCompare(String(a.fecha_ingreso || "")));
     const items = hitosVisibles(u);
     const mias = items.filter((x) => x.h.responsable_id === u.usuario_id && x.ev.estadoReal !== "Cumplido").sort((a, b) => b.ev.diasVencido - a.ev.diasVencido);
     const vencEquipo = items.filter((x) => x.ev.estadoReal === "Vencido");
@@ -982,7 +1134,7 @@ td .row { min-width: 140px; }
     </div>
     <section class="card"><h2 class="h-sm">Tus acciones</h2>
       ${mias.length ? `<ul class="actions">${mias.map(({ h, ev }) => `<li><div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b> \xB7 ${esc(nombreDe(h.colaborador_id))}<small>Plazo ${fmt(ev.limite)}${ev.flags.includes("plazo_corrido") ? ` \xB7 registrado para ${fmt(ev.limiteRegistrado)}` : ""}</small></div>
-        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar como cumplido</button></div></li>`).join("")}</ul>` : '<p class="empty">No tienes acciones pendientes.</p>'}
+        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar como cumplido</button></div></li>`).join("")}</ul>` : '<p class="empty">No tienes acciones pendientes.</p>'}
     </section>
     <section class="card"><h2 class="h-sm">Pr\xF3ximos ingresos</h2>
       ${proximos.length ? listaIngresos(proximos) : `<p class="empty">No hay ingresos con fecha posterior al ${fmt(hoy)} en tu equipo.</p>`}
@@ -993,10 +1145,10 @@ td .row { min-width: 140px; }
       ${equipo.map((c) => {
       const av = avanceColaborador(c.colaborador_id, idx, hoy);
       return `<tr>
-        <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
+        <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
         <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
         <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
-        <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Ver hitos"}</button></td></tr>
+        <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Ver hitos"}</button></td></tr>
         ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`;
     }).join("")}
       </tbody></table></div>
@@ -1014,12 +1166,12 @@ td .row { min-width: 140px; }
       const ev = evaluarHito(h, s.idx, s.hoy);
       const pc = s.auth.puedeCompletar(u, h, s.hoy);
       const pr = s.auth.puedeReasignar(u, h);
-      return `<tr><td><b>${esc(h.tipo_hito)}</b><br><code>${h.hito_id}</code></td>
+      return `<tr><td><b>${esc(h.tipo_hito)}</b><br><code>${esc(h.hito_id)}</code></td>
       <td>${esc(funcion[h.responsable_tipo])}${s.auth.puedeVerResponsableId(u, h) ? `<br><code>${h.responsable_id ? esc(h.responsable_id) : '<span class="missing">sin responsable</span>'}</code>` : ""}</td>
       <td class="num">${fmt(ev.limite)}</td><td class="num">${fmt(ev.limiteRegistrado)}${ev.flags.includes("plazo_corrido") ? ' <span class="chip chip-warn">movida</span>' : ""}</td>
       <td>${chip(ev)}</td>
-      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Cumplido</button>` : ""}
-        ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ""}
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Cumplido</button>` : ""}
+        ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ""}
         ${!pc.ok && !pr.ok && ev.estadoReal !== "Cumplido" ? `<small class="muted">${esc(pc.motivo)}</small>` : ""}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="6">${formReasignar(u, h)}</td></tr>` : ""}`;
     }).join("")}
@@ -1028,11 +1180,11 @@ td .row { min-width: 140px; }
   function formReasignar(u, h) {
     const cands = store.state.auth.candidatos(u, h);
     if (!cands.length) return `<p class="notice notice-bad">No hay cuentas v\xE1lidas para este hito. ${h.responsable_tipo === "Jefatura" ? "Ninguna jefatura tiene a esta persona en su equipo_asignado: hay que corregirlo en el sistema de origen." : ""}</p>`;
-    return `<form data-form="reasignar" data-arg="${h.hito_id}" class="inline-form">
-    <label for="re-${h.hito_id}">Nuevo responsable</label>
-    <select id="re-${h.hito_id}" name="nuevo">${cands.map((c) => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)} \xB7 ${esc(u.rol === "TI" ? c.nombre_ficticio : c.nombre_ficticio)}</option>`).join("")}</select>
-    <label for="rm-${h.hito_id}">Motivo (queda en la bit\xE1cora)</label>
-    <input id="rm-${h.hito_id}" name="motivo" required minlength="5" placeholder="Ej.: responsable vac\xEDo desde la carga">
+    return `<form data-form="reasignar" data-arg="${esc(h.hito_id)}" class="inline-form">
+    <label for="re-${esc(h.hito_id)}">Nuevo responsable</label>
+    <select id="re-${esc(h.hito_id)}" name="nuevo">${cands.map((c) => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)} \xB7 ${esc(u.rol === "TI" ? c.nombre_ficticio : c.nombre_ficticio)}</option>`).join("")}</select>
+    <label for="rm-${esc(h.hito_id)}">Motivo (queda en la bit\xE1cora)</label>
+    <input id="rm-${esc(h.hito_id)}" name="motivo" required minlength="5" placeholder="Ej.: responsable vac\xEDo desde la carga">
     <div class="row"><button class="btn btn-primary btn-sm" type="submit">Reasignar</button><button class="btn btn-ghost btn-sm" type="button" data-act="reasignar-close">Cancelar</button></div>
   </form>`;
   }
@@ -1065,13 +1217,13 @@ td .row { min-width: 140px; }
       const c = s.idx.colab.get(h.colaborador_id);
       const pc = s.auth.puedeCompletar(u, h, s.hoy);
       const pr = s.auth.puedeReasignar(u, h);
-      return `<tr><td><code>${h.hito_id}</code><br><small><code>${h.colaborador_id}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
-      <td><small>${esc(c.sede)} \xB7 ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal).toLowerCase()} \xB7 correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
+      return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
+      <td><small>${esc(c.sede)} \xB7 ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal || "dispositivo sin dato").toLowerCase()} \xB7 correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
       <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
-      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar entregado</button>` : ""}
-        ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${h.hito_id}">Tomar caso</button>` : ""}
-        ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ""}</div></td></tr>
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ""}
+        ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${esc(h.hito_id)}">Tomar caso</button>` : ""}
+        ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ""}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ""}`;
     }).join("") || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
@@ -1122,22 +1274,23 @@ td .row { min-width: 140px; }
   }
   function tCasos(u) {
     const s = store.state;
-    const lista = s.data.colaboradores.map((c) => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) })).filter((x) => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id).sort((a, b) => !b.c.jefatura_id - !a.c.jefatura_id || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
+    const lista = s.data.colaboradores.filter((c) => s.auth.puedeVerColaborador(u, c.colaborador_id)).map((c) => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) })).filter((x) => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id).sort((a, b) => !b.c.jefatura_id - !a.c.jefatura_id || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
     return `<p class="hint">${lista.length} personas con atrasos, hitos por verificar o sin jefatura. Abre un caso para reasignar responsables.</p>
   <section class="card"><div class="table-wrap"><table><thead><tr><th>Persona</th><th>\xC1rea \xB7 sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
-  ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td>
+  ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td>
     <td>${esc(c.area)}<br><small>${esc(c.sede)}</small></td>
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
     <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small>(${av.vencidosAltos} cr\xEDticos)</small>` : ""}${av.porVerificar ? `<br><small>${av.porVerificar} por verificar</small>` : ""}</td>
-    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Abrir"}</button></td></tr>
+    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Abrir"}</button></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`).join("")}
   </tbody></table></div></section>`;
   }
-  function tCalidad() {
+  function tCalidad(u) {
+    if (!store.state.auth.puedeVerCalidad(u)) return vDenegado();
     const grupos = agruparAlertas(store.state.alertas);
     return `<p class="hint">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige autom\xE1ticamente: cada alerta indica qu\xE9 hacer.</p>
-  <div class="alerts">${grupos.map((g) => `<details class="alert alert-${g.sev}" ${ui.alertaAbierta === g.regla ? "open" : ""} data-regla="${g.regla}">
+  <div class="alerts">${grupos.map((g) => `<details class="alert alert-${esc(g.sev)}" ${ui.alertaAbierta === g.regla ? "open" : ""} data-regla="${esc(g.regla)}">
     <summary><span class="sev">${g.sev === "alta" ? "Alta" : g.sev === "media" ? "Media" : "Info"}</span><b>${esc(g.titulo)}</b><span class="num count">${g.items.length}</span></summary>
     <p class="accion">${esc(g.accion)}</p>
     <ul class="mini">${g.items.slice(0, 60).map((a) => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join("")}${g.items.length > 60 ? `<li>\u2026 y ${g.items.length - 60} m\xE1s</li>` : ""}</ul>
@@ -1147,8 +1300,8 @@ td .row { min-width: 140px; }
     const reps = store.reportesVisibles();
     if (!reps.length) return `<section class="card"><p class="empty">A\xFAn no hay reportes. Para verlos en la demo, entra como un colaborador (por ejemplo Camila Rojas) y usa "\xBFAlgo no coincide?".</p></section>`;
     return `<section class="card"><p class="hint">Contenido sensible: lo ve solo Personas. No se comparte con la jefatura y no se usa para evaluar ni seleccionar.</p>
-  <ul class="actions">${reps.map((r) => `<li><div><b>${esc(r.tipo)}</b> \xB7 ${esc(nombreDe(r.colaborador_id))} <code>${r.colaborador_id}</code><small>${fmt(r.fecha)} \xB7 ${esc(r.id)}${r.texto ? ` \xB7 \u201C${esc(r.texto)}\u201D` : ""}</small></div>
-    <div class="row"><label for="st-${r.id}" class="sr">Estado</label><select id="st-${r.id}" data-change="rep-estado" data-arg="${r.id}">${["Nuevo", "En gesti\xF3n", "Cerrado"].map((e) => `<option ${e === r.estado ? "selected" : ""}>${e}</option>`).join("")}</select></div></li>`).join("")}</ul></section>`;
+  <ul class="actions">${reps.map((r) => `<li><div><b>${esc(r.tipo)}</b> \xB7 ${esc(nombreDe(r.colaborador_id))} <code>${esc(r.colaborador_id)}</code><small>${fmt(r.fecha)} \xB7 ${esc(r.id)}${r.texto ? ` \xB7 \u201C${esc(r.texto)}\u201D` : ""}</small></div>
+    <div class="row"><label for="st-${esc(r.id)}" class="sr">Estado</label><select id="st-${esc(r.id)}" data-change="rep-estado" data-arg="${esc(r.id)}">${["Nuevo", "En gesti\xF3n", "Cerrado"].map((e) => `<option ${e === r.estado ? "selected" : ""}>${e}</option>`).join("")}</select></div></li>`).join("")}</ul></section>`;
   }
   function tPermisos() {
     const roles = ["Colaborador", "Jefatura", "TI", "Personas"];
@@ -1178,10 +1331,12 @@ td .row { min-width: 140px; }
     <form data-form="hoy" class="inline-form"><label for="hoy">Calcular atrasos al</label><input type="date" id="hoy" name="hoy" value="${s.hoy}" required><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></form></section>
   <section class="card"><h2 class="h-sm">Cargar archivos nuevos</h2>
     <p class="hint">Sube uno o m\xE1s CSV con el nombre original (colaboradores.csv, hitos_onboarding.csv, usuarios_roles.csv, catalogo_hitos.csv). Se validan antes de usarse.</p>
-    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form></section>
+    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form>
+    ${ui.cargaErrores ? `<div class="notice notice-bad" role="alert"><b>No se carg\xF3 nada.</b> Corrige esto y vuelve a intentar:<ul class="mini">${ui.cargaErrores.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : ""}</section>
   <section class="card"><h2 class="h-sm">Reiniciar la demo</h2><p class="hint">Vuelve a los datos originales y borra la bit\xE1cora y los reportes de este navegador.</p>
     <button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></section>`;
   }
+  var MAX_ARCHIVO = 2 * 1024 * 1024;
   var ARCHIVOS = {
     "colaboradores.csv": ["colaboradores", ["colaborador_id", "fecha_ingreso", "area", "sede", "modalidad", "tipo_turno", "jefatura_id", "canal_contacto", "correo_corporativo_activo", "dispositivo_principal", "estado_onboarding"]],
     "hitos_onboarding.csv": ["hitos", ["hito_id", "colaborador_id", "tipo_hito", "responsable_tipo", "responsable_id", "fecha_limite", "fecha_cumplimiento", "estado", "nivel_criticidad", "ultima_actualizacion"]],
@@ -1213,13 +1368,18 @@ td .row { min-width: 140px; }
         ui.loginError = "El c\xF3digo no es correcto. En la demo es 123456.";
         return render();
       }
-      store.login(ui.loginStep.id, `c\xF3digo por ${ui.loginStep.canal || "Personas"}`);
+      const r = store.login(ui.loginStep.id, `c\xF3digo por ${ui.loginStep.canal || "Personas"}`);
+      if (!r.ok) {
+        ui.loginError = r.motivo;
+        return render();
+      }
       ui.loginStep = null;
       ui.loginError = "";
       return render();
     }
     if (kind === "staff") {
-      store.login(String(fd.get("id")));
+      const r = store.login(String(fd.get("id")), "acceso interno", { soloInterno: true });
+      if (!r.ok) return toastMsg(r.motivo);
       resetUi();
       return render();
     }
@@ -1242,33 +1402,59 @@ td .row { min-width: 140px; }
     }
     if (kind === "hoy") {
       const v = String(fd.get("hoy"));
-      if (isISO(v)) {
-        store.setHoy(v);
-        toastMsg(`Atrasos recalculados al ${fmt(v)}.`);
-      }
-      return;
+      const r = store.setHoy(v);
+      return toastMsg(r.ok ? `Atrasos recalculados al ${fmt(v)}.` : r.motivo);
     }
     if (kind === "carga") {
       const files = [...f.querySelector("input[type=file]").files || []];
+      ui.cargaErrores = null;
       if (!files.length) return toastMsg("Elige al menos un archivo CSV.");
       const nuevo = {};
       const errores = [];
       for (const file of files) {
         const def = ARCHIVOS[file.name.toLowerCase()];
         if (!def) {
-          errores.push(`${file.name}: nombre no reconocido`);
+          errores.push(`${file.name}: nombre no reconocido. Usa el nombre original del archivo.`);
           continue;
         }
-        const rows = parseCSV(await file.text());
+        if (file.size > MAX_ARCHIVO) {
+          errores.push(`${file.name}: pesa m\xE1s de 2 MB.`);
+          continue;
+        }
+        let rows;
+        try {
+          rows = parseCSV(await file.text());
+        } catch {
+          errores.push(`${file.name}: no se pudo leer como texto UTF-8.`);
+          continue;
+        }
         const faltan = def[1].filter((c) => !(rows[0] && c in rows[0]));
-        if (!rows.length || faltan.length) {
-          errores.push(`${file.name}: faltan columnas ${faltan.join(", ") || "(archivo vac\xEDo)"}`);
+        if (!rows.length) {
+          errores.push(`${file.name}: no tiene filas.`);
+          continue;
+        }
+        if (faltan.length) {
+          errores.push(`${file.name}: faltan columnas ${faltan.join(", ")}.`);
           continue;
         }
         nuevo[def[0]] = rows;
       }
-      if (errores.length) return toastMsg(`No se carg\xF3: ${errores.join(" \xB7 ")}`);
-      store.cargarArchivos(nuevo, `Archivos: ${files.map((x) => x.name).join(", ")}`);
+      if (errores.length) {
+        ui.cargaErrores = errores;
+        render();
+        return toastMsg("Carga rechazada. Los datos actuales no cambiaron.");
+      }
+      const r = store.cargarArchivos(nuevo, `Archivos: ${files.map((x) => x.name).join(", ")}`);
+      if (!r.ok) {
+        ui.cargaErrores = (r.errores || []).slice(0, 30).map((a) => `${a.titulo}: ${a.id} \xB7 ${a.detalle}`);
+        render();
+        return toastMsg(r.motivo);
+      }
+      if (r.sesionCerrada) {
+        resetUi();
+        render();
+        return toastMsg("Archivos cargados. Tu cuenta ya no existe en los datos nuevos: ingresa de nuevo.");
+      }
       ui.tab = "calidad";
       return toastMsg("Archivos cargados. Revisa las alertas de calidad.");
     }
@@ -1283,11 +1469,17 @@ td .row { min-width: 140px; }
     const arg = b.dataset.arg;
     const s = store.state;
     const h = arg ? s.data.hitos.find((x) => x.hito_id === arg) : null;
+    if (["completar", "tomar", "reasignar-open"].includes(act) && !h) {
+      toastMsg("Ese hito ya no existe. La vista se actualiz\xF3.");
+      return;
+    }
     switch (act) {
-      case "quick":
-        store.login(arg, "recorrido de demo");
+      case "quick": {
+        const r = store.login(arg, "recorrido de demo");
+        if (!r.ok) return toastMsg(r.motivo);
         resetUi();
         return render();
+      }
       case "logout":
         store.logout();
         resetUi();
@@ -1317,10 +1509,10 @@ td .row { min-width: 140px; }
         ui.reasignando = null;
         return render();
       case "completar":
-        ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${h.colaborador_id} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: "completar", arg };
+        ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: "completar", arg };
         return render();
       case "tomar":
-        ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${h.colaborador_id}). La asignaci\xF3n queda en la bit\xE1cora.`, act: "tomar", arg };
+        ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${esc(h.colaborador_id)}). La asignaci\xF3n queda en la bit\xE1cora.`, act: "tomar", arg };
         return render();
       case "reset":
         ui.confirm = { texto: "Volver a los datos originales y borrar la bit\xE1cora y los reportes de este navegador.", act: "reset" };
@@ -1373,21 +1565,45 @@ td .row { min-width: 140px; }
     const el = e.target.closest("[data-change]");
     if (!el) return;
     if (el.dataset.change === "rep-estado") {
-      store.cambiarEstadoReporte(el.dataset.arg, el.value);
-      toastMsg("Estado actualizado.");
+      const r = store.cambiarEstadoReporte(el.dataset.arg, el.value);
+      toastMsg(r.ok ? "Estado actualizado." : r.motivo);
     }
   }
   function onToggle(e) {
     const d = e.target;
     if (d.matches && d.matches("details[data-regla]")) ui.alertaAbierta = d.open ? d.dataset.regla : ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta;
   }
+  function fallo(contexto, err) {
+    console.error(err);
+    try {
+      store.registrarError(contexto, err && err.message);
+    } catch {
+    }
+    ui.confirm = null;
+    ui.toast = "No se pudo completar la acci\xF3n. Qued\xF3 registrado en la bit\xE1cora.";
+    try {
+      render();
+    } catch {
+      root.textContent = "Error al dibujar la p\xE1gina. Recarga para continuar.";
+    }
+  }
+  var seguro = (nombre, fn) => (e) => {
+    try {
+      const r = fn(e);
+      if (r && typeof r.catch === "function") r.catch((err) => fallo(nombre, err));
+    } catch (err) {
+      fallo(nombre, err);
+    }
+  };
   function mount(el, st) {
     root = el;
     store = st;
-    root.addEventListener("click", onClick);
-    root.addEventListener("submit", onSubmit);
-    root.addEventListener("change", onChange);
-    root.addEventListener("toggle", onToggle, true);
+    root.addEventListener("click", seguro("clic", onClick));
+    root.addEventListener("submit", seguro("formulario", onSubmit));
+    root.addEventListener("change", seguro("cambio", onChange));
+    root.addEventListener("toggle", seguro("detalle", onToggle), true);
+    window.addEventListener("error", (e) => fallo("global", e.error || new Error(e.message)));
+    window.addEventListener("unhandledrejection", (e) => fallo("promesa", e.reason instanceof Error ? e.reason : new Error(String(e.reason))));
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && ui.confirm) {
         ui.confirm = null;
@@ -1401,12 +1617,18 @@ td .row { min-width: 140px; }
   var data_generated_default = { "colaboradores": "\uFEFFcolaborador_id,fecha_ingreso,area,sede,modalidad,tipo_turno,jefatura_id,canal_contacto,correo_corporativo_activo,dispositivo_principal,estado_onboarding\r\nCOL-001,2026-09-04,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-002,2026-09-07,Operaciones,Santiago Centro,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-003,2026-09-10,Tecnolog\xEDa,Santiago Centro,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Computador,Completado\r\nCOL-004,2026-09-13,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-005,2026-09-16,Personas,Providencia,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-006,2026-09-19,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-007,2026-09-22,Tecnolog\xEDa,Providencia,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-008,2026-09-25,Comercial,Providencia,H\xEDbrida,Turno tarde,JEF-008,,S\xED,Computador,En proceso\r\nCOL-009,2026-09-28,Personas,Valpara\xEDso,Remota,Jornada diurna,JEF-009,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-010,2026-10-01,Operaciones,Valpara\xEDso,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-011,2026-10-04,Tecnolog\xEDa,Valpara\xEDso,H\xEDbrida,Turno ma\xF1ana,JEF-011,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-012,2026-10-07,Comercial,Valpara\xEDso,Remota,Turno tarde,JEF-012,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-013,2026-10-10,Personas,Concepci\xF3n,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-014,2026-10-13,Operaciones,Concepci\xF3n,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-015,2026-10-16,Tecnolog\xEDa,Concepci\xF3n,Remota,Turno ma\xF1ana,JEF-003,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-016,2026-10-19,Comercial,Concepci\xF3n,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-017,2026-10-22,Personas,Santiago Centro,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-018,2026-10-25,Operaciones,Santiago Centro,Remota,Jornada parcial,JEF-006,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-019,2026-10-28,Tecnolog\xEDa,Santiago Centro,Presencial,Turno ma\xF1ana,,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-020,2026-09-01,Comercial,Santiago Centro,H\xEDbrida,Turno tarde,JEF-008,Correo personal,No,Tel\xE9fono,En proceso\r\nCOL-021,2026-09-04,Personas,Providencia,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Computador,Completado\r\nCOL-022,2026-09-07,Operaciones,Providencia,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Tel\xE9fono,No iniciado\r\nCOL-023,2026-09-10,Tecnolog\xEDa,Providencia,H\xEDbrida,Turno ma\xF1ana,JEF-011,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-024,2026-09-13,Comercial,Providencia,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\nCOL-025,2026-09-16,Personas,Valpara\xEDso,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Tel\xE9fono,No iniciado\r\nCOL-026,2026-09-19,Operaciones,Valpara\xEDso,H\xEDbrida,Jornada parcial,JEF-002,Correo personal,No,Computador,En proceso\r\nCOL-027,2026-09-22,Tecnolog\xEDa,Valpara\xEDso,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-028,2026-09-25,Comercial,Valpara\xEDso,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-029,2026-09-28,Personas,Concepci\xF3n,H\xEDbrida,Jornada diurna,JEF-005,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-030,2026-10-01,Operaciones,Concepci\xF3n,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Computador,Completado\r\nCOL-031,2026-10-04,Tecnolog\xEDa,Concepci\xF3n,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-032,2026-10-07,Comercial,Concepci\xF3n,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,En proceso\r\nCOL-033,2026-10-10,Personas,Santiago Centro,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-034,2026-10-13,Operaciones,Santiago Centro,Presencial,Jornada parcial,JEF-010,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-035,2026-10-16,Tecnolog\xEDa,Santiago Centro,H\xEDbrida,Turno ma\xF1ana,JEF-011,,S\xED,Computador,En proceso\r\nCOL-036,2026-10-19,Comercial,Santiago Centro,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\nCOL-037,2026-10-22,Personas,Providencia,Presencial,Jornada diurna,JEF-001,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-038,2026-10-25,Operaciones,Providencia,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-039,2026-10-28,Tecnolog\xEDa,Providencia,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Computador,Completado\r\nCOL-040,2026-09-01,Comercial,Providencia,Presencial,Turno tarde,JEF-004,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-041,2026-09-04,Personas,Valpara\xEDso,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-042,2026-09-07,Operaciones,Valpara\xEDso,Remota,Jornada parcial,JEF-006,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-043,2026-09-10,Tecnolog\xEDa,Valpara\xEDso,Presencial,Turno ma\xF1ana,JEF-007,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-044,2026-09-13,Comercial,Valpara\xEDso,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,En proceso\r\nCOL-045,2026-09-16,Personas,Concepci\xF3n,Remota,Jornada diurna,JEF-009,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-046,2026-09-19,Operaciones,Concepci\xF3n,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-047,2026-09-22,Tecnolog\xEDa,Concepci\xF3n,H\xEDbrida,Turno ma\xF1ana,JEF-011,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-048,2026-09-25,Comercial,Concepci\xF3n,Remota,,JEF-012,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-049,2026-09-28,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-050,2026-10-01,Operaciones,Santiago Centro,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-051,2026-10-04,Tecnolog\xEDa,Santiago Centro,Remota,Turno ma\xF1ana,JEF-003,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-052,2026-10-07,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-053,2026-10-10,Personas,Providencia,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-054,2026-10-13,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Computador,Completado\r\nCOL-055,2026-10-16,Tecnolog\xEDa,Providencia,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-056,2026-10-19,Comercial,Providencia,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,\r\nCOL-057,2026-10-22,Personas,Valpara\xEDso,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Computador,Completado\r\nCOL-058,2026-10-25,Operaciones,Valpara\xEDso,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-059,2026-10-28,Tecnolog\xEDa,Valpara\xEDso,H\xEDbrida,Turno ma\xF1ana,JEF-011,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-060,2026-09-01,Comercial,Valpara\xEDso,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\n", "hitos": "\uFEFFhito_id,colaborador_id,tipo_hito,responsable_tipo,responsable_id,fecha_limite,fecha_cumplimiento,estado,nivel_criticidad,ultima_actualizacion\r\nHITO-001,COL-001,Contrato,Personas,PER-001,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-002,COL-001,Equipo,TI,TI-002,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-003,COL-001,Acceso,TI,TI-003,2026-11-08,,Pendiente,Alto,2026-10-30\r\nHITO-004,COL-001,Reuni\xF3n,Jefatura,JEF-001,2026-11-09,,Pendiente,Medio,2026-10-31\r\nHITO-005,COL-001,Plan,Jefatura,JEF-001,2026-10-04,2026-10-02,Cumplido,Medio,2026-10-03\r\nHITO-006,COL-002,Contrato,Personas,PER-002,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-007,COL-002,Equipo,TI,TI-003,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-008,COL-002,Acceso,TI,TI-004,2026-11-05,,Pendiente,Alto,2026-10-28\r\nHITO-009,COL-002,Reuni\xF3n,Jefatura,JEF-002,2026-11-06,,Pendiente,Medio,2026-10-29\r\nHITO-010,COL-002,Plan,Jefatura,JEF-002,2026-10-07,2026-10-06,Cumplido,Medio,2026-10-06\r\nHITO-011,COL-003,Contrato,Personas,PER-003,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-012,COL-003,Equipo,TI,TI-004,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-013,COL-003,Acceso,TI,TI-005,2026-11-10,,Pendiente,Alto,2026-11-02\r\nHITO-014,COL-003,Reuni\xF3n,Jefatura,JEF-003,2026-11-11,,Pendiente,Medio,2026-10-27\r\nHITO-015,COL-003,Plan,Jefatura,JEF-003,2026-10-10,2026-10-10,Cumplido,Medio,2026-10-11\r\nHITO-016,COL-004,Contrato,Personas,PER-004,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-017,COL-004,Equipo,TI,TI-005,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-018,COL-004,Acceso,TI,TI-006,2026-11-07,,Pendiente,Alto,2026-10-31\r\nHITO-019,COL-004,Reuni\xF3n,Jefatura,JEF-004,2026-11-08,,Pendiente,Medio,2026-11-01\r\nHITO-020,COL-004,Plan,Jefatura,JEF-004,2026-10-13,2026-10-11,Cumplido,Medio,2026-10-11\r\nHITO-021,COL-005,Contrato,Personas,PER-001,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-022,COL-005,Equipo,TI,TI-006,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-023,COL-005,Acceso,TI,TI-001,2026-11-12,,Pendiente,Alto,2026-10-29\r\nHITO-024,COL-005,Reuni\xF3n,Jefatura,JEF-005,2026-11-05,,Pendiente,Medio,2026-10-30\r\nHITO-025,COL-005,Plan,Jefatura,JEF-005,2026-10-16,2026-10-15,Cumplido,Medio,2026-10-16\r\nHITO-026,COL-006,Contrato,Personas,PER-002,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-027,COL-006,Equipo,TI,TI-001,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-028,COL-006,Acceso,TI,TI-002,2026-11-09,,Pendiente,Alto,2026-10-27\r\nHITO-029,COL-006,Reuni\xF3n,Jefatura,JEF-006,2026-11-10,,Pendiente,Medio,2026-10-28\r\nHITO-030,COL-006,Plan,Jefatura,JEF-006,2026-10-19,2026-10-19,Cumplido,Medio,2026-10-19\r\nHITO-031,COL-007,Contrato,Personas,PER-003,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-032,COL-007,Equipo,TI,TI-002,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-033,COL-007,Acceso,TI,,2026-11-06,,Pendiente,Alto,2026-11-01\r\nHITO-034,COL-007,Reuni\xF3n,Jefatura,JEF-007,2026-11-07,,Pendiente,Medio,2026-11-02\r\nHITO-035,COL-007,Plan,Jefatura,JEF-007,2026-10-22,2026-10-20,Cumplido,Medio,2026-10-21\r\nHITO-036,COL-008,Contrato,Personas,PER-004,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-037,COL-008,Equipo,TI,TI-003,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-038,COL-008,Acceso,TI,TI-004,2026-11-11,,Pendiente,Alto,2026-10-30\r\nHITO-039,COL-008,Reuni\xF3n,Jefatura,JEF-008,2026-11-12,,Pendiente,Medio,2026-10-31\r\nHITO-040,COL-008,Plan,Jefatura,JEF-008,2026-10-25,2026-10-24,Cumplido,Medio,2026-10-24\r\nHITO-041,COL-009,Contrato,Personas,PER-001,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-042,COL-009,Equipo,TI,TI-004,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-043,COL-009,Acceso,TI,TI-005,2026-11-08,,Pendiente,Alto,2026-10-28\r\nHITO-044,COL-009,Reuni\xF3n,Jefatura,JEF-009,2026-11-09,,Pendiente,Medio,2026-10-29\r\nHITO-045,COL-009,Plan,Jefatura,JEF-009,2026-10-28,2026-10-28,Cumplido,Medio,2026-10-29\r\nHITO-046,COL-010,Contrato,Personas,PER-002,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-047,COL-010,Equipo,TI,TI-005,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-048,COL-010,Acceso,TI,TI-006,2026-11-05,,Pendiente,Alto,2026-11-02\r\nHITO-049,COL-010,Reuni\xF3n,Jefatura,JEF-010,2026-11-06,,Pendiente,Medio,2026-10-27\r\nHITO-050,COL-010,Plan,Jefatura,JEF-010,2026-10-31,,Cumplido,Medio,2026-10-29\r\nHITO-051,COL-011,Contrato,Personas,PER-003,2026-10-04,,Atrasado,Alto,2026-10-20\r\nHITO-052,COL-011,Equipo,TI,TI-006,2026-11-09,,Pendiente,Alto,2026-10-30\r\nHITO-053,COL-011,Acceso,TI,TI-001,2026-11-10,,Pendiente,Alto,2026-10-31\r\nHITO-054,COL-011,Reuni\xF3n,Jefatura,JEF-011,2026-10-09,2026-10-09,Cumplido,Bajo,2026-10-09\r\nHITO-055,COL-011,Plan,Jefatura,JEF-011,2026-11-03,2026-11-02,Cumplido,Medio,2026-11-03\r\nHITO-056,COL-012,Contrato,Personas,PER-004,2026-10-07,,Atrasado,Alto,2026-10-20\r\nHITO-057,COL-012,Equipo,TI,TI-001,2026-11-06,,Pendiente,Alto,2026-10-28\r\nHITO-058,COL-012,Acceso,TI,TI-002,2026-11-07,,Pendiente,Alto,2026-10-29\r\nHITO-059,COL-012,Reuni\xF3n,Jefatura,JEF-012,2026-10-12,2026-10-10,Cumplido,Bajo,2026-10-11\r\nHITO-060,COL-012,Plan,Jefatura,JEF-012,2026-11-06,2026-11-06,Cumplido,Medio,2026-11-06\r\nHITO-061,COL-013,Contrato,Personas,PER-001,2026-10-10,,Atrasado,Alto,2026-10-20\r\nHITO-062,COL-013,Equipo,TI,TI-002,2026-11-11,,Pendiente,Alto,2026-11-02\r\nHITO-063,COL-013,Acceso,TI,TI-003,2026-11-12,,Pendiente,Alto,2026-10-27\r\nHITO-064,COL-013,Reuni\xF3n,Jefatura,JEF-001,2026-10-15,2026-10-14,Cumplido,Bajo,2026-10-14\r\nHITO-065,COL-013,Plan,Jefatura,JEF-001,2026-11-09,2026-11-07,Cumplido,Medio,2026-11-08\r\nHITO-066,COL-014,Contrato,Personas,PER-002,2026-10-13,,Atrasado,Alto,2026-10-20\r\nHITO-067,COL-014,Equipo,TI,,2026-11-08,,Pendiente,Alto,2026-10-31\r\nHITO-068,COL-014,Acceso,TI,TI-004,2026-11-09,,Pendiente,Alto,2026-11-01\r\nHITO-069,COL-014,Reuni\xF3n,Jefatura,JEF-002,2026-10-18,2026-10-18,Cumplido,Bajo,2026-10-19\r\nHITO-070,COL-014,Plan,Jefatura,JEF-002,2026-11-12,2026-11-11,Cumplido,Medio,2026-11-11\r\nHITO-071,COL-015,Contrato,Personas,PER-003,2026-10-16,,Atrasado,Alto,2026-10-20\r\nHITO-072,COL-015,Equipo,TI,TI-004,2026-11-05,,Pendiente,Alto,2026-10-29\r\nHITO-073,COL-015,Acceso,TI,TI-005,2026-11-06,,Pendiente,Alto,2026-10-30\r\nHITO-074,COL-015,Reuni\xF3n,Jefatura,JEF-003,2026-10-21,2026-10-19,Cumplido,Bajo,2026-10-19\r\nHITO-075,COL-015,Plan,Jefatura,JEF-003,2026-11-15,2026-11-15,Cumplido,Medio,2026-11-16\r\nHITO-076,COL-016,Contrato,Personas,PER-004,2026-10-19,2026-10-18,Cumplido,Bajo,2026-10-18\r\nHITO-077,COL-016,Equipo,TI,TI-005,2026-11-10,,Pendiente,Alto,2026-10-27\r\nHITO-078,COL-016,Acceso,TI,TI-006,2026-11-11,,Pendiente,Alto,2026-10-28\r\nHITO-079,COL-016,Reuni\xF3n,Jefatura,JEF-004,2026-10-24,2026-10-23,Cumplido,Bajo,2026-10-24\r\nHITO-080,COL-016,Plan,Jefatura,JEF-004,2026-11-18,2026-11-16,Cumplido,Medio,2026-11-16\r\nHITO-081,COL-017,Contrato,Personas,PER-001,2026-10-22,2026-10-22,Cumplido,Bajo,2026-10-23\r\nHITO-082,COL-017,Equipo,TI,TI-006,2026-11-07,,Pendiente,Alto,2026-11-01\r\nHITO-083,COL-017,Acceso,TI,TI-001,2026-11-08,,Pendiente,Alto,2026-11-02\r\nHITO-084,COL-017,Reuni\xF3n,Jefatura,JEF-005,2026-10-27,2026-10-27,Cumplido,Bajo,2026-10-27\r\nHITO-085,COL-017,Plan,Jefatura,JEF-005,2026-11-21,2026-11-20,Cumplido,Medio,2026-11-21\r\nHITO-086,COL-018,Contrato,Personas,PER-002,2026-10-25,2026-10-23,Cumplido,Bajo,2026-10-23\r\nHITO-087,COL-018,Equipo,TI,TI-001,2026-11-12,,Pendiente,Alto,2026-10-30\r\nHITO-088,COL-018,Acceso,TI,TI-002,2026-11-05,,Pendiente,Alto,2026-10-31\r\nHITO-089,COL-018,Reuni\xF3n,Jefatura,JEF-006,2026-10-30,2026-10-28,Cumplido,Bajo,2026-10-29\r\nHITO-090,COL-018,Plan,Jefatura,JEF-006,2026-11-24,2026-11-24,Cumplido,Medio,2026-11-24\r\nHITO-091,COL-019,Contrato,Personas,PER-003,2026-10-28,2026-10-27,Cumplido,Bajo,2026-10-28\r\nHITO-092,COL-019,Equipo,TI,TI-002,2026-11-09,,Pendiente,Alto,2026-10-28\r\nHITO-093,COL-019,Acceso,TI,TI-003,2026-11-10,,Pendiente,Alto,2026-10-29\r\nHITO-094,COL-019,Reuni\xF3n,Jefatura,,2026-11-02,2026-11-01,Cumplido,Bajo,2026-11-01\r\nHITO-095,COL-019,Plan,Jefatura,,2026-11-27,2026-11-25,Cumplido,Medio,2026-11-26\r\nHITO-096,COL-020,Contrato,Personas,PER-004,2026-09-01,2026-09-01,Cumplido,Bajo,2026-09-01\r\nHITO-097,COL-020,Equipo,TI,TI-003,2026-11-06,,Pendiente,Alto,2026-11-02\r\nHITO-098,COL-020,Acceso,TI,TI-004,2026-11-07,,Pendiente,Alto,2026-10-27\r\nHITO-099,COL-020,Reuni\xF3n,Jefatura,JEF-008,2026-09-06,2026-09-06,Cumplido,Bajo,2026-09-07\r\nHITO-100,COL-020,Plan,Jefatura,JEF-008,2026-10-01,2026-09-30,Cumplido,Medio,2026-09-30\r\nHITO-101,COL-021,Contrato,Personas,PER-001,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-102,COL-021,Equipo,TI,TI-004,2026-09-04,2026-09-04,Cumplido,Medio,2026-09-04\r\nHITO-103,COL-021,Acceso,TI,TI-005,2026-09-05,2026-09-04,Cumplido,Medio,2026-09-05\r\nHITO-104,COL-021,Reuni\xF3n,Jefatura,JEF-009,2026-09-09,2026-09-07,Cumplido,Bajo,2026-09-07\r\nHITO-105,COL-021,Plan,Jefatura,JEF-009,2026-10-04,2026-10-04,Cumplido,Medio,2026-10-05\r\nHITO-106,COL-022,Contrato,Personas,PER-002,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-107,COL-022,Equipo,TI,TI-005,2026-09-07,2026-09-05,Cumplido,Medio,2026-09-06\r\nHITO-108,COL-022,Acceso,TI,TI-006,2026-09-08,2026-09-08,Cumplido,Medio,2026-09-08\r\nHITO-109,COL-022,Reuni\xF3n,Jefatura,JEF-010,2026-09-12,2026-09-11,Cumplido,Bajo,2026-09-12\r\nHITO-110,COL-022,Plan,Jefatura,JEF-010,2026-10-07,2026-10-05,Cumplido,Medio,2026-10-05\r\nHITO-111,COL-023,Contrato,Personas,PER-003,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-112,COL-023,Equipo,TI,TI-006,2026-09-10,2026-09-09,Cumplido,Medio,2026-09-09\r\nHITO-113,COL-023,Acceso,TI,TI-001,2026-09-11,2026-09-09,Cumplido,Medio,2026-09-10\r\nHITO-114,COL-023,Reuni\xF3n,Jefatura,JEF-011,2026-09-15,2026-09-15,Cumplido,Bajo,2026-09-15\r\nHITO-115,COL-023,Plan,Jefatura,JEF-011,2026-10-10,2026-10-09,Cumplido,Medio,2026-10-10\r\nHITO-116,COL-024,Contrato,Personas,PER-004,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-117,COL-024,Equipo,TI,TI-001,2026-09-13,2026-09-13,Cumplido,Medio,2026-09-14\r\nHITO-118,COL-024,Acceso,TI,TI-002,2026-09-14,2026-09-13,Cumplido,Medio,2026-09-13\r\nHITO-119,COL-024,Reuni\xF3n,Jefatura,JEF-012,2026-09-18,2026-09-16,Cumplido,Bajo,2026-09-17\r\nHITO-120,COL-024,Plan,Jefatura,JEF-012,2026-10-13,2026-10-13,Cumplido,Medio,2026-10-13\r\nHITO-121,COL-025,Contrato,Personas,PER-001,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-122,COL-025,Equipo,TI,TI-002,2026-09-16,2026-09-14,Cumplido,Medio,2026-09-14\r\nHITO-123,COL-025,Acceso,TI,TI-003,2026-09-17,2026-09-17,Cumplido,Medio,2026-09-18\r\nHITO-124,COL-025,Reuni\xF3n,Jefatura,JEF-001,2026-09-21,2026-09-20,Cumplido,Bajo,2026-09-20\r\nHITO-125,COL-025,Plan,Jefatura,JEF-001,2026-10-16,,Cumplido,Medio,2026-10-15\r\nHITO-126,COL-026,Contrato,Personas,,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-127,COL-026,Equipo,TI,TI-003,2026-09-19,2026-09-18,Cumplido,Medio,2026-09-19\r\nHITO-128,COL-026,Acceso,TI,TI-004,2026-09-20,2026-09-18,Cumplido,Medio,2026-09-18\r\nHITO-129,COL-026,Reuni\xF3n,Jefatura,JEF-002,2026-09-24,2026-09-24,Cumplido,Bajo,2026-09-25\r\nHITO-130,COL-026,Plan,Jefatura,JEF-002,2026-10-19,2026-10-18,Cumplido,Medio,2026-10-18\r\nHITO-131,COL-027,Contrato,Personas,PER-003,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-132,COL-027,Equipo,TI,TI-004,2026-09-22,2026-09-22,Cumplido,Medio,2026-09-22\r\nHITO-133,COL-027,Acceso,TI,TI-005,2026-09-23,2026-09-22,Cumplido,Medio,2026-09-23\r\nHITO-134,COL-027,Reuni\xF3n,Jefatura,JEF-003,2026-09-27,2026-09-25,Cumplido,Bajo,2026-09-25\r\nHITO-135,COL-027,Plan,Jefatura,JEF-003,2026-10-22,2026-10-22,Cumplido,Medio,2026-10-23\r\nHITO-136,COL-028,Contrato,Personas,PER-004,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-137,COL-028,Equipo,TI,TI-005,2026-09-25,2026-09-23,Cumplido,Medio,2026-09-24\r\nHITO-138,COL-028,Acceso,TI,TI-006,2026-09-26,2026-09-26,Cumplido,Medio,2026-09-26\r\nHITO-139,COL-028,Reuni\xF3n,Jefatura,JEF-004,2026-09-30,2026-09-29,Cumplido,Bajo,2026-09-30\r\nHITO-140,COL-028,Plan,Jefatura,JEF-004,2026-10-25,2026-10-23,Cumplido,Medio,2026-10-23\r\nHITO-141,COL-029,Contrato,Personas,PER-001,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-142,COL-029,Equipo,TI,TI-006,2026-09-28,2026-09-27,Cumplido,Medio,2026-09-27\r\nHITO-143,COL-029,Acceso,TI,TI-001,2026-09-29,2026-09-27,Cumplido,Medio,2026-09-28\r\nHITO-144,COL-029,Reuni\xF3n,Jefatura,JEF-005,2026-10-03,2026-10-03,Cumplido,Bajo,2026-10-03\r\nHITO-145,COL-029,Plan,Jefatura,JEF-005,2026-10-28,2026-10-27,Cumplido,Medio,2026-10-28\r\nHITO-146,COL-030,Contrato,Personas,PER-002,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-147,COL-030,Equipo,TI,TI-001,2026-10-01,2026-10-01,Cumplido,Medio,2026-10-02\r\nHITO-148,COL-030,Acceso,TI,TI-002,2026-10-02,2026-10-01,Cumplido,Medio,2026-10-01\r\nHITO-149,COL-030,Reuni\xF3n,Jefatura,JEF-006,2026-10-06,2026-10-04,Cumplido,Bajo,2026-10-05\r\nHITO-150,COL-030,Plan,Jefatura,JEF-006,2026-10-31,2026-10-31,Cumplido,Medio,2026-10-31\r\nHITO-151,COL-031,Contrato,Personas,PER-003,2026-11-12,,Pendiente,Medio,2026-10-31\r\nHITO-152,COL-031,Equipo,TI,TI-002,2026-10-04,2026-10-02,Cumplido,Medio,2026-10-02\r\nHITO-153,COL-031,Acceso,TI,TI-003,2026-10-05,2026-10-05,Cumplido,Medio,2026-10-06\r\nHITO-154,COL-031,Reuni\xF3n,Jefatura,JEF-007,2026-10-09,2026-10-08,Cumplido,Bajo,2026-10-08\r\nHITO-155,COL-031,Plan,Jefatura,JEF-007,2026-11-03,2026-11-01,Cumplido,Medio,2026-11-02\r\nHITO-156,COL-032,Contrato,Personas,PER-004,2026-11-09,,Pendiente,Medio,2026-10-29\r\nHITO-157,COL-032,Equipo,TI,TI-003,2026-10-07,2026-10-06,Cumplido,Medio,2026-10-07\r\nHITO-158,COL-032,Acceso,TI,TI-004,2026-10-08,2026-10-06,Cumplido,Medio,2026-10-06\r\nHITO-159,COL-032,Reuni\xF3n,Jefatura,JEF-008,2026-10-12,2026-10-12,Cumplido,Bajo,2026-10-13\r\nHITO-160,COL-032,Plan,Jefatura,JEF-008,2026-11-06,2026-11-05,Cumplido,Medio,2026-11-05\r\nHITO-161,COL-033,Contrato,Personas,PER-001,2026-11-06,,Pendiente,Medio,2026-10-27\r\nHITO-162,COL-033,Equipo,TI,TI-004,2026-10-10,2026-10-10,Cumplido,Medio,2026-10-10\r\nHITO-163,COL-033,Acceso,TI,TI-005,2026-10-11,2026-10-10,Cumplido,Medio,2026-10-11\r\nHITO-164,COL-033,Reuni\xF3n,Jefatura,JEF-009,2026-10-15,2026-10-13,Cumplido,Bajo,2026-10-13\r\nHITO-165,COL-033,Plan,Jefatura,JEF-009,2026-11-09,2026-11-09,Cumplido,Medio,2026-11-10\r\nHITO-166,COL-034,Contrato,Personas,PER-002,2026-11-11,,Pendiente,Medio,2026-11-01\r\nHITO-167,COL-034,Equipo,TI,TI-005,2026-10-13,2026-10-11,Cumplido,Medio,2026-10-12\r\nHITO-168,COL-034,Acceso,TI,TI-006,2026-10-14,2026-10-14,Cumplido,Medio,2026-10-14\r\nHITO-169,COL-034,Reuni\xF3n,Jefatura,JEF-010,2026-10-18,2026-10-17,Cumplido,Bajo,2026-10-18\r\nHITO-170,COL-034,Plan,Jefatura,JEF-010,2026-11-12,2026-11-10,Cumplido,Medio,2026-11-10\r\nHITO-171,COL-035,Contrato,Personas,PER-003,2026-11-08,,Pendiente,Medio,2026-10-30\r\nHITO-172,COL-035,Equipo,TI,TI-006,2026-10-16,2026-10-15,Cumplido,Medio,2026-10-15\r\nHITO-173,COL-035,Acceso,TI,TI-001,2026-10-17,2026-10-15,Cumplido,Medio,2026-10-16\r\nHITO-174,COL-035,Reuni\xF3n,Jefatura,JEF-011,2026-10-21,2026-10-21,Cumplido,Bajo,2026-10-21\r\nHITO-175,COL-035,Plan,Jefatura,JEF-011,2026-11-15,2026-11-14,Cumplido,Medio,2026-11-15\r\nHITO-176,COL-036,Contrato,Personas,PER-004,2026-11-05,,Pendiente,Medio,2026-10-28\r\nHITO-177,COL-036,Equipo,TI,TI-001,2026-10-19,2026-10-19,Cumplido,Medio,2026-10-20\r\nHITO-178,COL-036,Acceso,TI,TI-002,2026-10-20,2026-10-19,Cumplido,Medio,2026-10-19\r\nHITO-179,COL-036,Reuni\xF3n,Jefatura,JEF-012,2026-10-24,2026-10-22,Cumplido,Bajo,2026-10-23\r\nHITO-180,COL-036,Plan,Jefatura,JEF-012,2026-11-18,2026-11-18,Cumplido,Medio,2026-11-18\r\nHITO-181,COL-037,Contrato,Personas,PER-001,2026-11-10,,Pendiente,Medio,2026-11-02\r\nHITO-182,COL-037,Equipo,TI,TI-002,2026-10-22,2026-10-20,Cumplido,Medio,2026-10-20\r\nHITO-183,COL-037,Acceso,TI,TI-003,2026-10-23,2026-10-23,Cumplido,Medio,2026-10-24\r\nHITO-184,COL-037,Reuni\xF3n,Jefatura,JEF-001,2026-10-27,2026-10-26,Cumplido,Bajo,2026-10-26\r\nHITO-185,COL-037,Plan,Jefatura,JEF-001,2026-11-21,2026-11-19,Cumplido,Medio,2026-11-20\r\nHITO-186,COL-038,Contrato,Personas,PER-002,2026-11-07,,Pendiente,Medio,2026-10-31\r\nHITO-187,COL-038,Equipo,TI,TI-003,2026-10-25,2026-10-24,Cumplido,Medio,2026-10-25\r\nHITO-188,COL-038,Acceso,TI,TI-004,2026-10-26,2026-10-24,Cumplido,Medio,2026-10-24\r\nHITO-189,COL-038,Reuni\xF3n,Jefatura,JEF-002,2026-10-30,2026-10-30,Cumplido,Bajo,2026-10-31\r\nHITO-190,COL-038,Plan,Jefatura,JEF-002,2026-11-24,2026-11-23,Cumplido,Medio,2026-11-23\r\nHITO-191,COL-039,Contrato,Personas,PER-003,2026-11-12,,Pendiente,Medio,2026-10-29\r\nHITO-192,COL-039,Equipo,TI,TI-004,2026-10-28,2026-10-28,Cumplido,Medio,2026-10-28\r\nHITO-193,COL-039,Acceso,TI,TI-005,2026-10-29,2026-10-28,Cumplido,Medio,2026-10-29\r\nHITO-194,COL-039,Reuni\xF3n,Jefatura,JEF-003,2026-11-02,2026-10-31,Cumplido,Bajo,2026-10-31\r\nHITO-195,COL-039,Plan,Jefatura,JEF-003,2026-11-27,2026-11-27,Cumplido,Medio,2026-11-28\r\nHITO-196,COL-040,Contrato,Personas,PER-004,2026-11-09,,Pendiente,Medio,2026-10-27\r\nHITO-197,COL-040,Equipo,TI,TI-005,2026-09-01,2026-08-30,Cumplido,Medio,2026-08-31\r\nHITO-198,COL-040,Acceso,TI,TI-006,2026-09-02,2026-09-02,Cumplido,Medio,2026-09-02\r\nHITO-199,COL-040,Reuni\xF3n,Jefatura,JEF-004,2026-09-06,2026-09-05,Cumplido,Bajo,2026-09-06\r\nHITO-200,COL-040,Plan,Jefatura,JEF-004,2026-10-01,,Cumplido,Medio,2026-09-29\r\nHITO-201,COL-041,Contrato,Personas,PER-001,2026-11-06,,Pendiente,Medio,2026-11-01\r\nHITO-202,COL-041,Equipo,TI,TI-006,2026-09-04,2026-09-03,Cumplido,Medio,2026-09-03\r\nHITO-203,COL-041,Acceso,TI,TI-001,2026-09-05,2026-09-03,Cumplido,Medio,2026-09-04\r\nHITO-204,COL-041,Reuni\xF3n,Jefatura,JEF-005,2026-09-09,2026-09-09,Cumplido,Bajo,2026-09-09\r\nHITO-205,COL-041,Plan,Jefatura,,2026-10-04,2026-10-03,Cumplido,Medio,2026-10-04\r\nHITO-206,COL-042,Contrato,Personas,PER-002,2026-11-11,,Pendiente,Medio,2026-10-30\r\nHITO-207,COL-042,Equipo,TI,TI-001,2026-09-07,2026-09-07,Cumplido,Medio,2026-09-08\r\nHITO-208,COL-042,Acceso,TI,TI-002,2026-09-08,2026-09-07,Cumplido,Medio,2026-09-07\r\nHITO-209,COL-042,Reuni\xF3n,Jefatura,JEF-006,2026-09-12,2026-09-10,Cumplido,Bajo,2026-09-11\r\nHITO-210,COL-042,Plan,Jefatura,JEF-006,2026-10-07,2026-10-07,Cumplido,Medio,2026-10-07\r\nHITO-211,COL-043,Contrato,Personas,PER-003,2026-11-08,,Pendiente,Medio,2026-10-28\r\nHITO-212,COL-043,Equipo,TI,TI-002,2026-09-10,2026-09-08,Cumplido,Medio,2026-09-08\r\nHITO-213,COL-043,Acceso,TI,TI-003,2026-09-11,2026-09-11,Cumplido,Medio,2026-09-12\r\nHITO-214,COL-043,Reuni\xF3n,Jefatura,JEF-007,2026-09-15,2026-09-14,Cumplido,Bajo,2026-09-14\r\nHITO-215,COL-043,Plan,Jefatura,JEF-007,2026-10-10,2026-10-08,Cumplido,Medio,2026-10-09\r\nHITO-216,COL-044,Contrato,Personas,PER-004,2026-11-05,,Pendiente,Medio,2026-11-02\r\nHITO-217,COL-044,Equipo,TI,TI-003,2026-09-13,2026-09-12,Cumplido,Medio,2026-09-13\r\nHITO-218,COL-044,Acceso,TI,TI-004,2026-09-14,2026-09-12,Cumplido,Medio,2026-09-12\r\nHITO-219,COL-044,Reuni\xF3n,Jefatura,JEF-008,2026-09-18,2026-09-18,Cumplido,Bajo,2026-09-19\r\nHITO-220,COL-044,Plan,Jefatura,JEF-008,2026-10-13,2026-10-12,Cumplido,Medio,2026-10-12\r\nHITO-221,COL-045,Contrato,Personas,PER-001,2026-11-10,,Pendiente,Medio,2026-10-31\r\nHITO-222,COL-045,Equipo,TI,TI-004,2026-09-16,2026-09-16,Cumplido,Medio,2026-09-16\r\nHITO-223,COL-045,Acceso,TI,TI-005,2026-09-17,2026-09-16,Cumplido,Medio,2026-09-17\r\nHITO-224,COL-045,Reuni\xF3n,Jefatura,JEF-009,2026-09-21,2026-09-19,Cumplido,Bajo,2026-09-19\r\nHITO-225,COL-045,Plan,Jefatura,JEF-009,2026-10-16,2026-10-16,Cumplido,Medio,2026-10-17\r\nHITO-226,COL-046,Contrato,Personas,PER-002,2026-09-19,2026-09-18,Cumplido,Bajo,2026-09-18\r\nHITO-227,COL-046,Equipo,TI,TI-005,2026-09-19,2026-09-17,Cumplido,Medio,2026-09-18\r\nHITO-228,COL-046,Acceso,TI,TI-006,2026-09-20,2026-09-20,Cumplido,Medio,2026-09-20\r\nHITO-229,COL-046,Reuni\xF3n,Jefatura,JEF-010,2026-09-24,2026-09-23,Cumplido,Bajo,2026-09-24\r\nHITO-230,COL-046,Plan,Jefatura,JEF-010,2026-10-19,2026-10-17,Cumplido,Medio,2026-10-17\r\nHITO-231,COL-047,Contrato,Personas,PER-003,2026-09-22,2026-09-22,Cumplido,Bajo,2026-09-23\r\nHITO-232,COL-047,Equipo,TI,TI-006,2026-09-22,2026-09-21,Cumplido,Medio,2026-09-21\r\nHITO-233,COL-047,Acceso,TI,TI-001,2026-09-23,2026-09-21,Cumplido,Medio,2026-09-22\r\nHITO-234,COL-047,Reuni\xF3n,Jefatura,JEF-011,2026-09-27,2026-09-27,Cumplido,Bajo,2026-09-27\r\nHITO-235,COL-047,Plan,Jefatura,JEF-011,2026-10-22,2026-10-21,Cumplido,Medio,2026-10-22\r\nHITO-236,COL-048,Contrato,Personas,PER-004,2026-09-25,2026-09-23,Cumplido,Bajo,2026-09-23\r\nHITO-237,COL-048,Equipo,TI,TI-001,2026-09-25,2026-09-25,Cumplido,Medio,2026-09-26\r\nHITO-238,COL-048,Acceso,TI,TI-002,2026-09-26,2026-09-25,Cumplido,Medio,2026-09-25\r\nHITO-239,COL-048,Reuni\xF3n,Jefatura,JEF-012,2026-09-30,2026-09-28,Cumplido,Bajo,2026-09-29\r\nHITO-240,COL-048,Plan,Jefatura,JEF-012,2026-10-25,2026-10-25,Cumplido,Medio,2026-10-25\r\nHITO-241,COL-049,Contrato,Personas,PER-001,2026-09-28,2026-09-27,Cumplido,Bajo,2026-09-28\r\nHITO-242,COL-049,Equipo,TI,TI-002,2026-09-28,2026-09-26,Cumplido,Medio,2026-09-26\r\nHITO-243,COL-049,Acceso,TI,TI-003,2026-09-29,2026-09-29,Cumplido,Medio,2026-09-30\r\nHITO-244,COL-049,Reuni\xF3n,Jefatura,JEF-001,2026-10-03,2026-10-02,Cumplido,Bajo,2026-10-02\r\nHITO-245,COL-049,Plan,Jefatura,JEF-001,2026-10-28,2026-10-26,Cumplido,Medio,2026-10-27\r\nHITO-246,COL-050,Contrato,Personas,PER-002,2026-10-01,2026-10-01,Cumplido,Bajo,2026-10-01\r\nHITO-247,COL-050,Equipo,TI,TI-003,2026-10-01,2026-09-30,Cumplido,Medio,2026-10-01\r\nHITO-248,COL-050,Acceso,TI,TI-004,2026-10-02,2026-09-30,Cumplido,Medio,2026-09-30\r\nHITO-249,COL-050,Reuni\xF3n,Jefatura,JEF-002,2026-10-06,2026-10-06,Cumplido,Bajo,2026-10-07\r\nHITO-250,COL-050,Plan,Jefatura,JEF-002,2026-10-31,2026-10-30,Cumplido,Medio,2026-10-30\r\nHITO-251,COL-051,Contrato,Personas,PER-003,2026-10-04,2026-10-02,Cumplido,Bajo,2026-10-03\r\nHITO-252,COL-051,Equipo,TI,TI-004,2026-10-04,2026-10-04,Cumplido,Medio,2026-10-04\r\nHITO-253,COL-051,Acceso,TI,TI-005,2026-10-05,2026-10-04,Cumplido,Medio,2026-10-05\r\nHITO-254,COL-051,Reuni\xF3n,Jefatura,JEF-003,2026-10-09,2026-10-07,Cumplido,Bajo,2026-10-07\r\nHITO-255,COL-051,Plan,Jefatura,JEF-003,2026-11-03,2026-11-03,Cumplido,Medio,2026-11-04\r\nHITO-256,COL-052,Contrato,Personas,PER-004,2026-10-07,2026-10-06,Cumplido,Bajo,2026-10-06\r\nHITO-257,COL-052,Equipo,TI,TI-005,2026-10-07,2026-10-05,Cumplido,Medio,2026-10-06\r\nHITO-258,COL-052,Acceso,TI,TI-006,2026-10-08,2026-10-08,Cumplido,Medio,2026-10-08\r\nHITO-259,COL-052,Reuni\xF3n,Jefatura,,2026-10-12,2026-10-11,Cumplido,Bajo,2026-10-12\r\nHITO-260,COL-052,Plan,Jefatura,JEF-004,2026-11-06,2026-11-04,Cumplido,Medio,2026-11-04\r\nHITO-261,COL-053,Contrato,Personas,PER-001,2026-10-10,2026-10-10,Cumplido,Bajo,2026-10-11\r\nHITO-262,COL-053,Equipo,TI,TI-006,2026-10-10,2026-10-09,Cumplido,Medio,2026-10-09\r\nHITO-263,COL-053,Acceso,TI,TI-001,2026-10-11,2026-10-09,Cumplido,Medio,2026-10-10\r\nHITO-264,COL-053,Reuni\xF3n,Jefatura,JEF-005,2026-10-15,2026-10-15,Cumplido,Bajo,2026-10-15\r\nHITO-265,COL-053,Plan,Jefatura,JEF-005,2026-11-09,2026-11-08,Cumplido,Medio,2026-11-09\r\nHITO-266,COL-054,Contrato,Personas,PER-002,2026-10-13,2026-10-11,Cumplido,Bajo,2026-10-11\r\nHITO-267,COL-054,Equipo,TI,TI-001,2026-10-13,2026-10-13,Cumplido,Medio,2026-10-14\r\nHITO-268,COL-054,Acceso,TI,TI-002,2026-10-14,2026-10-13,Cumplido,Medio,2026-10-13\r\nHITO-269,COL-054,Reuni\xF3n,Jefatura,JEF-006,2026-10-18,2026-10-16,Cumplido,Bajo,2026-10-17\r\nHITO-270,COL-054,Plan,Jefatura,JEF-006,2026-11-12,2026-11-12,Cumplido,Medio,2026-11-12\r\nHITO-271,COL-055,Contrato,Personas,PER-003,2026-10-16,2026-10-15,Cumplido,Bajo,2026-10-16\r\nHITO-272,COL-055,Equipo,TI,TI-002,2026-10-16,2026-10-14,Cumplido,Medio,2026-10-14\r\nHITO-273,COL-055,Acceso,TI,TI-003,2026-10-17,2026-10-17,Cumplido,Medio,2026-10-18\r\nHITO-274,COL-055,Reuni\xF3n,Jefatura,JEF-007,2026-10-21,2026-10-20,Cumplido,Bajo,2026-10-20\r\nHITO-275,COL-055,Plan,Jefatura,JEF-007,2026-11-15,,Cumplido,Medio,2026-11-14\r\nHITO-276,COL-056,Contrato,Personas,PER-004,2026-10-19,2026-10-19,Cumplido,Bajo,2026-10-19\r\nHITO-277,COL-056,Equipo,TI,TI-003,2026-10-19,2026-10-18,Cumplido,Medio,2026-10-19\r\nHITO-278,COL-056,Acceso,TI,TI-004,2026-10-20,2026-10-18,Cumplido,Medio,2026-10-18\r\nHITO-279,COL-056,Reuni\xF3n,Jefatura,JEF-008,2026-10-24,2026-10-24,Cumplido,Bajo,2026-10-25\r\nHITO-280,COL-056,Plan,Jefatura,JEF-008,2026-11-18,2026-11-17,Cumplido,Medio,2026-11-17\r\nHITO-281,COL-057,Contrato,Personas,PER-001,2026-10-22,2026-10-20,Cumplido,Bajo,2026-10-21\r\nHITO-282,COL-057,Equipo,TI,TI-004,2026-10-22,2026-10-22,Cumplido,Medio,2026-10-22\r\nHITO-283,COL-057,Acceso,TI,TI-005,2026-10-23,2026-10-22,Cumplido,Medio,2026-10-23\r\nHITO-284,COL-057,Reuni\xF3n,Jefatura,JEF-009,2026-10-27,2026-10-25,Cumplido,Bajo,2026-10-25\r\nHITO-285,COL-057,Plan,Jefatura,JEF-009,2026-11-21,2026-11-21,Cumplido,Medio,2026-11-22\r\nHITO-286,COL-058,Contrato,Personas,PER-002,2026-10-25,2026-10-24,Cumplido,Bajo,2026-10-24\r\nHITO-287,COL-058,Equipo,TI,TI-005,2026-10-25,2026-10-23,Cumplido,Medio,2026-10-24\r\nHITO-288,COL-058,Acceso,TI,TI-006,2026-10-26,2026-10-26,Cumplido,Medio,2026-10-26\r\nHITO-289,COL-058,Reuni\xF3n,Jefatura,JEF-010,2026-10-30,2026-10-29,Cumplido,Bajo,2026-10-30\r\nHITO-290,COL-058,Plan,Jefatura,JEF-010,2026-11-24,2026-11-22,Cumplido,Medio,2026-11-22\r\nHITO-291,COL-059,Contrato,Personas,PER-003,2026-10-28,2026-10-28,Cumplido,Bajo,2026-10-29\r\nHITO-292,COL-059,Equipo,TI,TI-006,2026-10-28,2026-10-27,Cumplido,Medio,2026-10-27\r\nHITO-293,COL-059,Acceso,TI,TI-001,2026-10-29,2026-10-27,Cumplido,Medio,2026-10-28\r\nHITO-294,COL-059,Reuni\xF3n,Jefatura,JEF-011,2026-11-02,2026-11-02,Cumplido,Bajo,2026-11-02\r\nHITO-295,COL-059,Plan,Jefatura,JEF-011,2026-11-27,2026-11-26,Cumplido,Medio,2026-11-27\r\nHITO-296,COL-060,Contrato,Personas,PER-004,2026-09-01,2026-08-30,Cumplido,Bajo,2026-08-30\r\nHITO-297,COL-060,Equipo,TI,TI-001,2026-09-01,2026-09-01,Cumplido,Medio,2026-09-02\r\nHITO-298,COL-060,Acceso,TI,TI-002,2026-09-02,2026-09-01,Cumplido,Medio,2026-09-01\r\nHITO-299,COL-060,Reuni\xF3n,Jefatura,JEF-012,2026-09-06,2026-09-04,Cumplido,Bajo,2026-09-05\r\nHITO-300,COL-060,Plan,Jefatura,JEF-012,2026-10-01,2026-10-01,Cumplido,Medio,2026-10-01\r\n", "usuarios": "\uFEFFusuario_id,nombre_ficticio,rol,area,equipo_asignado,puede_ver_datos_personales,puede_editar_hitos,puede_asignar_responsables,puede_ver_metricas\r\nCOL-001,Alex Rojas,Colaborador,Personas,COL-001,S\xED,No,No,No\r\nCOL-002,Camila Rojas,Colaborador,Operaciones,COL-002,S\xED,No,No,No\r\nCOL-003,Daniel Rojas,Colaborador,Tecnolog\xEDa,COL-003,S\xED,No,No,No\r\nCOL-004,Emilia Rojas,Colaborador,Comercial,COL-004,S\xED,No,No,No\r\nCOL-005,Felipe Rojas,Colaborador,Personas,COL-005,S\xED,No,No,No\r\nCOL-006,Gabriela Rojas,Colaborador,Operaciones,COL-006,S\xED,No,No,No\r\nCOL-007,Hugo Rojas,Colaborador,Tecnolog\xEDa,COL-007,S\xED,No,No,No\r\nCOL-008,Isidora Rojas,Colaborador,Comercial,COL-008,S\xED,No,No,No\r\nCOL-009,Javier Rojas,Colaborador,Personas,COL-009,S\xED,No,No,No\r\nCOL-010,Karina Rojas,Colaborador,Operaciones,COL-010,S\xED,No,No,No\r\nCOL-011,Lucas Rojas,Colaborador,Tecnolog\xEDa,COL-011,S\xED,No,No,No\r\nCOL-012,Martina Rojas,Colaborador,Comercial,COL-012,S\xED,No,No,No\r\nCOL-013,Alex Soto,Colaborador,Personas,COL-013,S\xED,No,No,No\r\nCOL-014,Camila Soto,Colaborador,Operaciones,COL-014,S\xED,No,No,No\r\nCOL-015,Daniel Soto,Colaborador,Tecnolog\xEDa,COL-015,S\xED,No,No,No\r\nCOL-016,Emilia Soto,Colaborador,Comercial,COL-016,S\xED,No,No,No\r\nCOL-017,Felipe Soto,Colaborador,Personas,COL-017,S\xED,No,No,No\r\nCOL-018,Gabriela Soto,Colaborador,Operaciones,COL-018,S\xED,No,No,No\r\nCOL-019,Hugo Soto,Colaborador,Tecnolog\xEDa,COL-019,S\xED,No,No,No\r\nCOL-020,Isidora Soto,Colaborador,Comercial,COL-020,S\xED,No,No,No\r\nCOL-021,Javier Soto,Colaborador,Personas,COL-021,S\xED,No,No,No\r\nCOL-022,Karina Soto,Colaborador,Operaciones,COL-022,S\xED,No,No,No\r\nCOL-023,Lucas Soto,Colaborador,Tecnolog\xEDa,COL-023,S\xED,No,No,No\r\nCOL-024,Martina Soto,Colaborador,Comercial,COL-024,S\xED,No,No,No\r\nCOL-025,Alex Vega,Colaborador,Personas,COL-025,S\xED,No,No,No\r\nCOL-026,Camila Vega,Colaborador,Operaciones,COL-026,S\xED,No,No,No\r\nCOL-027,Daniel Vega,Colaborador,Tecnolog\xEDa,COL-027,S\xED,No,No,No\r\nCOL-028,Emilia Vega,Colaborador,Comercial,COL-028,S\xED,No,No,No\r\nCOL-029,Felipe Vega,Colaborador,Personas,COL-029,S\xED,No,No,No\r\nCOL-030,Gabriela Vega,Colaborador,Operaciones,COL-030,S\xED,No,No,No\r\nCOL-031,Hugo Vega,Colaborador,Tecnolog\xEDa,COL-031,S\xED,No,No,No\r\nCOL-032,Isidora Vega,Colaborador,Comercial,COL-032,S\xED,No,No,No\r\nCOL-033,Javier Vega,Colaborador,Personas,COL-033,S\xED,No,No,No\r\nCOL-034,Karina Vega,Colaborador,Operaciones,COL-034,S\xED,No,No,No\r\nCOL-035,Lucas Vega,Colaborador,Tecnolog\xEDa,COL-035,S\xED,No,No,No\r\nCOL-036,Martina Vega,Colaborador,Comercial,COL-036,S\xED,No,No,No\r\nCOL-037,Alex Paredes,Colaborador,Personas,COL-037,S\xED,No,No,No\r\nCOL-038,Camila Paredes,Colaborador,Operaciones,COL-038,S\xED,No,No,No\r\nCOL-039,Daniel Paredes,Colaborador,Tecnolog\xEDa,COL-039,S\xED,No,No,No\r\nCOL-040,Emilia Paredes,Colaborador,Comercial,COL-040,S\xED,No,No,No\r\nCOL-041,Felipe Paredes,Colaborador,Personas,COL-041,S\xED,No,No,No\r\nCOL-042,Gabriela Paredes,Colaborador,Operaciones,COL-042,S\xED,No,No,No\r\nCOL-043,Hugo Paredes,Colaborador,Tecnolog\xEDa,COL-043,S\xED,No,No,No\r\nCOL-044,Isidora Paredes,Colaborador,Comercial,COL-044,S\xED,No,No,No\r\nCOL-045,Javier Paredes,Colaborador,Personas,COL-045,S\xED,No,No,No\r\nCOL-046,Karina Paredes,Colaborador,Operaciones,COL-046,S\xED,No,No,No\r\nCOL-047,Lucas Paredes,Colaborador,Tecnolog\xEDa,COL-047,S\xED,No,No,No\r\nCOL-048,Martina Paredes,Colaborador,Comercial,COL-048,S\xED,No,No,No\r\nCOL-049,Alex Molina,Colaborador,Personas,COL-049,S\xED,No,No,No\r\nCOL-050,Camila Molina,Colaborador,Operaciones,COL-050,S\xED,No,No,No\r\nCOL-051,Daniel Molina,Colaborador,Tecnolog\xEDa,COL-051,S\xED,No,No,No\r\nCOL-052,Emilia Molina,Colaborador,Comercial,COL-052,S\xED,No,No,No\r\nCOL-053,Felipe Molina,Colaborador,Personas,COL-053,S\xED,No,No,No\r\nCOL-054,Gabriela Molina,Colaborador,Operaciones,COL-054,S\xED,No,No,No\r\nCOL-055,Hugo Molina,Colaborador,Tecnolog\xEDa,COL-055,S\xED,No,No,No\r\nCOL-056,Isidora Molina,Colaborador,Comercial,COL-056,S\xED,No,No,No\r\nCOL-057,Javier Molina,Colaborador,Personas,COL-057,S\xED,No,No,No\r\nCOL-058,Karina Molina,Colaborador,Operaciones,COL-058,S\xED,No,No,No\r\nCOL-059,Lucas Molina,Colaborador,Tecnolog\xEDa,COL-059,S\xED,No,No,No\r\nCOL-060,Martina Molina,Colaborador,Comercial,COL-060,S\xED,No,No,No\r\nJEF-001,Emilia Jefatura 01,Jefatura,Personas,COL-001|COL-013|COL-025|COL-037|COL-049,S\xED,S\xED,No,S\xED\r\nJEF-002,Felipe Jefatura 02,Jefatura,Operaciones,COL-002|COL-014|COL-026|COL-038|COL-050,S\xED,S\xED,No,S\xED\r\nJEF-003,Gabriela Jefatura 03,Jefatura,Tecnolog\xEDa,COL-003|COL-015|COL-027|COL-039|COL-051,S\xED,S\xED,No,S\xED\r\nJEF-004,Hugo Jefatura 04,Jefatura,Comercial,COL-004|COL-016|COL-028|COL-040|COL-052,S\xED,S\xED,No,S\xED\r\nJEF-005,Isidora Jefatura 05,Jefatura,Personas,COL-005|COL-017|COL-029|COL-041|COL-053,S\xED,S\xED,No,S\xED\r\nJEF-006,Javier Jefatura 06,Jefatura,Operaciones,COL-006|COL-018|COL-030|COL-042|COL-054,S\xED,S\xED,No,S\xED\r\nJEF-007,Karina Jefatura 07,Jefatura,Tecnolog\xEDa,COL-007|COL-031|COL-043|COL-055,S\xED,S\xED,No,S\xED\r\nJEF-008,Lucas Jefatura 08,Jefatura,Comercial,COL-008|COL-020|COL-032|COL-044|COL-056,S\xED,S\xED,No,S\xED\r\nJEF-009,Martina Jefatura 09,Jefatura,Personas,COL-009|COL-021|COL-033|COL-045|COL-057,S\xED,S\xED,No,S\xED\r\nJEF-010,Alex Jefatura 10,Jefatura,Operaciones,COL-010|COL-022|COL-034|COL-046|COL-058,S\xED,S\xED,No,S\xED\r\nJEF-011,Camila Jefatura 11,Jefatura,Tecnolog\xEDa,COL-011|COL-023|COL-035|COL-047|COL-059,S\xED,S\xED,No,S\xED\r\nJEF-012,Daniel Jefatura 12,Jefatura,Comercial,COL-012|COL-024|COL-036|COL-048|COL-060,S\xED,S\xED,No,S\xED\r\nPER-001,Hugo Personas 01,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-002,Isidora Personas 02,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-003,Javier Personas 03,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-004,Karina Personas 04,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nTI-001,Karina Soporte TI 01,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-002,Lucas Soporte TI 02,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-003,Martina Soporte TI 03,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-004,Alex Soporte TI 04,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-005,Camila Soporte TI 05,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-006,Daniel Soporte TI 06,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nADM-001,Renata Administraci\xF3n 01,Administrador,Administraci\xF3n,Todos los usuarios,S\xED,S\xED,S\xED,S\xED\r\nADM-002,Tom\xE1s Administraci\xF3n 02,Administrador,Administraci\xF3n,Todos los usuarios,S\xED,S\xED,S\xED,S\xED\r\n", "catalogo": "\uFEFFtipo_hito,responsable_inicial,plazo_ficticio,criticidad\r\nContrato,Personas,Antes del d\xEDa 1,Alta\r\nEquipo,TI,D\xEDa 1,Alta\r\nAcceso,TI,D\xEDa 1,Alta\r\nReuni\xF3n,Jefatura,Primera semana,Media\r\nPlan,Jefatura,Primera semana,Media\r\n" };
 
   // src/main.js
-  var base = {
-    colaboradores: parseCSV(data_generated_default.colaboradores),
-    hitos: parseCSV(data_generated_default.hitos),
-    usuarios: parseCSV(data_generated_default.usuarios),
-    catalogo: parseCSV(data_generated_default.catalogo)
-  };
-  mount(document.getElementById("app"), crearStore(base));
+  var app = document.getElementById("app");
+  try {
+    const base = {
+      colaboradores: parseCSV(data_generated_default.colaboradores),
+      hitos: parseCSV(data_generated_default.hitos),
+      usuarios: parseCSV(data_generated_default.usuarios),
+      catalogo: parseCSV(data_generated_default.catalogo)
+    };
+    mount(app, crearStore(base));
+  } catch (err) {
+    console.error(err);
+    app.innerHTML = '<main class="wrap"><section class="card"><h1>No se pudo iniciar Sprint</h1><p>Los datos de base no se pudieron leer. Vuelve a generar la p\xE1gina con <code>npm run build</code>.</p></section></main>';
+  }
 })();
 </script>
