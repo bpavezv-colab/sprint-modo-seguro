@@ -788,6 +788,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     { cap: "Reasignar responsable", Colaborador: "No", Jefatura: "No", TI: "Entre cuentas TI, solo hitos t\xE9cnicos", Personas: "S\xED, con motivo" },
     { cap: "Ver m\xE9tricas", Colaborador: "No", Jefatura: "Agregadas de su equipo", TI: "Agregadas t\xE9cnicas", Personas: "Agregadas globales" },
     { cap: "Ver reportes sensibles", Colaborador: "Crea los suyos", Jefatura: "No", TI: "No", Personas: "S\xED" },
+    { cap: "Asistencia a la inducci\xF3n", Colaborador: "Ve su citaci\xF3n, confirma o pide otro horario", Jefatura: "Solo el estado (sin horas)", TI: "No", Personas: "Cita y registra entrada y salida" },
     { cap: "Editar fecha l\xEDmite", Colaborador: "No", Jefatura: "No", TI: "No", Personas: "No (no se ocultan atrasos)" }
   ];
 
@@ -897,9 +898,14 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     reconfirmacion: "Reconfirmaci\xF3n",
     sin_tareas: "Sin tareas asignadas",
     proximo_ingreso: "Pr\xF3ximo ingreso",
-    nuevo_ingreso: "Nuevo ingreso registrado por RR.HH."
+    nuevo_ingreso: "Nuevo ingreso registrado por RR.HH.",
+    induccion_sin_citar: "Inducci\xF3n sin citar",
+    induccion_por_registrar: "Asistencia por registrar",
+    induccion_reprogramar: "Reprogramar inducci\xF3n",
+    induccion_no_asistio: "Inasistencia a inducci\xF3n",
+    induccion_jefatura: "Inducci\xF3n pendiente"
   };
-  var AVISOS_JEFATURA = ["nuevo_ingreso", "proximo_ingreso", "sin_tareas", "ficha_sin_enviar"];
+  var AVISOS_JEFATURA = ["nuevo_ingreso", "proximo_ingreso", "sin_tareas", "ficha_sin_enviar", "induccion_jefatura"];
   var tareasFaltantes = (f) => [1, 2, 3].filter((i) => !f || !String(f[`tarea_${i}`] ?? "").trim()).length;
   var NIVEL_NORM = { Alta: "Alta", Alto: "Alta", Media: "Media", Medio: "Media", Baja: "Baja", Bajo: "Baja", Urgente: "Urgente" };
   var normNivel = (v) => NIVEL_NORM[v] || null;
@@ -1199,6 +1205,141 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     }
   };
 
+  // src/induccion.js
+  var CONFIG_INDUCCION = {
+    lineaBase: 91,
+    // % de asistencia a la inducción general informado en el dossier (Prueba 1)
+    toleranciaMin: 15,
+    // minutos de holgura para llegar tarde o salir antes sin marcar "parcial"
+    diasReprogramar: 2,
+    // plazo para reprogramar a quien no asistió o se retiró antes
+    diasCitarAntes: 14,
+    // se alerta "sin citación" a quienes ingresan en 14 días o menos…
+    diasCitarDespues: 7
+    // …o ingresaron hace 7 días o menos
+  };
+  var ESTADOS_INDUCCION = {
+    sin_citar: "Sin citaci\xF3n",
+    citada: "Citada",
+    confirmada: "Confirm\xF3 asistencia",
+    reprogramacion: "Pidi\xF3 otro horario",
+    por_registrar: "Falta registrar asistencia",
+    completa: "Asisti\xF3 completa",
+    parcial: "Asisti\xF3 parcial",
+    no_asistio: "No asisti\xF3"
+  };
+  var MOTIVOS_REPROGRAMAR = { turno: "Choca con mi turno", horario: "El horario no me acomoda", aviso: "Me avisaron con poca anticipaci\xF3n", otro: "Otro" };
+  var TONO_INDUCCION = { sin_citar: "neutral", citada: "neutral", confirmada: "ok", reprogramacion: "warn", por_registrar: "warn", completa: "ok", parcial: "warn", no_asistio: "bad" };
+  var esHora = (v) => typeof v === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+  var aMin = (v) => esHora(v) ? Number(v.slice(0, 2)) * 60 + Number(v.slice(3)) : null;
+  function estadoInduccion(r, hoy, cfg = CONFIG_INDUCCION) {
+    if (!r || !isISO(r.fecha)) return { estado: "sin_citar" };
+    if (r.no_asistio) return { estado: "no_asistio" };
+    if (esHora(r.entrada)) {
+      const atraso = Math.max(0, aMin(r.entrada) - aMin(r.inicio));
+      const salidaAntes = esHora(r.salida) ? Math.max(0, aMin(r.fin) - aMin(r.salida)) : null;
+      if (salidaAntes === null) return { estado: r.fecha < hoy ? "por_registrar" : "citada", atraso, enCurso: true };
+      const parcial = atraso > cfg.toleranciaMin || salidaAntes > cfg.toleranciaMin;
+      const minutos = aMin(r.salida) - aMin(r.entrada);
+      return { estado: parcial ? "parcial" : "completa", atraso, salidaAntes, minutos, duracion: aMin(r.fin) - aMin(r.inicio) };
+    }
+    if (r.fecha < hoy) return { estado: "por_registrar" };
+    if (r.reprogramacion) return { estado: "reprogramacion" };
+    return { estado: r.confirmada ? "confirmada" : "citada" };
+  }
+  function alertasInduccion({ colabs, inducciones, hoy, nombreDe: nombreDe2 = (id) => id, cfg = CONFIG_INDUCCION }) {
+    const out = [];
+    const personas = { tipo: "Personas", id: null, origen: "regla", etiqueta: "Personas" };
+    const jefe = (c) => c.jefatura_id ? { tipo: "Jefatura", id: c.jefatura_id, origen: "colaborador", etiqueta: `${nombreDe2(c.jefatura_id)} (${c.jefatura_id})` } : null;
+    const add = (a) => out.push({ ...a, id: `${a.tipo}:${a.clave}` });
+    for (const c of colabs) {
+      const id = c.colaborador_id;
+      const r = inducciones[id];
+      const e = estadoInduccion(r, hoy, cfg);
+      const d = isISO(c.fecha_ingreso) ? diffDays(c.fecha_ingreso, hoy) : null;
+      if (e.estado === "sin_citar" && d !== null && d <= cfg.diasCitarAntes && d >= -cfg.diasCitarDespues) {
+        add({
+          tipo: "induccion_sin_citar",
+          clave: id,
+          colaborador_id: id,
+          titulo: "Sin citaci\xF3n a la inducci\xF3n",
+          responsable: personas,
+          accion_requerida: "Citar a la persona a una sesi\xF3n de inducci\xF3n general.",
+          plazo: d > 0 ? addDays(c.fecha_ingreso, -1) : hoy,
+          prioridad: d <= 2 ? "Alta" : "Media"
+        });
+      }
+      if (e.estado === "por_registrar") {
+        add({
+          tipo: "induccion_por_registrar",
+          clave: id,
+          colaborador_id: id,
+          titulo: "Inducci\xF3n sin registro de asistencia",
+          responsable: personas,
+          accion_requerida: "Registrar la hora de entrada y salida, o marcar que no asisti\xF3. No se supone la asistencia.",
+          plazo: addDays(r.fecha, 1),
+          prioridad: "Media"
+        });
+      }
+      if (e.estado === "reprogramacion") {
+        add({
+          tipo: "induccion_reprogramar",
+          clave: id,
+          colaborador_id: id,
+          titulo: `Pidi\xF3 otro horario: ${MOTIVOS_REPROGRAMAR[r.reprogramacion] || "Otro"}`,
+          responsable: personas,
+          accion_requerida: "Ofrecer otra sesi\xF3n de inducci\xF3n y coordinar con la jefatura para liberar su turno.",
+          plazo: addDays(hoy, 1),
+          prioridad: "Alta"
+        });
+      }
+      if (e.estado === "no_asistio" || e.estado === "parcial") {
+        const titulo = e.estado === "no_asistio" ? "No asisti\xF3 a la inducci\xF3n" : `Inducci\xF3n incompleta${e.atraso > cfg.toleranciaMin ? ` \xB7 lleg\xF3 ${e.atraso} min tarde` : ""}${e.salidaAntes > cfg.toleranciaMin ? ` \xB7 sali\xF3 ${e.salidaAntes} min antes` : ""}`;
+        add({
+          tipo: "induccion_no_asistio",
+          clave: id,
+          colaborador_id: id,
+          titulo,
+          responsable: personas,
+          accion_requerida: e.estado === "no_asistio" ? "Contactar a la persona y reprogramar la inducci\xF3n." : "Reprogramar la parte pendiente de la inducci\xF3n.",
+          plazo: addDays(r.fecha, cfg.diasReprogramar),
+          prioridad: "Alta"
+        });
+        const j = jefe(c);
+        if (j) add({
+          tipo: "induccion_jefatura",
+          clave: id,
+          colaborador_id: id,
+          titulo: e.estado === "no_asistio" ? "No asisti\xF3 a la inducci\xF3n" : "Inducci\xF3n incompleta",
+          responsable: j,
+          accion_requerida: "Personas reprograma la sesi\xF3n. Coordina que su turno le permita asistir completa.",
+          plazo: addDays(r.fecha, cfg.diasReprogramar),
+          prioridad: "Media"
+        });
+      }
+    }
+    return out;
+  }
+  function indicadorInduccion({ colabs, inducciones, hoy, cfg = CONFIG_INDUCCION }) {
+    const est = colabs.map((c) => ({ c, e: estadoInduccion(inducciones[c.colaborador_id], hoy, cfg) }));
+    const cuenta = (k) => est.filter((x) => x.e.estado === k).length;
+    const registradas = cuenta("completa") + cuenta("parcial") + cuenta("no_asistio");
+    const asistieron = cuenta("completa") + cuenta("parcial");
+    return {
+      citadas: est.filter((x) => x.e.estado !== "sin_citar").length,
+      sinCitar: cuenta("sin_citar"),
+      porRegistrar: cuenta("por_registrar"),
+      reprogramacion: cuenta("reprogramacion"),
+      completas: cuenta("completa"),
+      parciales: cuenta("parcial"),
+      noAsistio: cuenta("no_asistio"),
+      registradas,
+      pctAsistencia: registradas ? Math.round(asistieron / registradas * 100) : null,
+      pctCompleta: registradas ? Math.round(cuenta("completa") / registradas * 100) : null,
+      lineaBase: cfg.lineaBase
+    };
+  }
+
   // src/store.js
   var limpiar = (v, max = 200) => {
     const t = String(v ?? "").trim().slice(0, max);
@@ -1226,6 +1367,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       alertaEstados: {},
       nuevosIngresos: [],
       avisosVistos: {},
+      inducciones: {},
       // Ficha de Ingreso (solo en memoria)
       almacenamientoLimpio: limpiarPersistenciaAnterior()
     };
@@ -1239,7 +1381,10 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
       const nombre = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
       s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
-      s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos).map((a) => ({ ...a, estado: s.alertaEstados[a.id]?.estado || "abierta", gestion: s.alertaEstados[a.id] || null }));
+      s.alertasFicha = [
+        ...s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos),
+        ...alertasInduccion({ colabs: s.data.colaboradores, inducciones: s.inducciones, hoy: s.hoy, nombreDe: nombre })
+      ].map((a) => ({ ...a, estado: s.alertaEstados[a.id]?.estado || "abierta", gestion: s.alertaEstados[a.id] || null }));
     }
     const reloj = () => `${s.hoy}T${(/* @__PURE__ */ new Date()).toTimeString().slice(0, 8)}`;
     const nombreDe2 = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
@@ -1581,10 +1726,130 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         log("aviso_visto", alertaId, a.titulo, "ok", { entidad: "aviso", campo: "visto", valor_anterior: false, valor_nuevo: true });
         return { ok: true };
       },
+      // ================= Asistencia a la inducción =================
+      // Jefatura ve solo el estado; la hora de entrada/salida y el motivo de reprogramación, solo la persona y Personas.
+      vistaInduccion(colId) {
+        const u = s.user;
+        if (!u || !s.auth.cuentaValida(u) || !s.idx.colab.has(colId)) return null;
+        const propio = u.rol === "Colaborador" && u.usuario_id === colId && s.auth.enAlcance(u, colId);
+        const personas = s.auth.esPersonas(u) && s.auth.enAlcance(u, colId);
+        const jefatura = u.rol === "Jefatura" && s.auth.enAlcance(u, colId);
+        if (!propio && !personas && !jefatura) return null;
+        const r = s.inducciones[colId] || null;
+        const e = estadoInduccion(r, s.hoy);
+        const det = propio || personas;
+        return {
+          colaborador_id: colId,
+          estado: e.estado,
+          texto: ESTADOS_INDUCCION[e.estado],
+          fecha: r?.fecha ?? null,
+          inicio: r?.inicio ?? null,
+          fin: r?.fin ?? null,
+          confirmada: !!r?.confirmada,
+          entrada: det ? r?.entrada ?? null : void 0,
+          salida: det ? r?.salida ?? null : void 0,
+          motivo: det ? r?.reprogramacion ?? null : void 0,
+          atraso: det ? e.atraso : void 0,
+          salidaAntes: det ? e.salidaAntes : void 0,
+          minutos: det ? e.minutos : void 0,
+          duracion: det ? e.duracion : void 0,
+          previas: det ? r?.sesiones_previas || 0 : void 0
+        };
+      },
+      induccionesEquipo() {
+        const u = s.user;
+        if (!u || !(s.auth.esPersonas(u) || u.rol === "Jefatura")) return [];
+        return [...s.auth.scope(u)].map((id) => api.vistaInduccion(id)).filter(Boolean);
+      },
+      citarInduccion(colId, fecha, inicio, fin) {
+        const u = s.user;
+        if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar("citar_induccion", colId, "Solo Personas cita a la inducci\xF3n, dentro de su alcance");
+        if (!isISO(fecha)) return { ok: false, motivo: "La fecha de la sesi\xF3n no es v\xE1lida." };
+        if (fecha < s.hoy) return { ok: false, motivo: "La sesi\xF3n no puede ser anterior a la fecha de corte." };
+        if (!esHora(inicio) || !esHora(fin) || aMin(fin) <= aMin(inicio)) return { ok: false, motivo: "Indica hora de inicio y de t\xE9rmino v\xE1lidas; el t\xE9rmino debe ser despu\xE9s del inicio." };
+        const antes = s.inducciones[colId] || null;
+        s.inducciones[colId] = {
+          colaborador_id: colId,
+          fecha,
+          inicio,
+          fin,
+          confirmada: false,
+          reprogramacion: null,
+          entrada: null,
+          salida: null,
+          no_asistio: false,
+          citada_por: u.usuario_id,
+          citada_at: reloj(),
+          sesiones_previas: antes ? (antes.sesiones_previas || 0) + 1 : 0
+        };
+        log(antes ? "reprogramar_induccion" : "citar_induccion", colId, `Sesi\xF3n ${fecha} ${inicio}\u2013${fin}`, "ok", { entidad: "induccion", campo: "fecha", valor_anterior: antes?.fecha ?? null, valor_nuevo: fecha });
+        log("notificacion_simulada", colId, "Se notificar\xEDa la citaci\xF3n a la persona por su canal registrado. No se envi\xF3 nada.");
+        rebuild();
+        return { ok: true };
+      },
+      citarVarios(ids, fecha, inicio, fin) {
+        const res = (ids || []).map((id) => ({ id, r: api.citarInduccion(id, fecha, inicio, fin) }));
+        const ok = res.filter((x) => x.r.ok).length;
+        return ok ? { ok: true, citadas: ok, errores: res.filter((x) => !x.r.ok).length } : res[0]?.r || { ok: false, motivo: "No hay personas para citar." };
+      },
+      registrarAsistencia(colId, entrada, salida) {
+        const u = s.user;
+        const r = s.inducciones[colId];
+        if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar("registrar_asistencia", colId, "Solo Personas registra la asistencia a la inducci\xF3n");
+        if (!r) return { ok: false, motivo: "La persona no tiene una sesi\xF3n citada." };
+        if (r.fecha > s.hoy) return { ok: false, motivo: "Solo puedes registrar asistencia de sesiones de hoy o anteriores." };
+        if (!esHora(entrada)) return { ok: false, motivo: "Indica la hora de entrada (HH:MM)." };
+        const sal = salida ? String(salida) : null;
+        if (sal !== null && (!esHora(sal) || aMin(sal) <= aMin(entrada))) return { ok: false, motivo: "La hora de salida debe ser posterior a la de entrada." };
+        const antes = `${r.entrada || "\u2014"}\u2013${r.salida || "\u2014"}`;
+        Object.assign(r, { entrada, salida: sal, no_asistio: false, registrada_por: u.usuario_id, registrada_at: reloj() });
+        log("registrar_asistencia", colId, "Entrada y salida de la inducci\xF3n", "ok", { entidad: "induccion", campo: "entrada_salida", valor_anterior: antes, valor_nuevo: `${entrada}\u2013${sal || "\u2014"}` });
+        rebuild();
+        return { ok: true, estado: estadoInduccion(r, s.hoy).estado };
+      },
+      marcarInasistencia(colId) {
+        const u = s.user;
+        const r = s.inducciones[colId];
+        if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar("marcar_inasistencia", colId, "Solo Personas registra la asistencia a la inducci\xF3n");
+        if (!r) return { ok: false, motivo: "La persona no tiene una sesi\xF3n citada." };
+        if (r.fecha > s.hoy) return { ok: false, motivo: "La sesi\xF3n todav\xEDa no ocurre." };
+        Object.assign(r, { no_asistio: true, entrada: null, salida: null, registrada_por: u.usuario_id, registrada_at: reloj() });
+        log("marcar_inasistencia", colId, `Sesi\xF3n ${r.fecha}`, "ok", { entidad: "induccion", campo: "estado", valor_anterior: null, valor_nuevo: "no_asistio" });
+        rebuild();
+        return { ok: true };
+      },
+      confirmarInduccion() {
+        const u = s.user;
+        const id = u?.usuario_id;
+        const r = s.inducciones[id];
+        if (!u || u.rol !== "Colaborador" || !s.auth.enAlcance(u, id)) return denegar("confirmar_induccion", id || "\u2014", "Solo la persona confirma su propia inducci\xF3n");
+        if (!r || r.fecha < s.hoy || r.entrada || r.no_asistio) return { ok: false, motivo: "No tienes una sesi\xF3n de inducci\xF3n por confirmar." };
+        Object.assign(r, { confirmada: true, reprogramacion: null });
+        log("confirmar_induccion", id, `Sesi\xF3n ${r.fecha}`, "ok", { entidad: "induccion", campo: "confirmada", valor_anterior: false, valor_nuevo: true });
+        rebuild();
+        return { ok: true };
+      },
+      pedirReprogramacion(motivo) {
+        const u = s.user;
+        const id = u?.usuario_id;
+        const r = s.inducciones[id];
+        if (!u || u.rol !== "Colaborador" || !s.auth.enAlcance(u, id)) return denegar("pedir_reprogramacion", id || "\u2014", "Solo la persona pide cambiar su propia sesi\xF3n");
+        if (!MOTIVOS_REPROGRAMAR[motivo]) return { ok: false, motivo: "Elige por qu\xE9 necesitas otro horario." };
+        if (!r || r.fecha < s.hoy || r.entrada || r.no_asistio) return { ok: false, motivo: "No tienes una sesi\xF3n de inducci\xF3n que se pueda cambiar." };
+        Object.assign(r, { reprogramacion: motivo, confirmada: false });
+        log("pedir_reprogramacion", id, "Motivo visible solo para la persona y Personas", "ok", { entidad: "induccion", campo: "reprogramacion", valor_anterior: null, valor_nuevo: "solicitada" });
+        log("notificacion_simulada", id, "Se notificar\xEDa a Personas por correo. No se envi\xF3 nada.");
+        rebuild();
+        return { ok: true };
+      },
+      indicadorInduccion() {
+        if (!s.auth.esPersonas(s.user)) return null;
+        return indicadorInduccion({ colabs: s.data.colaboradores.filter((c) => s.auth.enAlcance(s.user, c.colaborador_id)), inducciones: s.inducciones, hoy: s.hoy });
+      },
       // Personas: bandeja de alertas accionables.
       // Los avisos operativos de la jefatura (sin tareas, próximos y nuevos ingresos) no inundan la bandeja de Personas: se ven en Indicadores.
       alertasFicha() {
-        return s.auth.esPersonas(s.user) ? s.alertasFicha.filter((a) => !["sin_tareas", "proximo_ingreso", "nuevo_ingreso"].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : [];
+        return s.auth.esPersonas(s.user) ? s.alertasFicha.filter((a) => !["sin_tareas", "proximo_ingreso", "nuevo_ingreso", "induccion_jefatura"].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : [];
       },
       avisosDeEquipos() {
         if (!s.auth.esPersonas(s.user)) return null;
@@ -1637,6 +1902,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         s.alertaEstados = {};
         s.nuevosIngresos = [];
         s.avisosVistos = {};
+        s.inducciones = {};
         s.almacenamientoLimpio = limpiarPersistenciaAnterior();
         rebuild();
         log("reiniciar", "\u2014", "Datos originales restaurados; reportes y movimientos anteriores eliminados");
@@ -1653,9 +1919,9 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         } catch {
           log("error", "\u2014", "No se pudo completar la acci\xF3n; no se registra su contenido", "error");
           if (nombre === "verColaborador") return null;
-          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias", "avisos"].includes(nombre)) return [];
+          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias", "avisos", "induccionesEquipo"].includes(nombre)) return [];
           if (nombre === "avisosDeEquipos") return null;
-          if (["vistaFicha", "indicadores"].includes(nombre)) return null;
+          if (["vistaFicha", "indicadores", "vistaInduccion", "indicadorInduccion"].includes(nombre)) return null;
           return { ok: false, motivo: "No se pudo completar la acci\xF3n. Revisa los datos e intenta nuevamente." };
         }
       };
@@ -1664,7 +1930,9 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   }
 
   // src/ui.js
-  var TONO_AVISO = { nuevo_ingreso: "ok", proximo_ingreso: "warn", sin_tareas: "bad", ficha_sin_enviar: "warn" };
+  var TONO_AVISO = { nuevo_ingreso: "ok", proximo_ingreso: "warn", sin_tareas: "bad", ficha_sin_enviar: "warn", induccion_jefatura: "bad" };
+  var chipInd = (v) => `<span class="chip chip-${TONO_INDUCCION[v.estado] || "neutral"}">${esc(v.texto)}</span>`;
+  var horario = (v) => v.fecha ? `${fmt(v.fecha)} \xB7 ${esc(v.inicio)}\u2013${esc(v.fin)}` : "\u2014";
   var esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var ui = {
     loginStep: null,
@@ -1696,7 +1964,13 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     denegado: null,
     // pantalla 403
     fichaFiltro: "accion",
-    alertaFiltro: "abierta"
+    alertaFiltro: "abierta",
+    indFiltro: "todas",
+    indSesion: null,
+    // { fecha, inicio, fin } propuesta de sesión de Personas (editable)
+    indRegistrando: null,
+    // colaborador con formulario de asistencia abierto
+    indReprogramar: false
   };
   var store;
   var root;
@@ -1945,6 +2219,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       </div>
     </section>
     ${fichaColaborador(u, vf)}
+    ${induccionColaborador(u)}
     ${GRUPOS.map(([g, tipos], i) => `<section class="blk" id="g${i}"><p class="caption">${pad2(i + 1)} \xB7 ${g}</p>
       <ul class="rows">${grupo(tipos).map(({ h, ev }) => `<li class="hrow hrow-${ev.estadoReal === "Cumplido" ? "ok" : ev.estadoReal === "Vencido" ? "bad" : ev.estadoReal === "Por verificar" ? "warn" : "neutral"}">
         <span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><span class="dim">Lo gestiona ${esc(h.responsable_tipo === "Jefatura" ? "tu jefatura" : funcion[h.responsable_tipo])} \xB7 plazo <span class="nw">${fmt(ev.limite)}</span></span>
@@ -1971,6 +2246,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const nav = [
       { label: "Resumen", href: "inicio" },
       ...vf ? [{ label: "Tu ficha de ingreso", href: "ficha", right: porResponder ? "1" : void 0 }] : [],
+      { label: "Tu inducci\xF3n", href: "induccion" },
       ...GRUPOS.map(([g, tipos], i) => {
         const l = grupo(tipos);
         return { label: g, href: `g${i}`, n: pad2(i + 1), sub: true, right: `${l.filter((x) => x.ev.estadoReal === "Cumplido").length}/${l.length}` };
@@ -1979,6 +2255,33 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       ...fichaRecibida ? [] : [{ label: "\xBFAlgo no coincide?", href: "ayuda" }]
     ];
     return { nav, body };
+  }
+  function induccionColaborador(u) {
+    const v = store.vistaInduccion(u.usuario_id);
+    if (!v) return "";
+    const hoy = store.state.hoy;
+    const abierta = ["citada", "confirmada", "reprogramacion"].includes(v.estado) && v.fecha >= hoy;
+    const registro = ["completa", "parcial"].includes(v.estado);
+    return `<section class="blk" id="induccion"><div class="row-between"><p class="caption">Tu inducci\xF3n general</p>${chipInd(v)}</div>
+    ${v.estado === "sin_citar" ? '<p class="lead">Personas te citar\xE1 a la inducci\xF3n general. Aqu\xED ver\xE1s la fecha y el horario.</p>' : `<div class="detail">
+      <div class="stack">
+        ${abierta ? `<p class="lead">${v.estado === "reprogramacion" ? "Pediste otro horario. Personas te ofrecer\xE1 una nueva sesi\xF3n." : v.confirmada ? "Confirmaste que asistir\xE1s. Llega a la hora de inicio y qu\xE9date hasta el t\xE9rmino." : "Confirma que asistir\xE1s o av\xEDsanos si necesitas otro horario."}</p>` : ""}
+        ${v.estado === "no_asistio" ? '<p class="lead">No qued\xF3 registrada tu asistencia. Personas te contactar\xE1 para darte una nueva sesi\xF3n.</p>' : ""}
+        ${v.estado === "parcial" ? '<p class="lead">Asististe a una parte de la sesi\xF3n. Personas coordinar\xE1 la parte pendiente.</p>' : ""}
+        ${v.estado === "completa" ? '<p class="lead">Completaste la inducci\xF3n general.</p>' : ""}
+        ${abierta && v.estado !== "reprogramacion" ? `<div class="row">${v.confirmada ? "" : '<button class="btn btn-primary" data-act="ind-confirmar">Confirmo que asistir\xE9</button>'}<button class="btn btn-ghost" data-act="ind-reprog-abrir">Necesito otro horario</button></div>` : ""}
+        ${abierta && ui.indReprogramar ? `<form data-form="ind-reprogramar" class="form"><fieldset class="choice"><legend class="caption">\xBFPor qu\xE9 necesitas otro horario?*</legend>
+          ${Object.entries(MOTIVOS_REPROGRAMAR).map(([k, t]) => `<label class="radio"><input type="radio" name="motivo" value="${esc(k)}"> ${esc(t)}</label>`).join("")}</fieldset>
+          <p class="hint">Solo eliges el motivo. Lo ve Personas, no tu jefatura.</p>
+          <div class="row"><button class="btn btn-primary" type="submit">Pedir otro horario</button><button class="btn btn-ghost" type="button" data-act="ind-reprog-cerrar">Cancelar</button></div></form>` : ""}
+      </div>
+      ${stats([
+      ["Fecha y horario", horario(v)],
+      ["Lugar", SIN_DATO("Personas lo informa en la citaci\xF3n")],
+      ...registro ? [["Tu entrada", esc(v.entrada)], ["Tu salida", esc(v.salida)]] : []
+    ])}
+    </div>`}
+    <p class="hint">Si la sesi\xF3n choca con tu turno, pide otro horario: Personas coordina con tu jefatura para que puedas asistir.</p></section>`;
   }
   function fichaColaborador(u, v) {
     if (!v) return "";
@@ -2063,15 +2366,16 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       ${recientes.length ? `<p class="caption">Ingresaron en los \xFAltimos 30 d\xEDas</p>${listaIngresos(recientes)}` : ""}
     </section>
     <section class="blk" id="equipo"><p class="caption">Personas de tu equipo</p>
-      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th>Inducci\xF3n</th><th></th></tr></thead><tbody>
       ${equipo.map((c) => {
       const av = avanceColaborador(c.colaborador_id, idx, hoy);
+      const vi = store.vistaInduccion(c.colaborador_id);
       return `<tr>
         <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
         <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
-        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
+        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td><td>${vi ? `${chipInd(vi)}${vi.fecha ? `<br><small class="dim nw">${horario(vi)}</small>` : ""}` : "\u2014"}</td>
         <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Ver hitos"}</button></td></tr>
-        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`;
+        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="8">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`;
     }).join("")}
       </tbody></table></div>
       <p class="hint">No ves canales de contacto ni los reportes que las personas env\xEDan a Personas.</p>
@@ -2199,6 +2503,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   var TABS = [
     ["fichas", "Fichas de ingreso", "Qui\xE9n est\xE1 listo para su primer d\xEDa."],
     ["alertas", "Alertas", "Qu\xE9 hay que resolver, qui\xE9n y para cu\xE1ndo."],
+    ["induccion", "Inducci\xF3n", "Qui\xE9n asisti\xF3 a la inducci\xF3n, cu\xE1ndo entr\xF3 y cu\xE1ndo sali\xF3."],
     ["indicadores", "Indicadores", "Si la ficha est\xE1 cambiando el ingreso."],
     ["resumen", "Resumen", "Proceso de ingreso completo."],
     ["casos", "Casos cr\xEDticos", "Personas que necesitan una acci\xF3n hoy."],
@@ -2216,7 +2521,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const reglasAltas = new Set(alertasVisibles(u).filter((a) => a.sev === "alta").map((a) => a.regla)).size;
     const [, nombreTab, titulo] = TABS.find((t) => t[0] === ui.tab);
     const i = TABS.findIndex((t) => t[0] === ui.tab);
-    const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+    const contenido = { fichas: tFichas, alertas: tAlertas, induccion: tInduccion, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
     const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === "Administrador" ? "Administraci\xF3n" : "Equipo de Personas", `${pad2(i + 1)} \xB7 ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
     const nav = disponibles.map(([k, t], j) => ({
       label: t,
@@ -2266,6 +2571,56 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     }).join("") || '<tr><td colspan="8" class="empty">Sin alertas en este filtro.</td></tr>'}
   </tbody></table></div>${lista.length > 150 ? `<p class="hint">Se muestran 150 de ${lista.length}.</p>` : ""}</section>`;
   }
+  function tInduccion() {
+    const s = store.state;
+    const hoy = s.hoy;
+    const ses = ui.indSesion || (ui.indSesion = { fecha: hoy, inicio: "09:00", fin: "13:00" });
+    const todas = store.induccionesEquipo();
+    const k = store.indicadorInduccion();
+    const F = {
+      todas: ["Todas", todas],
+      sin_citar: ["Sin citaci\xF3n", todas.filter((v) => v.estado === "sin_citar")],
+      citadas: ["Citadas", todas.filter((v) => ["citada", "confirmada", "reprogramacion"].includes(v.estado))],
+      por_registrar: ["Por registrar", todas.filter((v) => v.estado === "por_registrar" || v.fecha === hoy && ["citada", "confirmada"].includes(v.estado))],
+      problemas: ["No asisti\xF3 o parcial", todas.filter((v) => ["no_asistio", "parcial"].includes(v.estado))]
+    };
+    const lista = F[ui.indFiltro][1];
+    const sinCitarFiltro = lista.filter((v) => v.estado === "sin_citar" || v.estado === "reprogramacion");
+    const fila = (v) => {
+      const puedeReg = v.fecha && v.fecha <= hoy && !["sin_citar"].includes(v.estado);
+      const acc = [];
+      if (["sin_citar", "reprogramacion", "no_asistio", "parcial"].includes(v.estado)) acc.push(`<button class="btn btn-primary btn-sm" data-act="ind-citar" data-arg="${esc(v.colaborador_id)}">${v.estado === "sin_citar" ? "Citar" : "Reprogramar"}</button>`);
+      if (puedeReg) acc.push(`<button class="btn btn-ghost btn-sm" data-act="ind-registrar" data-arg="${esc(v.colaborador_id)}">${ui.indRegistrando === v.colaborador_id ? "Cerrar" : "Registrar asistencia"}</button>`);
+      return `<tr><td><b>${esc(nombreDe(v.colaborador_id))}</b><br><code>${esc(v.colaborador_id)}</code></td>
+      <td class="num">${fmt(s.idx.colab.get(v.colaborador_id)?.fecha_ingreso)}</td><td>${chipInd(v)}${v.motivo ? `<br><small class="dim">${esc(MOTIVOS_REPROGRAMAR[v.motivo])}</small>` : ""}</td>
+      <td class="num">${horario(v)}${v.previas ? `<br><small class="dim">${v.previas} ${v.previas === 1 ? "sesi\xF3n anterior" : "sesiones anteriores"}</small>` : ""}</td>
+      <td class="num">${v.entrada ? `${esc(v.entrada)}\u2013${esc(v.salida || "\u2026")}` : "\u2014"}${v.atraso > CONFIG_INDUCCION.toleranciaMin ? `<br><small class="tone-bad">${v.atraso} min tarde</small>` : ""}${v.salidaAntes > CONFIG_INDUCCION.toleranciaMin ? `<br><small class="tone-bad">sali\xF3 ${v.salidaAntes} min antes</small>` : ""}</td>
+      <td><div class="row">${acc.join("")}</div></td></tr>
+      ${ui.indRegistrando === v.colaborador_id ? `<tr class="sub"><td colspan="6"><form data-form="ind-registrar" data-arg="${esc(v.colaborador_id)}" class="form form-inline">
+        <div class="field"><label for="ie-${esc(v.colaborador_id)}">Hora de entrada*</label><input type="time" id="ie-${esc(v.colaborador_id)}" name="entrada" value="${esc(v.entrada || "")}" required></div>
+        <div class="field"><label for="is-${esc(v.colaborador_id)}">Hora de salida</label><input type="time" id="is-${esc(v.colaborador_id)}" name="salida" value="${esc(v.salida || "")}"></div>
+        <div class="row"><button class="btn btn-primary btn-sm" type="submit">Guardar asistencia</button><button class="btn btn-ghost btn-sm" type="button" data-act="ind-no-asistio" data-arg="${esc(v.colaborador_id)}">No asisti\xF3</button></div>
+        <p class="hint">Sesi\xF3n ${horario(v)}. Tolerancia de ${CONFIG_INDUCCION.toleranciaMin} min para llegar o salir.</p></form></td></tr>` : ""}`;
+    };
+    return `<section class="blk"><div class="detail">
+      <div class="stack"><p class="big-num num ${k && k.pctAsistencia !== null && k.pctAsistencia < k.lineaBase ? "tone-bad" : ""}">${k && k.pctAsistencia !== null ? `${k.pctAsistencia}%` : "\u2014"}</p>
+        <p class="lead">${k && k.registradas ? `asistencia a la inducci\xF3n en las sesiones registradas (${k.registradas}). L\xEDnea base del dossier: ${k.lineaBase}%.` : `A\xFAn no hay sesiones registradas. L\xEDnea base del dossier: ${CONFIG_INDUCCION.lineaBase}% de asistencia.`}</p>
+        <p class="hint">Asistir no basta: tambi\xE9n se mide si la persona estuvo la sesi\xF3n completa (entrada y salida).</p></div>
+      ${k ? stats([["Citadas", String(k.citadas)], ["Asistieron completa", String(k.completas), k.completas ? "ok" : ""], ["Asistieron parcial", String(k.parciales), k.parciales ? "warn" : ""], ["No asistieron", String(k.noAsistio), k.noAsistio ? "bad" : ""], ["Falta registrar", String(k.porRegistrar), k.porRegistrar ? "warn" : ""], ["Pidieron otro horario", String(k.reprogramacion), k.reprogramacion ? "warn" : ""]]) : ""}
+    </div></section>
+  <section class="blk"><p class="caption">Sesi\xF3n para citar</p>
+    <div class="form form-inline">
+      <div class="field"><label for="ind-fecha">Fecha*</label><input type="date" id="ind-fecha" data-change="ind-sesion" name="fecha" value="${esc(ses.fecha)}" min="${esc(hoy)}"></div>
+      <div class="field"><label for="ind-inicio">Inicio*</label><input type="time" id="ind-inicio" data-change="ind-sesion" name="inicio" value="${esc(ses.inicio)}"></div>
+      <div class="field"><label for="ind-fin">T\xE9rmino*</label><input type="time" id="ind-fin" data-change="ind-sesion" name="fin" value="${esc(ses.fin)}"></div>
+      ${sinCitarFiltro.length ? `<div><button class="btn btn-primary btn-sm" data-act="ind-citar-todos">Citar a ${sinCitarFiltro.length} ${sinCitarFiltro.length === 1 ? "persona" : "personas"} de esta lista</button></div>` : ""}
+    </div>
+    <p class="hint">Define la sesi\xF3n una vez y cita a cada persona con "Citar". Se notificar\xEDa a cada persona por su canal registrado (simulado). Si choca con su turno, la persona puede pedir otro horario.</p>
+    ${filtros("ind-filtro", Object.entries(F).map(([key, [t, l]]) => [key, t, l.length]), ui.indFiltro)}
+    <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Estado</th><th>Sesi\xF3n</th><th>Entrada\u2013salida</th><th></th></tr></thead><tbody>
+    ${lista.map(fila).join("") || '<tr><td colspan="6" class="empty">Sin personas en este filtro.</td></tr>'}</tbody></table></div>
+    <p class="hint">La hora de entrada y salida la ven solo la persona y Personas. La jefatura ve el estado. No es un control de asistencia laboral.</p></section>`;
+  }
   function tIndicadores() {
     const k = store.indicadores();
     if (!k) return "";
@@ -2280,6 +2635,10 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       const e = store.avisosDeEquipos();
       return e ? `<section class="blk"><p class="caption">Avisos enviados a jefaturas</p>${stats([["Personas sin tareas asignadas", String(e.sinTareas), e.sinTareas ? "bad" : ""], ["Pr\xF3ximos ingresos (14 d\xEDas)", String(e.proximos)], ["Nuevos ingresos registrados por RR.HH.", String(e.nuevos)]])}
     <p class="hint">Cada jefatura ve el detalle de su equipo en su bandeja de avisos.</p></section>` : "";
+    })()}
+  ${(() => {
+      const i = store.indicadorInduccion();
+      return i ? `<section class="blk"><p class="caption">Inducci\xF3n general</p>${stats([["Asistencia en sesiones registradas", i.pctAsistencia === null ? "\u2014" : `${i.pctAsistencia}%`, i.pctAsistencia !== null && i.pctAsistencia < i.lineaBase ? "bad" : ""], ["Asistieron la sesi\xF3n completa", i.pctCompleta === null ? "\u2014" : `${i.pctCompleta}%`], ["L\xEDnea base del dossier", `${i.lineaBase}%`], ["Sin citaci\xF3n", String(i.sinCitar)]])}</section>` : "";
     })()}
   <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
   <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
@@ -2438,6 +2797,16 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       ui.fichaErrores = null;
       return toastMsg(op === "enviar" ? `Ficha enviada. ${r.aviso}` : `Borrador guardado: ${ESTADOS_FICHA[r.estado]}.`);
     }
+    if (kind === "ind-registrar") {
+      const r = store.registrarAsistencia(f.dataset.arg, String(fd.get("entrada") || ""), String(fd.get("salida") || ""));
+      if (r.ok) ui.indRegistrando = null;
+      return toastMsg(r.ok ? `Asistencia guardada: ${ESTADOS_INDUCCION[r.estado].toLowerCase()}.` : r.motivo);
+    }
+    if (kind === "ind-reprogramar") {
+      const r = store.pedirReprogramacion(String(fd.get("motivo") || ""));
+      if (r.ok) ui.indReprogramar = false;
+      return toastMsg(r.ok ? "Pediste otro horario. Personas te ofrecer\xE1 una nueva sesi\xF3n." : r.motivo);
+    }
     if (kind === "ti-pendiente") {
       const r = store.marcarPendiente(f.dataset.arg, String(fd.get("fecha") || ""));
       return toastMsg(r.ok ? "Fecha comprometida guardada." : r.motivo);
@@ -2523,7 +2892,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     }
   }
   function resetUi() {
-    Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: "fichas", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null });
+    Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: "fichas", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null, indRegistrando: null, indReprogramar: false, indFiltro: "todas" });
   }
   function onClick(e) {
     const b = e.target.closest("[data-act]");
@@ -2569,6 +2938,39 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         return render();
       case "ficha-filtro":
         ui.fichaFiltro = arg;
+        return render();
+      case "ind-filtro":
+        ui.indFiltro = arg;
+        ui.indRegistrando = null;
+        return render();
+      case "ind-registrar":
+        ui.indRegistrando = ui.indRegistrando === arg ? null : arg;
+        return render();
+      case "ind-citar": {
+        const x = ui.indSesion || {};
+        const r = store.citarInduccion(arg, x.fecha, x.inicio, x.fin);
+        return toastMsg(r.ok ? `Citaci\xF3n guardada para el ${fmt(x.fecha)} (${x.inicio}\u2013${x.fin}).` : r.motivo);
+      }
+      case "ind-citar-todos": {
+        const x = ui.indSesion || {};
+        const ids = store.induccionesEquipo().filter((v) => v.estado === "sin_citar" || v.estado === "reprogramacion").filter((v) => ui.indFiltro === "todas" || ui.indFiltro === "sin_citar" || ui.indFiltro === "citadas").map((v) => v.colaborador_id);
+        const r = store.citarVarios(ids, x.fecha, x.inicio, x.fin);
+        return toastMsg(r.ok ? `${r.citadas} ${r.citadas === 1 ? "persona citada" : "personas citadas"} para el ${fmt(x.fecha)}.` : r.motivo);
+      }
+      case "ind-no-asistio": {
+        const r = store.marcarInasistencia(arg);
+        if (r.ok) ui.indRegistrando = null;
+        return toastMsg(r.ok ? "Inasistencia registrada. Personas y la jefatura tienen el aviso." : r.motivo);
+      }
+      case "ind-confirmar": {
+        const r = store.confirmarInduccion();
+        return toastMsg(r.ok ? "Confirmaste tu asistencia a la inducci\xF3n." : r.motivo);
+      }
+      case "ind-reprog-abrir":
+        ui.indReprogramar = true;
+        return render();
+      case "ind-reprog-cerrar":
+        ui.indReprogramar = false;
         return render();
       case "aviso-visto": {
         const r = store.marcarAvisoVisto(arg);
@@ -2707,6 +3109,10 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   function onChange(e) {
     const el = e.target.closest("[data-change]");
     if (!el) return;
+    if (el.dataset.change === "ind-sesion") {
+      ui.indSesion = { ...ui.indSesion || {}, [el.name]: el.value };
+      return;
+    }
     if (el.dataset.change === "rep-estado") {
       const r = store.cambiarEstadoReporte(el.dataset.arg, el.value);
       toastMsg(r.ok ? "Estado actualizado." : r.motivo);

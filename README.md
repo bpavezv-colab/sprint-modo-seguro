@@ -68,3 +68,12 @@ Ver `AGENTS.md` (reglas para Codex) y `CODEX_TASKS.md` (tareas listas para pegar
 - La jefatura ve el contador en la barra superior y la bandeja "Avisos"; Personas ve el total en Indicadores. Parámetros en `CONFIG` (`src/reglas_onboarding.js`).
 
 **Demo de nuevo ingreso:** entra como `PER-001` → Datos → carga los 3 archivos de `tests/fixtures/nuevo_ingreso/` (kit de prueba sintético con COL-061 en el equipo de JEF-002; se regenera con `node scripts/fixture_nuevo_ingreso.mjs`). Luego entra como `JEF-002`.
+
+## Asistencia a la inducción (línea base 91%)
+El 91% del dossier es la **asistencia a la inducción general**, no asistencia diaria al trabajo. Este módulo gestiona el 9% restante y mide si la persona estuvo la sesión completa:
+- **Personas** define una sesión (fecha, inicio, término) y cita a una o varias personas; el día de la sesión registra la **hora de entrada y de salida**, o marca "no asistió".
+- **Estado automático:** completa, parcial (llegó tarde o salió antes, con 15 min de tolerancia), no asistió, o "falta registrar" si la sesión pasó sin registro (no se supone la asistencia).
+- **Colaborador** ve su citación, confirma o pide otro horario con un motivo cerrado (por ejemplo, choca con su turno).
+- **Alertas:** a Personas (reprogramar, registrar, citar) y a la jefatura (inasistencia, para liberar el turno). La jefatura ve solo el estado, nunca las horas ni el motivo.
+- **Indicador en vivo** contra la línea base de 91%. Parámetros en `src/induccion.js` (`CONFIG_INDUCCION`).
+- No es control de asistencia laboral: ese registro exige un sistema certificado y reemplazaría el sistema de turnos.
