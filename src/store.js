@@ -2,13 +2,18 @@
 import { indexData, validar, HOY_DEFAULT, isISO, BLOQUEANTES } from './rules.js';
 import { crearAuth } from './permissions.js';
 import { limpiarPersistenciaAnterior, validarCampos, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
+import { ReglasOnboarding, CONFIG, MOTIVOS, MOTIVO_A_REPORTE, ESTADOS_FICHA, POST_ENVIO } from './reglas_onboarding.js';
 
-export function crearStore(base, { now = () => new Date().toISOString() } = {}) {
+const limpiar = (v, max = 200) => { const t = String(v ?? '').trim().slice(0, max); return t === '' ? null : t; };
+const CAMPOS_FICHA_EDITABLES = ['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'];
+
+export function crearStore(base, { now = () => new Date().toISOString(), config = CONFIG } = {}) {
   if (!validarCampos(base, { permitirVacios: true })) throw new Error('Los datos deben contener únicamente los campos del kit sintético.');
   const original = structuredClone(base);
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
     hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null,
+    config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, // Ficha de Ingreso (solo en memoria)
     almacenamientoLimpio: limpiarPersistenciaAnterior(),
   };
   function rebuild() {
@@ -17,13 +22,22 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
     s.data = { ...s.base, hitos }; s.idx = indexData(s.data); s.auth = crearAuth(s.data);
     s.alertas = validar(s.data, s.idx, s.hoy);
     s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
+    const nombre = id => s.auth.users.get(id)?.nombre_ficticio || id;
+    s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
+    s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas)
+      .map(a => ({ ...a, estado: s.alertaEstados[a.id]?.estado || 'abierta', gestion: s.alertaEstados[a.id] || null }));
   }
+  // Fecha simulada de la demo + hora real: así "antes del día 1" se evalúa contra la fecha de corte.
+  const reloj = () => `${s.hoy}T${new Date().toTimeString().slice(0, 8)}`;
+  const nombreDe = id => s.auth.users.get(id)?.nombre_ficticio || id;
   // Los objetivos recibidos se registran solo si existen en el kit, nunca como texto arbitrario.
   function objetivoSeguro(id) {
-    return s.idx.colab.has(id) || s.auth.users.has(id) || s.data.hitos.some(h => h.hito_id === id) || s.reportes.some(r => r.id === id) ? id : '—';
+    return s.idx.colab.has(id) || s.auth.users.has(id) || s.data.hitos.some(h => h.hito_id === id) || s.reportes.some(r => r.id === id) || s.alertasFicha.some(a => a.id === id) ? id : '—';
   }
-  function log(accion, objetivo, detalle, resultado = 'ok') {
-    s.bitacora.unshift({ ts: now(), usuario: s.user?.usuario_id || '—', rol: s.user?.rol || '—', accion, objetivo: objetivoSeguro(objetivo), detalle, resultado });
+  // Evento trazable: actor, rol, acción, entidad, campo, valor anterior y nuevo, fecha.
+  function log(accion, objetivo, detalle, resultado = 'ok', cambio = {}) {
+    s.bitacora.unshift({ ts: now(), usuario: s.user?.usuario_id || '—', rol: s.user?.rol || '—', accion, objetivo: objetivoSeguro(objetivo), detalle, resultado,
+      entidad: cambio.entidad || null, campo: cambio.campo || null, valor_anterior: cambio.valor_anterior ?? null, valor_nuevo: cambio.valor_nuevo ?? null });
     if (s.bitacora.length > 2000) s.bitacora.length = 2000;
   }
   function denegar(accion, objetivo, motivo) { log(accion, objetivo, motivo, 'denegado'); return { ok: false, motivo }; }
@@ -108,6 +122,146 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
       if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
       log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true, sesionCerrada: !s.user };
     },
+
+    // ================= Ficha de Ingreso =================
+    // Control de acceso por pantalla (equivale al filtro del controlador): 403 si está fuera de alcance.
+    entrar(ruta, param) {
+      const r = s.auth.puedeEntrar(s.user, ruta, param);
+      if (!r.ok && r.status === 403) log('acceso_denegado', param || '—', r.motivo, 'denegado', { entidad: ruta === '/ficha' ? 'ficha' : 'ruta' });
+      return r;
+    },
+    // Vista minimizada según quién la pide. undefined = no permitido (no se muestra); null = Sin dato.
+    vistaFicha(colId) {
+      const u = s.user;
+      if (!s.auth.puedeVerFicha(u, colId)) return null;
+      const c = s.idx.colab.get(colId); const f = s.fichas[colId] || null; const R = s.reglas;
+      const est = R.estadoFicha(f);
+      const campo = k => (s.auth.puedeVerCampo(u, colId, k) ? c[k] : undefined);
+      let ficha = f ? { ...f } : null;
+      if (ficha && u.rol === 'Colaborador' && !ficha.enviada_at) ficha = null; // el borrador no se muestra a la persona
+      if (ficha && !s.auth.puedeVerMotivo(u, colId)) { delete ficha.motivo; delete ficha.respuesta; }
+      return {
+        c: { colaborador_id: colId, nombre: s.auth.puedeVerCampo(u, colId, 'nombre') ? nombreDe(colId) : undefined,
+          area: campo('area'), fecha_ingreso: campo('fecha_ingreso'), tipo_turno: campo('tipo_turno'), jefatura_id: campo('jefatura_id'), canal_contacto: campo('canal_contacto') },
+        ficha, est,
+        estadoVisible: u.rol === 'Jefatura' && est === 'con_discrepancia' ? 'En revisión por Personas' : ESTADOS_FICHA[est],
+        hitos: (s.idx.hitosPorColab.get(colId) || []).filter(h => s.auth.puedeVerHito(u, h)).map(h => ({
+          h, estado: R.estadoHito(h), fecha: R.fechaComprometida(h), limite: R.fechaLimite(h), resp: R.responsable(h), prioridad: R.prioridadHito(h) })),
+        semaforo: R.semaforo(c, f),
+        jefatura: c.jefatura_id ? nombreDe(c.jefatura_id) : null,
+        companero: ficha && ficha.companero_id ? nombreDe(ficha.companero_id) : null,
+      };
+    },
+    ingresos() {
+      const u = s.user; if (!u) return [];
+      return [...s.auth.scope(u)].map(id => api.vistaFicha(id)).filter(Boolean);
+    },
+    companerosPara(colId) {
+      return s.auth.companerosValidos(s.user, colId).map(id => ({ id, nombre: nombreDe(id) }));
+    },
+    guardarFicha(colId, campos = {}) {
+      const u = s.user;
+      const p = s.auth.puedeEditarFicha(u, colId);
+      if (!p.ok) return denegar('editar_ficha', colId, p.motivo);
+      const f = s.fichas[colId] || { colaborador_id: colId, tarea_1: null, tarea_2: null, tarea_3: null, companero_id: null, reunion_at: null,
+        estado: null, respuesta: null, motivo: null, enviada_at: null, respondida_at: null, creado_por_equipo: true };
+      if (POST_ENVIO.includes(f.estado)) return { ok: false, motivo: 'La ficha ya fue enviada. Si hay que corregirla, avisa a Personas.' };
+      const limpio = {};
+      for (const k of CAMPOS_FICHA_EDITABLES) if (k in campos) limpio[k] = limpiar(campos[k], k.startsWith('tarea') ? 160 : 20);
+      if (limpio.companero_id && !s.auth.companerosValidos(u, colId).includes(limpio.companero_id)) return denegar('editar_ficha', colId, 'El compañero o compañera debe ser parte de tu equipo.');
+      if (limpio.reunion_at && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(limpio.reunion_at)) return { ok: false, motivo: 'La fecha y hora de la reunión no es válida.' };
+      const nuevo = { ...f };
+      for (const [k, v] of Object.entries(limpio)) {
+        if ((f[k] ?? null) === v) continue;
+        log('editar_ficha', colId, `Campo ${k}`, 'ok', { entidad: 'ficha', campo: k, valor_anterior: f[k], valor_nuevo: v });
+        nuevo[k] = v;
+      }
+      const est = s.reglas.estadoFicha({ ...nuevo, estado: null });
+      if (est !== f.estado) log('cambio_estado', colId, `Ficha: ${f.estado || 'nueva'} → ${est}`, 'ok', { entidad: 'ficha', campo: 'estado', valor_anterior: f.estado, valor_nuevo: est });
+      nuevo.estado = est; s.fichas[colId] = nuevo; rebuild();
+      return { ok: true, estado: est };
+    },
+    enviarFicha(colId, campos = {}) {
+      const g = api.guardarFicha(colId, campos); if (!g.ok) return g;
+      const f = s.fichas[colId]; const faltan = s.reglas.faltantes(f);
+      if (faltan.length) { log('enviar_ficha', colId, faltan.join('; '), 'rechazado', { entidad: 'ficha' }); return { ok: false, faltan, motivo: `No se puede enviar: ${faltan.join('. ')}.` }; }
+      const c = s.idx.colab.get(colId); const antes = f.estado;
+      Object.assign(f, { estado: 'enviada', enviada_at: reloj(), turno_al_enviar: c.tipo_turno ?? null });
+      log('enviar_ficha', colId, 'Ficha enviada a la persona', 'ok', { entidad: 'ficha', campo: 'estado', valor_anterior: antes, valor_nuevo: 'enviada' });
+      log('notificacion_simulada', colId, c.canal_contacto ? 'Se notificaría a la persona por su canal registrado. No se envió nada.' : 'Sin dato: canal de contacto. Personas debe avisar a la persona.');
+      rebuild();
+      return { ok: true, aviso: 'Se notificaría a la persona por su canal registrado (simulado: no se envía nada).' };
+    },
+    responderFicha(colId, respuesta, motivo, via = 'Ficha web') {
+      const u = s.user;
+      const p = s.auth.puedeResponderFicha(u, colId);
+      if (!p.ok) return denegar('responder_ficha', colId, p.motivo);
+      const f = s.fichas[colId];
+      if (!f || !['enviada', 'requiere_reconfirmacion'].includes(f.estado)) return { ok: false, motivo: 'Tu ficha todavía no está enviada por tu jefatura.' };
+      if (respuesta === 'discrepancia' && !MOTIVOS[motivo]) return { ok: false, motivo: 'Elige qué no coincide para poder enviar el aviso.' };
+      const antes = f.estado;
+      if (respuesta === 'discrepancia') { const r = api.reportar(MOTIVO_A_REPORTE[motivo]); if (!r.ok) return r; f.reporte_id = r.id; }
+      Object.assign(f, { estado: respuesta === 'confirmo' ? 'confirmada' : 'con_discrepancia', respuesta, motivo: respuesta === 'discrepancia' ? motivo : null, respondida_at: reloj(), respondida_via: via });
+      log(respuesta === 'confirmo' ? 'confirmar_ficha' : 'reportar_discrepancia', colId, respuesta === 'confirmo' ? `Vía: ${via}` : 'Motivo visible solo para la persona y Personas', 'ok',
+        { entidad: 'ficha', campo: 'estado', valor_anterior: antes, valor_nuevo: f.estado });
+      if (respuesta === 'discrepancia') log('notificacion_simulada', colId, 'Se notificaría a Personas por correo. No se envió nada.');
+      rebuild();
+      return { ok: true, estado: f.estado };
+    },
+    confirmarFicha() { return api.responderFicha(s.user?.usuario_id, 'confirmo'); },
+    reportarDiscrepancia(motivo, texto = '') {
+      if (String(texto ?? '').trim() !== '') return denegar('responder_ficha', s.user?.usuario_id, 'Esta demo no recopila texto libre: elige solo el motivo');
+      return api.responderFicha(s.user?.usuario_id, 'discrepancia', motivo);
+    },
+    // TI: casos técnicos con datos mínimos (ID, área, fecha de ingreso), ordenados por prioridad y plazo.
+    casosTI() {
+      const u = s.user; const R = s.reglas; const N = s.config.niveles;
+      return s.data.hitos.filter(h => s.auth.puedeVerHito(u, h) && s.config.hitosTecnicos.includes(h.tipo_hito) && !R.completado(h))
+        .map(h => { const c = s.idx.colab.get(h.colaborador_id);
+          return { h, c: { colaborador_id: c.colaborador_id, area: c.area, fecha_ingreso: c.fecha_ingreso }, estado: R.estadoHito(h), limite: R.fechaLimite(h),
+            fecha: R.fechaComprometida(h), resp: R.responsable(h), prioridad: R.prioridadHito(h), permiso: s.auth.puedeGestionarTecnico(u, h) }; })
+        .sort((a, b) => N.indexOf(b.prioridad) - N.indexOf(a.prioridad) || String(a.limite.fecha || '9999').localeCompare(String(b.limite.fecha || '9999')));
+    },
+    marcarListo(hitoId) {
+      const h = hito(hitoId); if (!h) return denegar('marcar_listo', hitoId, 'Hito no existe');
+      const p = s.auth.puedeGestionarTecnico(s.user, h); if (!p.ok) return denegar('marcar_listo', hitoId, p.motivo);
+      const antes = h.estado;
+      patch(hitoId, { estado: 'Cumplido', fecha_cumplimiento: s.hoy, ultima_actualizacion: s.hoy });
+      log('marcar_listo', hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, 'ok', { entidad: 'hito', campo: 'estado', valor_anterior: antes, valor_nuevo: 'Cumplido' });
+      return { ok: true };
+    },
+    marcarPendiente(hitoId, fecha) {
+      const h = hito(hitoId); if (!h) return denegar('marcar_pendiente', hitoId, 'Hito no existe');
+      const p = s.auth.puedeGestionarTecnico(s.user, h); if (!p.ok) return denegar('marcar_pendiente', hitoId, p.motivo);
+      if (!isISO(fecha)) return { ok: false, motivo: 'La fecha comprometida es obligatoria.' };
+      if (fecha < s.hoy) return { ok: false, motivo: 'La fecha comprometida no puede ser anterior a la fecha de corte.' };
+      const antes = h.fecha_comprometida || null;
+      patch(hitoId, { fecha_comprometida: fecha, ultima_actualizacion: s.hoy, ...(h.estado === 'Cumplido' ? { estado: 'Pendiente', fecha_cumplimiento: null } : {}) });
+      log('marcar_pendiente', hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, 'ok', { entidad: 'hito', campo: 'fecha_comprometida', valor_anterior: antes, valor_nuevo: fecha });
+      return { ok: true };
+    },
+    // Personas: bandeja de alertas accionables.
+    alertasFicha() { return s.auth.esPersonas(s.user) ? s.alertasFicha.filter(a => s.auth.enAlcance(s.user, a.colaborador_id)) : []; },
+    gestionarAlerta(alertaId, estado) {
+      if (!['contactado', 'escalada'].includes(estado)) return denegar('gestionar_alerta', alertaId, 'Acción no válida');
+      if (!s.auth.puedeGestionarAlertas(s.user)) return denegar('gestionar_alerta', alertaId, 'Sin permiso para gestionar alertas');
+      const a = s.alertasFicha.find(x => x.id === alertaId); if (!a) return { ok: false, motivo: 'La alerta ya no está activa.' };
+      const antes = a.estado;
+      s.alertaEstados[alertaId] = { estado, por: s.user.usuario_id, actualizada_at: reloj() };
+      log(estado === 'contactado' ? 'marcar_contactado' : 'escalar', alertaId, a.titulo, 'ok', { entidad: 'alerta', campo: 'estado', valor_anterior: antes, valor_nuevo: estado });
+      let aviso = null;
+      if (estado === 'escalada') { aviso = `Se notificaría a ${a.responsable.etiqueta} por correo (simulado).`; log('notificacion_simulada', alertaId, aviso); }
+      rebuild();
+      return { ok: true, aviso };
+    },
+    discrepancias() {
+      if (!s.auth.esPersonas(s.user)) return [];
+      return Object.values(s.fichas).filter(f => f.motivo && s.auth.enAlcance(s.user, f.colaborador_id));
+    },
+    indicadores() {
+      if (!s.auth.esPersonas(s.user)) return null;
+      return s.reglas.indicadores(s.data.colaboradores.filter(c => s.auth.enAlcance(s.user, c.colaborador_id)), s.fichas, api.alertasFicha());
+    },
     registrarError() { log('error', '—', 'Error inesperado; no se registra el mensaje ni su contenido', 'error'); },
     exportar(tipo) {
       if (!s.auth.puedeVerCalidad(s.user)) return denegar('exportar', '—', 'Sin permiso para exportar');
@@ -119,7 +273,7 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
     },
     reiniciar() {
       if (!s.auth.puedeCargarArchivos(s.user)) return denegar('reiniciar', '—', 'Sin permiso');
-      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT;
+      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {};
       s.almacenamientoLimpio = limpiarPersistenciaAnterior(); rebuild(); log('reiniciar', '—', 'Datos originales restaurados; reportes y movimientos anteriores eliminados'); s.user = null;
       return { ok: true };
     },
@@ -133,7 +287,8 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
       catch {
         log('error', '—', 'No se pudo completar la acción; no se registra su contenido', 'error');
         if (nombre === 'verColaborador') return null;
-        if (['reportesVisibles', 'misReportes'].includes(nombre)) return [];
+        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias'].includes(nombre)) return [];
+        if (['vistaFicha', 'indicadores'].includes(nombre)) return null;
         return { ok: false, motivo: 'No se pudo completar la acción. Revisa los datos e intenta nuevamente.' };
       }
     };
