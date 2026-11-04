@@ -16,7 +16,7 @@ Instrucciones para agentes de código (Codex u otros). Léelas completas antes d
 | `src/permissions.js` | Motor de permisos `crearAuth`: rol ∧ equipo_asignado ∧ permiso Sí/No ∧ tipo de responsabilidad. |
 | `src/store.js` | Estado, acciones (`completar`, `reasignar`, `reportar`…) y bitácora solo en memoria; sin persistencia de datos en el navegador. |
 | `src/ui.js` | Render por rol (strings HTML + delegación de eventos). **Toda** visualización pasa por `auth`. |
-| `src/styles.css` | Tokens de color en `:root` + modo oscuro. Usa siempre tokens. |
+| `src/styles.css` | Lenguaje visual: fondo gris frío, Helvetica, líneas finas, botones celestes con "+", barra lateral. Tokens en `:root` + modo oscuro. Usa siempre tokens. |
 | `scripts/build.mjs` | CSV → `src/data.generated.js` → bundle esbuild → `dist/index.html` y `dist/artifact.html`. |
 | `tests/core.test.mjs` | Tests con `node:test`. |
 

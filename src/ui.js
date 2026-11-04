@@ -66,53 +66,96 @@ function hitosVisibles(u) {
   return data.hitos.filter(h => auth.puedeVerHito(u, h)).map(h => ({ h, ev: evaluarHito(h, idx, hoy) }));
 }
 
+const pad2 = n => String(n).padStart(2, '0');
+// Lista de cifras: etiqueta a la izquierda, valor a la derecha, separadas por líneas finas.
+const stats = rows => `<div class="stats">${rows.map(([l, v, tone]) => `<div><span>${esc(l)}</span><span class="num ${tone ? 'tone-' + tone : ''}">${v}</span></div>`).join('')}</div>`;
+const tags = list => `<div class="tags caption">${list.filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('')}</div>`;
+
 // ---------- shell ----------
-function header() {
+function topbar() {
   const s = store.state; const u = s.user;
-  return `<header class="top">
-    <div class="top-in">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>Sprint</strong><small>Onboarding · Modo Seguro</small></div></div>
-      ${u ? `<div class="who">
-          <div class="who-txt"><strong>${esc(u.nombre_ficticio || u.usuario_id)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
-          <button class="btn btn-ghost" data-act="logout">Cambiar usuario</button>
-        </div>` : ''}
-    </div>
-    <div class="cut">Fecha de corte <b>${fmt(s.hoy)}</b> · datos 100% sintéticos · cambios y bitácora solo en memoria; se borran al recargar</div>
-    ${!s.almacenamientoLimpio ? '<p class="notice notice-bad" role="alert">No pudimos borrar los datos de la versión anterior. Borra los datos de este sitio desde tu navegador. Esta versión no guarda nuevos datos.</p>' : ''}
+  return `<header class="topbar">
+    <span class="logo" aria-label="Sprint"><span class="logo-mark" aria-hidden="true"></span><span class="logo-txt">Sprint</span><span class="logo-sub caption">Onboarding · Modo Seguro</span></span>
+    <nav class="topnav caption" aria-label="Sesión">
+      <span class="tn-cut">Corte ${fmt(s.hoy)}</span>
+      ${u ? `<span class="tn-who">${esc(u.rol)} · ${esc(u.usuario_id)}</span><button data-act="logout">Cambiar usuario</button>` : '<span class="tn-who">Datos sintéticos · solo en memoria</span>'}
+    </nav>
   </header>`;
 }
+
+// nav: [{ label, href } | { label, act, arg }, right, active]
+function navItem(i) {
+  const right = i.right !== undefined ? `<span class="num">${i.right}</span>` : '';
+  const lab = `<span>${i.n ? `<em>${i.n}</em>` : ''}${esc(i.label)}</span>`;
+  return i.act
+    ? `<button class="${i.active ? 'active' : ''} ${i.sub ? 'sub' : ''}" data-act="${i.act}" data-arg="${esc(i.arg)}" ${i.active ? 'aria-current="page"' : ''}>${lab}${right}</button>`
+    : `<a class="${i.sub ? 'sub' : ''}" href="#${esc(i.href)}" data-spy="${esc(i.href)}">${lab}${right}</a>`;
+}
+function sidebar(v) {
+  const s = store.state; const u = s.user;
+  return `<aside class="sidebar"><nav class="caption" aria-label="Secciones">${v.nav.map(navItem).join('')}</nav>
+    <div class="mark caption">${u ? `<b>${esc(nombreDe(u.usuario_id))}</b><span>${esc(u.rol)} · ${esc(u.usuario_id)}</span>` : ''}
+      <span>Fecha de corte ${fmt(s.hoy)}</span><span>Cambios y bitácora solo en memoria</span><span>Se borran al recargar</span></div></aside>`;
+}
+// En pantallas chicas la barra lateral se oculta: las pestañas y filtros pasan a una fila desplazable.
+const mnav = v => { const acts = v.nav.filter(i => i.act); return acts.length ? `<nav class="mnav caption" aria-label="Secciones">${acts.map(navItem).join('')}</nav>` : ''; };
 
 const VISTAS = { Colaborador: u => vColaborador(u), Jefatura: u => vJefatura(u), TI: u => vTI(u), Personas: u => vPersonas(u), Administrador: u => vPersonas(u) };
 
 function vDenegado() {
-  return `<section class="card"><h1>No tienes acceso</h1><p>Tu cuenta no tiene un rol válido para esta herramienta. Contacta al equipo de Personas.</p>
+  return `<section class="blk hero-sm"><p class="caption">Acceso</p><h1>No tienes acceso.</h1><p class="lead">Tu cuenta no tiene un rol válido para esta herramienta. Contacta al equipo de Personas.</p>
     <div><button class="btn btn-primary" data-act="logout">Volver al inicio</button></div></section>`;
 }
 function vError() {
-  return `<section class="card"><h1>Algo no funcionó en esta vista</h1>
-    <p>No se perdió ningún dato y el error quedó en la bitácora. Puedes volver al inicio o, si se repite, reiniciar la demo.</p>
+  return `<section class="blk hero-sm"><p class="caption">Error</p><h1>Algo no funcionó en esta vista.</h1>
+    <p class="lead">No se perdió ningún dato y el error quedó en la bitácora. Puedes volver al inicio o, si se repite, reiniciar la demo.</p>
     <div class="row"><button class="btn btn-primary" data-act="logout">Volver al inicio</button><button class="btn btn-ghost" data-act="reset">Reiniciar demo</button></div></section>`;
 }
+function avisos() {
+  return store.state.almacenamientoLimpio ? '' : '<div class="blk blk-tight"><p class="notice notice-bad" role="alert">No pudimos borrar los datos de la versión anterior. Borra los datos de este sitio desde tu navegador. Esta versión no guarda nuevos datos.</p></div>';
+}
+
 function render() {
   const s = store.state; const u = s.user;
-  let body;
+  let v;
   try {
-    if (!u) body = vLogin();
-    else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) body = vDenegado(); // denegar por defecto
-    else body = VISTAS[u.rol](u);
+    if (!u) v = vLogin();
+    else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) v = vDenegado(); // denegar por defecto
+    else v = VISTAS[u.rol](u);
   } catch (err) {
     console.error(err);
     try { store.registrarError(`vista ${u ? u.rol : 'ingreso'}`, err && err.message); } catch { /* noop */ }
-    body = vError();
+    v = vError();
   }
-  root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
+  if (typeof v === 'string') v = { nav: [], body: v };
+  const cta = u && u.rol === 'Colaborador' && s.auth.cuentaValida(u) ? '<a class="btn btn-primary cta" href="#ayuda">Necesito ayuda</a>' : '';
+  root.innerHTML = topbar()
+    + `<div class="layout ${v.nav.length ? '' : 'no-side'}">${v.nav.length ? sidebar(v) : ''}<main id="main">${mnav(v)}${avisos()}${v.body}</main></div>`
+    + cta + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
+  espiar();
+}
+
+// Resalta en la barra lateral la sección visible (solo navegación por anclas).
+let spy;
+function espiar() {
+  if (spy) { spy.disconnect(); spy = null; }
+  if (typeof root.querySelectorAll !== 'function' || typeof IntersectionObserver === 'undefined') return; // entornos sin DOM (tests)
+  const links = new Map([...root.querySelectorAll('[data-spy]')].map(a => [a.dataset.spy, a]));
+  if (!links.size) return;
+  spy = new IntersectionObserver(es => es.forEach(en => {
+    if (!en.isIntersecting) return;
+    links.forEach(a => a.classList.remove('active'));
+    const a = links.get(en.target.id); if (a) a.classList.add('active');
+  }), { rootMargin: '-40% 0px -55% 0px' });
+  links.forEach((_, id) => { const el = root.querySelector(`[id="${String(id).replace(/[^a-z0-9-]/gi, '')}"]`); if (el) spy.observe(el); });
 }
 
 function modal() {
   if (!ui.confirm) return '';
   return `<div class="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
-    <h3 id="dlg-t">Confirmar acción</h3><p>${esc(ui.confirm.texto)}</p>
-    <div class="row-end"><button class="btn btn-ghost" data-act="cancel">Cancelar</button><button class="btn btn-primary" data-act="confirm-ok">Confirmar</button></div>
+    <button class="close caption" data-act="cancel">Cerrar</button>
+    <h2 id="dlg-t">Confirmar acción</h2><p>${esc(ui.confirm.texto)}</p>
+    <div class="row-end"><button class="btn btn-ghost btn-inv" data-act="cancel">Cancelar</button><button class="btn btn-primary btn-light" data-act="confirm-ok">Confirmar</button></div>
   </div></div>`;
 }
 
@@ -130,84 +173,101 @@ function vLogin() {
     `<optgroup label="${rol}">${s.data.usuarios.filter(x => x.rol === rol).map(x => `<option value="${esc(x.usuario_id)}">${esc(x.usuario_id)}</option>`).join('')}</optgroup>`).join('');
   let paso;
   if (!ui.loginStep) {
-    paso = `<form data-form="col-id" class="stack">
-      <label for="col-id">Tu código de colaborador</label>
-      <input id="col-id" name="id" placeholder="COL-002" autocomplete="off" inputmode="text" required>
-      <button class="btn btn-primary" type="submit">Continuar</button>
-      <p class="hint">No necesitas correo corporativo.</p></form>`;
+    paso = `<form data-form="col-id" class="form">
+      <div class="field"><label for="col-id">Tu código de colaborador*</label><input id="col-id" name="id" placeholder="COL-002" autocomplete="off" required></div>
+      <p class="hint">No necesitas correo corporativo.</p>
+      <div><button class="btn btn-primary" type="submit">Continuar</button></div></form>`;
   } else {
-    const st = ui.loginStep;
-    paso = `<form data-form="col-code" class="stack">
+    paso = `<form data-form="col-code" class="form">
       <p>Simulación de ingreso para una cuenta sintética. No enviamos mensajes ni mostramos canales de contacto antes del ingreso.</p>
-      <label for="col-code">Código</label>
-      <input id="col-code" name="code" inputmode="numeric" maxlength="6" placeholder="123456" required>
-      <button class="btn btn-primary" type="submit">Ingresar</button>
-      <p class="hint">Demo: el código es 123456. <button type="button" class="link" data-act="login-back">Usar otro código de colaborador</button></p></form>`;
+      <div class="field"><label for="col-code">Código*</label><input id="col-code" name="code" inputmode="numeric" maxlength="6" placeholder="123456" required></div>
+      <p class="hint">Demo: el código es 123456. <button type="button" class="link" data-act="login-back">Usar otro código</button></p>
+      <div><button class="btn btn-primary" type="submit">Ingresar</button></div></form>`;
   }
-  return `<section class="login">
-    <div class="login-intro">
-      <p class="eyebrow">Nexo Laboral Group · Piloto</p>
-      <h1>Qué falta para tu ingreso, quién lo resuelve y para cuándo.</h1>
+  const body = `<section class="blk hero">
+      ${tags(['Nexo Laboral Group', 'Piloto de onboarding', 'Datos sintéticos'])}
+      <h1>Qué falta para cada ingreso, quién lo resuelve y para cuándo.</h1>
       <p class="lead">Cada persona ve solo lo que necesita: el colaborador su checklist, la jefatura su equipo, TI los equipos y accesos, y Personas el proceso completo.</p>
       <p class="notice">Simulación con cuentas sintéticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la página.</p>
-    </div>
-    <div class="login-grid">
-      <div class="card"><h2>Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
-      <div class="card"><h2>Equipo interno</h2>
-        <form data-form="staff" class="stack">
-          <label for="staff-id">Cuenta</label>
-          <select id="staff-id" name="id">${internos}</select>
-          <button class="btn btn-primary" type="submit">Ingresar</button>
-          <p class="hint">Selector de cuentas sintéticas. El inicio de sesión corporativo está pendiente.</p>
-        </form></div>
-    </div>
-    <div class="demo"><h2 class="h-sm">Recorrido de demo</h2><div class="demo-list">
-      ${DEMO.map(([id, n, d]) => `<button class="demo-item" data-act="quick" data-arg="${id}"><b>${esc(n)}</b><span>${esc(d)}</span><code>${id}</code></button>`).join('')}
-    </div></div>
-  </section>`;
+    </section>
+    <section class="blk" id="ingreso">
+      <p class="caption">Ingresar</p>
+      <div class="detail">
+        <div><h2 class="h-md">Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
+        <div><h2 class="h-md">Equipo interno</h2>
+          <form data-form="staff" class="form">
+            <div class="field"><label for="staff-id">Cuenta*</label><select id="staff-id" name="id">${internos}</select></div>
+            <p class="hint">Selector de cuentas sintéticas. El inicio de sesión corporativo está pendiente.</p>
+            <div><button class="btn btn-primary" type="submit">Ingresar</button></div>
+          </form></div>
+      </div>
+    </section>
+    <section class="blk" id="demo">
+      <p class="caption">Recorrido de demo</p>
+      <h2 class="h-lg">Cinco cuentas, un mismo proceso.</h2>
+      <ul class="rows">${DEMO.map(([id, n, d], i) => `<li><button class="row-btn" data-act="quick" data-arg="${esc(id)}">
+        <span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(n)}</b><span class="dim">${esc(d)}</span></span><code>${esc(id)}</code><span class="plus-ico" aria-hidden="true"></span></button></li>`).join('')}</ul>
+    </section>`;
+  return { nav: [{ label: 'Inicio', href: 'top' }, { label: 'Ingresar', href: 'ingreso' }, { label: 'Recorrido de demo', href: 'demo' }].slice(1), body };
 }
 
 // ---------- colaborador ----------
 const GRUPOS = [['Antes de tu día 1', ['Contrato']], ['Tu día 1', ['Equipo', 'Acceso']], ['Tu primera semana', ['Reunión', 'Plan']]];
 function vColaborador(u) {
   const s = store.state; const c = store.verColaborador(u.usuario_id);
-  if (!c) return `<div class="card"><p>No encontramos tu ficha. Contacta al equipo de Personas.</p></div>`;
+  if (!c) return `<section class="blk hero-sm"><h1>No encontramos tu ficha.</h1><p class="lead">Contacta al equipo de Personas.</p></section>`;
   const items = hitosVisibles(u);
   const av = avanceColaborador(c.colaborador_id, s.idx, s.hoy);
   const vencidos = items.filter(x => x.ev.estadoReal === 'Vencido');
+  const faltan = av.total - av.cumplidos;
   const jef = c.jefatura_id ? s.auth.users.get(c.jefatura_id) : null;
   const misRep = store.misReportes();
-  return `<div class="mobile">
-    <section class="card hello">
-      <p class="eyebrow">${esc(c.area)} · ${esc(c.sede)} · ${esc(c.modalidad)}</p>
-      <h1>Hola, ${esc(nombreDe(u.usuario_id).split(' ')[0])}</h1>
-      <p>Ingreso: <b>${fmt(c.fecha_ingreso)}</b> · Turno: ${c.tipo_turno ? `<b>${esc(c.tipo_turno)}</b>` : '<span class="missing">por confirmar (Personas lo está validando)</span>'}</p>
-      <div class="progress"><span><b>${av.cumplidos}</b> de ${av.total} listos</span>${barra(av)}</div>
-      ${vencidos.length ? `<p class="notice notice-bad">${vencidos.length} ${vencidos.length === 1 ? 'tarea está atrasada' : 'tareas están atrasadas'}, y ninguna depende de ti. Los responsables las tienen en su bandeja.</p>` : ''}
-      ${c.correo_corporativo_activo === 'No' ? '<p class="notice">Aún no tienes correo corporativo. Puedes usar esta página desde tu teléfono igual.</p>' : ''}
+  const nombre = String(nombreDe(u.usuario_id)).split(' ')[0];
+  const grupo = (tipos) => items.filter(x => tipos.includes(x.h.tipo_hito));
+  const body = `<section class="blk hero" id="inicio">
+      ${tags([c.area, c.sede, c.modalidad])}
+      <h1>Hola${nombre ? `, ${esc(nombre)}` : ''}. ${faltan ? `Te ${faltan === 1 ? 'falta 1 paso' : `faltan ${faltan} pasos`} para completar tu ingreso.` : 'Tu ingreso está completo.'}</h1>
+      <div class="detail">
+        <div class="stack">
+          ${vencidos.length ? `<p class="lead">${vencidos.length} ${vencidos.length === 1 ? 'paso está atrasado' : 'pasos están atrasados'} y ninguno depende de ti. Los responsables los tienen en su bandeja.</p>` : '<p class="lead">Aquí ves qué debe ocurrir, quién lo gestiona y para cuándo.</p>'}
+          ${c.correo_corporativo_activo === 'No' ? '<p class="hint">Aún no tienes correo corporativo. Puedes usar esta página desde tu teléfono igual.</p>' : ''}
+        </div>
+        ${stats([
+          ['Ingreso', fmt(c.fecha_ingreso)],
+          ['Turno', c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Por confirmar</span>'],
+          ['Avance', `${av.cumplidos} de ${av.total} ${barra(av)}`],
+          ['Atrasados', String(vencidos.length), vencidos.length ? 'bad' : ''],
+        ])}
+      </div>
     </section>
-    ${GRUPOS.map(([g, tipos]) => `<section class="group"><h2 class="h-sm">${g}</h2><ul class="checklist">
-      ${items.filter(x => tipos.includes(x.h.tipo_hito)).map(({ h, ev }) => `<li class="check check-${ev.estadoReal === 'Cumplido' ? 'ok' : ev.estadoReal === 'Vencido' ? 'bad' : ev.estadoReal === 'Por verificar' ? 'warn' : 'neutral'}">
-        <div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><small>Lo gestiona: ${esc(h.responsable_tipo === 'Jefatura' ? 'tu jefatura' : funcion[h.responsable_tipo])} · Plazo <span class="nw">${fmt(ev.limite)}</span></small>
-        ${ev.estadoReal === 'Por verificar' ? '<small class="missing">Figura como listo, pero falta confirmar la fecha.</small>' : ''}</div>${chip(ev)}</li>`).join('')}
-    </ul></section>`).join('')}
-    <section class="card"><h2 class="h-sm">A quién pedir ayuda</h2><dl class="kv">
-      <dt>Tu jefatura</dt><dd>${jef ? esc(nombreDe(jef.usuario_id)) : '<span class="missing">Aún no tienes jefatura asignada. Personas ya tiene la alerta.</span>'}</dd>
-      <dt>Equipo y accesos</dt><dd>Soporte TI</dd>
-      <dt>Contrato y dudas generales</dt><dd>Equipo de Personas</dd>
-      <dt>Tu canal registrado</dt><dd>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>'}</dd>
-    </dl></section>
-    <section class="card"><h2 class="h-sm">¿Algo no coincide con lo que te dijeron?</h2>
-      <form data-form="reporte" class="stack">
-        <label for="rep-tipo">Qué pasó</label>
-        <select id="rep-tipo" name="tipo">
-          ${TIPOS_REPORTE.map(t => `<option>${esc(t)}</option>`).join('')}</select>
+    ${GRUPOS.map(([g, tipos], i) => `<section class="blk" id="g${i}"><p class="caption">${pad2(i + 1)} · ${g}</p>
+      <ul class="rows">${grupo(tipos).map(({ h, ev }) => `<li class="hrow hrow-${ev.estadoReal === 'Cumplido' ? 'ok' : ev.estadoReal === 'Vencido' ? 'bad' : ev.estadoReal === 'Por verificar' ? 'warn' : 'neutral'}">
+        <span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><span class="dim">Lo gestiona ${esc(h.responsable_tipo === 'Jefatura' ? 'tu jefatura' : funcion[h.responsable_tipo])} · plazo <span class="nw">${fmt(ev.limite)}</span></span>
+        ${ev.estadoReal === 'Por verificar' ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ''}</span>${chip(ev)}</li>`).join('')}</ul></section>`).join('')}
+    <section class="blk" id="contactos"><p class="caption">A quién pedir ayuda</p>
+      ${stats([
+        ['Tu jefatura', jef ? esc(nombreDe(jef.usuario_id)) : '<span class="missing">Sin asignar. Personas ya tiene la alerta.</span>'],
+        ['Equipo y accesos', 'Soporte TI'],
+        ['Contrato y dudas generales', 'Equipo de Personas'],
+        ['Tu canal registrado', c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>'],
+      ])}</section>
+    <section class="blk" id="ayuda"><p class="caption">¿Algo no coincide?</p>
+      <h2 class="h-lg">Avísanos si algo no es como te dijeron.</h2>
+      <form data-form="reporte" class="form">
+        <div class="field"><label for="rep-tipo">Qué pasó*</label>
+        <select id="rep-tipo" name="tipo">${TIPOS_REPORTE.map(t => `<option>${esc(t)}</option>`).join('')}</select></div>
         <p class="hint">Registramos solo esta categoría para que Personas revise el caso. No recopilamos relatos ni datos personales adicionales. Tu jefatura no lo ve y no se usa para evaluarte. En esta demo queda solo en memoria.</p>
-        <button class="btn btn-primary" type="submit">Enviar a Personas</button>
+        <div><button class="btn btn-primary" type="submit">Enviar a Personas</button></div>
       </form>
-      ${misRep.length ? `<ul class="mini">${misRep.map(r => `<li>${esc(r.tipo)} <span class="chip chip-neutral">${esc(r.estado)}</span></li>`).join('')}</ul>` : ''}
-    </section>
-  </div>`;
+      ${misRep.length ? `<div class="stack"><p class="caption">Tus reportes</p>${stats(misRep.map(r => [r.tipo, `<span class="chip chip-neutral">${esc(r.estado)}</span>`]))}</div>` : ''}
+    </section>`;
+  const nav = [
+    { label: 'Resumen', href: 'inicio' },
+    ...GRUPOS.map(([g, tipos], i) => { const l = grupo(tipos); return { label: g, href: `g${i}`, n: pad2(i + 1), sub: true, right: `${l.filter(x => x.ev.estadoReal === 'Cumplido').length}/${l.length}` }; }),
+    { label: 'A quién pedir ayuda', href: 'contactos' },
+    { label: '¿Algo no coincide?', href: 'ayuda' },
+  ];
+  return { nav, body };
 }
 
 // ---------- jefatura ----------
@@ -221,24 +281,25 @@ function vJefatura(u) {
   const proximos = equipo.filter(c => c.fecha_ingreso > hoy);
   const recientes = equipo.filter(c => c.fecha_ingreso <= hoy && diffDays(hoy, c.fecha_ingreso) <= 30);
   const metr = auth.alcanceMetricas(u) === 'equipo' ? metricasPorTipo(items) : null;
-  return `<div class="page-head"><div><p class="eyebrow">${esc(u.area)}</p><h1>Tu equipo de ingreso</h1></div>
-      <form data-form="buscar" class="search"><label for="q" class="sr">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Buscar por ID, ej. COL-014"><button class="btn btn-ghost" type="submit">Buscar</button></form></div>
-    ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? '' : 'notice-bad'}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} está en tu equipo.` : `${esc(ui.busqueda.id)} está fuera de tu alcance. El intento quedó registrado en la bitácora.`}</p>` : ''}
-    ${auth.puedeVerMetricas(u) ? `<div class="kpis">
-      ${kpi(equipo.length, 'personas en tu equipo')}
-      ${kpi(mias.length, 'acciones tuyas por hacer', mias.length ? 'warn' : '')}
-      ${kpi(vencEquipo.length, 'hitos atrasados del equipo (de cualquier área)', vencEquipo.length ? 'bad' : '')}
-    </div>` : ''}
-    <section class="card"><h2 class="h-sm">Tus acciones</h2>
-      ${mias.length ? `<ul class="actions">${mias.map(({ h, ev }) => `<li><div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b> · ${esc(nombreDe(h.colaborador_id))}<small>Plazo ${fmt(ev.limite)}${ev.flags.includes('plazo_corrido') ? ` · registrado para ${fmt(ev.limiteRegistrado)}` : ''}</small></div>
-        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar como cumplido</button></div></li>`).join('')}</ul>`
+  const body = `<section class="blk hero" id="inicio">
+      ${tags([u.area, `Equipo de ${equipo.length}`, 'Jefatura'])}
+      <h1>${mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'} con tu equipo de ingreso.` : 'Tu equipo de ingreso está al día contigo.'}</h1>
+      <div class="detail">
+        <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
+          ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? '' : 'notice-bad'}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} está en tu equipo.` : `${esc(ui.busqueda.id)} está fuera de tu alcance. El intento quedó registrado en la bitácora.`}</p>` : ''}</form>
+        ${auth.puedeVerMetricas(u) ? stats([['Personas en tu equipo', String(equipo.length)], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : ''], ['Hitos atrasados del equipo, de cualquier área', String(vencEquipo.length), vencEquipo.length ? 'bad' : '']]) : stats([['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : '']])}
+      </div>
+    </section>
+    <section class="blk" id="acciones"><p class="caption">Tus acciones</p>
+      ${mias.length ? `<ul class="rows">${mias.map(({ h, ev }) => `<li class="hrow"><span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])} · ${esc(nombreDe(h.colaborador_id))}</b><span class="dim">Plazo ${fmt(ev.limite)}${ev.flags.includes('plazo_corrido') ? ` · registrado para ${fmt(ev.limiteRegistrado)}` : ''}</span></span>
+        <span class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar cumplido</button></span></li>`).join('')}</ul>`
         : '<p class="empty">No tienes acciones pendientes.</p>'}
     </section>
-    <section class="card"><h2 class="h-sm">Próximos ingresos</h2>
+    <section class="blk" id="ingresos"><p class="caption">Próximos ingresos</p>
       ${proximos.length ? listaIngresos(proximos) : `<p class="empty">No hay ingresos con fecha posterior al ${fmt(hoy)} en tu equipo.</p>`}
-      ${recientes.length ? `<h3 class="h-xs">Ingresaron en los últimos 30 días</h3>${listaIngresos(recientes)}` : ''}
+      ${recientes.length ? `<p class="caption">Ingresaron en los últimos 30 días</p>${listaIngresos(recientes)}` : ''}
     </section>
-    <section class="card"><h2 class="h-sm">Personas de tu equipo</h2>
+    <section class="blk" id="equipo"><p class="caption">Personas de tu equipo</p>
       <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
       ${equipo.map(c => { const av = avanceColaborador(c.colaborador_id, idx, hoy); return `<tr>
         <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
@@ -249,10 +310,17 @@ function vJefatura(u) {
       </tbody></table></div>
       <p class="hint">No ves canales de contacto ni los reportes que las personas envían a Personas.</p>
     </section>
-    ${metr ? `<section class="card"><h2 class="h-sm">Cumplimiento de tu equipo por hito</h2>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
+    ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
+  const nav = [
+    { label: 'Resumen', href: 'inicio' },
+    { label: 'Tus acciones', href: 'acciones', right: mias.length },
+    { label: 'Próximos ingresos', href: 'ingresos', right: proximos.length },
+    { label: 'Personas de tu equipo', href: 'equipo', right: equipo.length },
+    ...(metr ? [{ label: 'Cumplimiento', href: 'cumplimiento' }] : []),
+  ];
+  return { nav, body };
 }
-const listaIngresos = l => `<ul class="mini">${l.map(c => `<li><b>${esc(nombreDe(c.colaborador_id))}</b> · ${fmt(c.fecha_ingreso)} · ${esc(c.modalidad)} · ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}</li>`).join('')}</ul>`;
-const kpi = (n, t, tone = '') => `<div class="kpi ${tone ? 'kpi-' + tone : ''}"><b>${n}</b><span>${esc(t)}</span></div>`;
+const listaIngresos = l => stats(l.map(c => [nombreDe(c.colaborador_id), `${fmt(c.fecha_ingreso)} · ${esc(c.modalidad)} · ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}`]));
 
 function tablaHitos(u, colId) {
   const s = store.state;
@@ -265,7 +333,7 @@ function tablaHitos(u, colId) {
       <td>${chip(ev)}</td>
       <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Cumplido</button>` : ''}
         ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}
-        ${!pc.ok && !pr.ok && ev.estadoReal !== 'Cumplido' ? `<small class="muted">${esc(pc.motivo)}</small>` : ''}</div></td></tr>
+        ${!pc.ok && !pr.ok && ev.estadoReal !== 'Cumplido' ? `<small class="dim">${esc(pc.motivo)}</small>` : ''}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="6">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('')}
   </tbody></table></div>`;
 }
@@ -273,11 +341,11 @@ function tablaHitos(u, colId) {
 function formReasignar(u, h) {
   const cands = store.state.auth.candidatos(u, h);
   if (!cands.length) return `<p class="notice notice-bad">No hay cuentas válidas para este hito. ${h.responsable_tipo === 'Jefatura' ? 'Ninguna jefatura tiene a esta persona en su equipo_asignado: hay que corregirlo en el sistema de origen.' : ''}</p>`;
-  return `<form data-form="reasignar" data-arg="${esc(h.hito_id)}" class="inline-form">
-    <label for="re-${esc(h.hito_id)}">Nuevo responsable</label>
-    <select id="re-${esc(h.hito_id)}" name="nuevo">${cands.map(c => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)}</option>`).join('')}</select>
-    <label for="rm-${esc(h.hito_id)}">Motivo (queda en la bitácora)</label>
-    <input id="rm-${esc(h.hito_id)}" name="motivo" required minlength="5" maxlength="200" placeholder="Ej.: responsable vacío desde la carga">
+  return `<form data-form="reasignar" data-arg="${esc(h.hito_id)}" class="form form-inline">
+    <div class="field"><label for="re-${esc(h.hito_id)}">Nuevo responsable*</label>
+    <select id="re-${esc(h.hito_id)}" name="nuevo">${cands.map(c => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)}</option>`).join('')}</select></div>
+    <div class="field"><label for="rm-${esc(h.hito_id)}">Motivo* (queda en la bitácora)</label>
+    <input id="rm-${esc(h.hito_id)}" name="motivo" required minlength="5" maxlength="200" placeholder="Ej.: responsable vacío desde la carga"></div>
     <p class="hint">Escribe solo el motivo operativo, sin datos personales. Queda en la bitácora de esta demo hasta recargar.</p>
     <div class="row"><button class="btn btn-primary btn-sm" type="submit">Reasignar</button><button class="btn btn-ghost btn-sm" type="button" data-act="reasignar-close">Cancelar</button></div>
   </form>`;
@@ -288,7 +356,7 @@ function metricasPorTipo(items) {
   return `<div class="metric-rows">${tipos.map(t => {
     const l = items.filter(x => x.h.tipo_hito === t); const ok = l.filter(x => x.ev.estadoReal === 'Cumplido').length;
     const pct = Math.round(ok / l.length * 100);
-    return `<div class="metric"><span>${esc(t)}</span><div class="bar bar-lg"><span style="width:${pct}%"></span></div><b class="num">${pct}%</b><small class="num">${ok}/${l.length}</small></div>`;
+    return `<div class="metric"><span>${esc(t)}</span><div class="bar bar-lg"><span style="width:${pct}%"></span></div><b class="num">${pct}%</b><small class="num dim">${ok}/${l.length}</small></div>`;
   }).join('')}</div>`;
 }
 
@@ -299,20 +367,20 @@ function vTI(u) {
     .sort((a, b) => b.ev.diasVencido - a.ev.diasVencido || CRIT_PESO[b.ev.crit] - CRIT_PESO[a.ev.crit]);
   const filtros = { todos: abiertos, mios: abiertos.filter(x => x.h.responsable_id === u.usuario_id), sin: abiertos.filter(x => !x.h.responsable_id) };
   const lista = filtros[ui.tiFiltro];
-  const btnF = (k, t) => `<button class="seg ${ui.tiFiltro === k ? 'on' : ''}" data-act="ti-filtro" data-arg="${k}" aria-pressed="${ui.tiFiltro === k}">${t} <span class="num">${filtros[k].length}</span></button>`;
-  return `<div class="page-head"><div><p class="eyebrow">Soporte TI</p><h1>Equipos y accesos por entregar</h1></div></div>
-    <p class="notice">Ves solo los hitos de Equipo y Acceso, identificados por código. Los nombres y canales de contacto no son necesarios para resolverlos.</p>
-    ${s.auth.puedeVerMetricas(u) ? `<div class="kpis">
-      ${kpi(abiertos.length, 'casos técnicos abiertos')}
-      ${kpi(abiertos.filter(x => x.ev.estadoReal === 'Vencido').length, 'vencidos según el plazo del catálogo', 'bad')}
-      ${kpi(filtros.sin.length, 'sin responsable asignado', filtros.sin.length ? 'warn' : '')}
-      ${kpi(filtros.mios.length, 'asignados a ti')}
-    </div>` : ''}
-    <div class="segs" role="group" aria-label="Filtro">${btnF('todos', 'Todos')}${btnF('mios', 'Mis casos')}${btnF('sin', 'Sin responsable')}</div>
-    <section class="card"><div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
+  const titulo = { todos: 'Todos los casos', mios: 'Mis casos', sin: 'Sin responsable' };
+  const body = `<section class="blk hero" id="inicio">
+      ${tags(['Soporte TI', 'Equipo y Acceso', 'Sin datos personales'])}
+      <h1>${abiertos.filter(x => x.ev.estadoReal === 'Vencido').length} equipos y accesos están atrasados según el plazo del catálogo.</h1>
+      <div class="detail">
+        <p class="lead">Ves solo los hitos de Equipo y Acceso, identificados por código. Los nombres y canales de contacto no son necesarios para resolverlos.</p>
+        ${s.auth.puedeVerMetricas(u) ? stats([['Casos técnicos abiertos', String(abiertos.length)], ['Vencidos', String(abiertos.filter(x => x.ev.estadoReal === 'Vencido').length), 'bad'], ['Sin responsable asignado', String(filtros.sin.length), filtros.sin.length ? 'warn' : ''], ['Asignados a ti', String(filtros.mios.length)]]) : ''}
+      </div>
+    </section>
+    <section class="blk" id="casos"><p class="caption">${esc(titulo[ui.tiFiltro])} · ${lista.length}</p>
+    <div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
     ${lista.map(({ h, ev }) => { const c = store.verColaborador(h.colaborador_id); const pc = s.auth.puedeCompletar(u, h, s.hoy); const pr = s.auth.puedeReasignar(u, h);
-      return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
-      <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal).toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
+      return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small class="dim">Criticidad ${esc(ev.crit)}</small></td>
+      <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal || 'dispositivo sin dato').toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
       <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
       <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ''}
@@ -320,10 +388,13 @@ function vTI(u) {
         ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
       ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
+  const nav = [['todos', 'Todos'], ['mios', 'Mis casos'], ['sin', 'Sin responsable']].map(([k, t], i) => ({ label: t, act: 'ti-filtro', arg: k, n: pad2(i + 1), right: filtros[k].length, active: ui.tiFiltro === k }));
+  return { nav, body };
 }
 
 // ---------- Personas / Administrador ----------
-const TABS = [['resumen', 'Resumen'], ['casos', 'Casos críticos'], ['calidad', 'Calidad de datos'], ['reportes', 'Reportes'], ['permisos', 'Permisos'], ['bitacora', 'Bitácora'], ['datos', 'Datos']];
+const TABS = [['resumen', 'Resumen', 'Proceso de ingreso completo.'], ['casos', 'Casos críticos', 'Personas que necesitan una acción hoy.'], ['calidad', 'Calidad de datos', 'Lo que los archivos no dicen bien.'],
+  ['reportes', 'Reportes', 'Lo que dicen los colaboradores.'], ['permisos', 'Permisos', 'Quién puede ver y hacer qué.'], ['bitacora', 'Bitácora', 'Cada cambio y cada acceso, con su autor.'], ['datos', 'Datos', 'Fecha de corte y carga de archivos.']];
 function vPersonas(u) {
   const { auth } = store.state;
   const disponibles = TABS.filter(([k]) => (k !== 'resumen' || auth.puedeVerMetricas(u))
@@ -331,10 +402,14 @@ function vPersonas(u) {
     && (k !== 'datos' || auth.puedeCargarArchivos(u)));
   if (!disponibles.some(([k]) => k === ui.tab)) ui.tab = disponibles[0][0];
   const rep = auth.puedeVerReportes(u) ? store.reportesVisibles().filter(r => r.estado !== 'Cerrado').length : 0;
-  const body = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
-  return `<div class="page-head"><div><p class="eyebrow">${u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas'}</p><h1>Proceso de ingreso completo</h1></div></div>
-    <nav class="tabs" role="tablist">${disponibles.map(([k, t]) => `<button role="tab" aria-selected="${ui.tab === k}" class="tab ${ui.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${t}${k === 'reportes' && rep ? ` <span class="badge">${rep}</span>` : ''}${k === 'calidad' ? ` <span class="badge badge-soft" title="Reglas con alertas de severidad alta">${new Set(alertasVisibles(u).filter(a => a.sev === 'alta').map(a => a.regla)).size}</span>` : ''}</button>`).join('')}</nav>
-    ${body}`;
+  const reglasAltas = new Set(alertasVisibles(u).filter(a => a.sev === 'alta').map(a => a.regla)).size;
+  const [, nombreTab, titulo] = TABS.find(t => t[0] === ui.tab);
+  const i = TABS.findIndex(t => t[0] === ui.tab);
+  const contenido = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+  const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas', `${pad2(i + 1)} · ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
+  const nav = disponibles.map(([k, t], j) => ({ label: t, act: 'tab', arg: k, n: pad2(j + 1), active: ui.tab === k,
+    right: k === 'reportes' ? (rep || undefined) : k === 'calidad' ? reglasAltas : undefined }));
+  return { nav, body };
 }
 
 function tResumen(u) {
@@ -347,24 +422,22 @@ function tResumen(u) {
   const personasCrit = colaboradoresVisibles(u).filter(c => avanceColaborador(c.colaborador_id, s.idx, s.hoy).vencidosAltos > 0).length;
   const areas = ['Operaciones', 'Comercial', 'Tecnología', 'Personas'];
   const celda = (l) => { if (!l.length) return '<td>—</td>'; const p = Math.round(l.filter(x => x.ev.estadoReal === 'Cumplido').length / l.length * 100); return `<td class="num heat" style="--p:${p}">${p}%</td>`; };
-  return `<div class="kpis">
-      ${kpi(abiertos.length, 'hitos abiertos')}
-      ${kpi(venc, `atrasados según el catálogo (el registro dice ${reg})`, 'bad')}
-      ${kpi(pv, 'marcados "Cumplido" sin respaldo de fecha', 'warn')}
-      ${kpi(personasCrit, 'personas con un atraso crítico', 'bad')}
-    </div>
-    ${venc > reg ? `<p class="notice notice-bad"><b>El registro subestima los atrasos.</b> ${venc - reg} hitos figuran como "Pendiente", pero su fecha límite se movió más allá del plazo del catálogo. Aquí se cuentan como atrasados.</p>` : ''}
-    <section class="card"><h2 class="h-sm">Cumplimiento real por hito y área</h2>
+  return `<section class="blk"><div class="detail">
+      <div class="stack"><p class="big-num tone-bad num">${venc}</p><p class="lead">hitos atrasados según el plazo del catálogo. El registro marca solo ${reg}.</p>
+        ${venc > reg ? `<p class="hint">${venc - reg} hitos figuran como "Pendiente", pero su fecha límite se movió más allá del plazo del catálogo. Aquí se cuentan como atrasados.</p>` : ''}</div>
+      ${stats([['Hitos abiertos', String(abiertos.length)], ['Atrasados según el catálogo', String(venc), 'bad'], ['Atrasados según el registro', String(reg)], ['"Cumplido" sin respaldo de fecha', String(pv), 'warn'], ['Personas con un atraso crítico', String(personasCrit), 'bad']])}
+    </div></section>
+    <section class="blk"><p class="caption">Cumplimiento real por hito y área</p>
       <div class="table-wrap"><table class="heatmap"><thead><tr><th>Hito</th>${areas.map(a => `<th>${a}</th>`).join('')}<th>Total</th></tr></thead><tbody>
       ${TIPOS_HITO.map(t => `<tr><th scope="row">${t}</th>${areas.map(a => celda(items.filter(x => x.h.tipo_hito === t && s.idx.colab.get(x.h.colaborador_id)?.area === a))).join('')}${celda(items.filter(x => x.h.tipo_hito === t))}</tr>`).join('')}
       </tbody></table></div><p class="hint">Porcentaje de hitos cumplidos con fecha válida. Datos agregados, sin identificar personas.</p></section>
-    <section class="card"><h2 class="h-sm">Atrasos por sede</h2>${porSede(items)}</section>`;
+    <section class="blk"><p class="caption">Atrasos por sede</p>${porSede(items)}</section>`;
 }
 function porSede(items) {
   const s = store.state; const sedes = ['Santiago Centro', 'Providencia', 'Valparaíso', 'Concepción'];
   const max = Math.max(1, ...sedes.map(se => items.filter(x => x.ev.estadoReal === 'Vencido' && s.idx.colab.get(x.h.colaborador_id)?.sede === se).length));
   return `<div class="metric-rows">${sedes.map(se => { const n = items.filter(x => x.ev.estadoReal === 'Vencido' && s.idx.colab.get(x.h.colaborador_id)?.sede === se).length;
-    return `<div class="metric"><span>${se}</span><div class="bar bar-lg bar-bad"><span style="width:${Math.round(n / max * 100)}%"></span></div><b class="num">${n}</b><small>atrasados</small></div>`; }).join('')}</div>`;
+    return `<div class="metric"><span>${se}</span><div class="bar bar-lg bar-bad"><span style="width:${Math.round(n / max * 100)}%"></span></div><b class="num">${n}</b><small class="dim">atrasados</small></div>`; }).join('')}</div>`;
 }
 
 function tCasos(u) {
@@ -372,71 +445,72 @@ function tCasos(u) {
   const lista = colaboradoresVisibles(u).map(c => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) }))
     .filter(x => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id)
     .sort((a, b) => (!b.c.jefatura_id) - (!a.c.jefatura_id) || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
-  return `<p class="hint">${lista.length} personas con atrasos, hitos por verificar o sin jefatura. Abre un caso para reasignar responsables.</p>
-  <section class="card"><div class="table-wrap"><table><thead><tr><th>Persona</th><th>Área · sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
+  return `<section class="blk"><p class="caption">${lista.length} personas con atrasos, hitos por verificar o sin jefatura</p>
+  <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Área · sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
   ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td>
-    <td>${esc(c.area)}<br><small>${esc(c.sede)}</small></td>
+    <td>${esc(c.area)}<br><small class="dim">${esc(c.sede)}</small></td>
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
-    <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small>(${av.vencidosAltos} críticos)</small>` : ''}${av.porVerificar ? `<br><small>${av.porVerificar} por verificar</small>` : ''}</td>
+    <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small class="dim">(${av.vencidosAltos} críticos)</small>` : ''}${av.porVerificar ? `<br><small class="dim">${av.porVerificar} por verificar</small>` : ''}</td>
     <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`).join('')}
   </tbody></table></div></section>`;
 }
 
 function tCalidad(u) {
+  if (!store.state.auth.puedeVerCalidad(u)) return vDenegado();
   const grupos = agruparAlertas(alertasVisibles(u));
-  return `<p class="hint">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige automáticamente: cada alerta indica qué hacer.</p>
-  <div class="alerts">${grupos.map(g => `<details class="alert alert-${esc(g.sev)}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${esc(g.regla)}">
-    <summary><span class="sev">${g.sev === 'alta' ? 'Alta' : g.sev === 'media' ? 'Media' : 'Info'}</span><b>${esc(g.titulo)}</b><span class="num count">${g.items.length}</span></summary>
-    <p class="accion">${esc(g.accion)}</p>
-    <ul class="mini">${g.items.slice(0, 60).map(a => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join('')}${g.items.length > 60 ? `<li>… y ${g.items.length - 60} más</li>` : ''}</ul>
-  </details>`).join('')}</div>`;
+  return `<section class="blk"><p class="lead">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige automáticamente: cada alerta indica qué hacer.</p>
+  <div class="acc">${grupos.map(g => `<details class="alert alert-${esc(g.sev)}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${esc(g.regla)}">
+    <summary><span class="caption sev">${g.sev === 'alta' ? 'Alta' : g.sev === 'media' ? 'Media' : 'Info'}</span><span class="acc-t">${esc(g.titulo)}</span><span class="num count">${g.items.length}</span></summary>
+    <div class="acc-body"><p class="dim">${esc(g.accion)}</p>
+    <ul class="mini">${g.items.slice(0, 60).map(a => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join('')}${g.items.length > 60 ? `<li>… y ${g.items.length - 60} más</li>` : ''}</ul></div>
+  </details>`).join('')}</div></section>`;
 }
 
 function tReportes() {
   const reps = store.reportesVisibles();
-  if (!reps.length) return `<section class="card"><p class="empty">Aún no hay reportes en tu alcance. Para probarlos, entra como COL-002 y usa "¿Algo no coincide?".</p></section>`;
-  return `<section class="card"><p class="hint">Solo categorías de revisión, sin relatos libres. Personas gestiona los casos de su alcance. No se comparten con jefaturas ni TI y no se usan para evaluar ni seleccionar. Se borran al recargar.</p>
-  <ul class="actions">${reps.map(r => `<li><div><b>${esc(r.tipo)}</b> · ${esc(nombreDe(r.colaborador_id))} <code>${esc(r.colaborador_id)}</code><small>${fmt(r.fecha)} · ${esc(r.id)}</small></div>
-    <div class="row"><label for="st-${esc(r.id)}" class="sr">Estado</label><select id="st-${esc(r.id)}" data-change="rep-estado" data-arg="${esc(r.id)}">${ESTADOS_REPORTE.map(e => `<option ${e === r.estado ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select></div></li>`).join('')}</ul></section>`;
+  if (!reps.length) return `<section class="blk"><p class="empty">Aún no hay reportes en tu alcance. Para probarlos, entra como COL-002 y usa "¿Algo no coincide?".</p></section>`;
+  return `<section class="blk"><p class="hint">Solo categorías de revisión, sin relatos libres. Personas gestiona los casos de su alcance. No se comparten con jefaturas ni TI y no se usan para evaluar ni seleccionar. Se borran al recargar.</p>
+  <ul class="rows">${reps.map(r => `<li class="hrow"><span class="rb-main"><b>${esc(r.tipo)} · ${esc(nombreDe(r.colaborador_id))}</b><span class="dim"><code>${esc(r.colaborador_id)}</code> · ${fmt(r.fecha)} · ${esc(r.id)}</span></span>
+    <span class="field field-sm"><label for="st-${esc(r.id)}" class="sr">Estado</label><select id="st-${esc(r.id)}" data-change="rep-estado" data-arg="${esc(r.id)}">${ESTADOS_REPORTE.map(e => `<option ${e === r.estado ? 'selected' : ''}>${esc(e)}</option>`).join('')}</select></span></li>`).join('')}</ul></section>`;
 }
 
 function tPermisos() {
   const roles = ['Colaborador', 'Jefatura', 'TI', 'Personas'];
-  return `<section class="card"><h2 class="h-sm">Lo que cada rol puede hacer en Sprint</h2>
+  return `<section class="blk"><p class="caption">Lo que cada rol puede hacer en Sprint</p>
   <div class="table-wrap"><table><thead><tr><th>Capacidad</th>${roles.map(r => `<th>${r}</th>`).join('')}</tr></thead><tbody>
   ${MATRIZ_EFECTIVA.map(m => `<tr><th scope="row">${esc(m.cap)}</th>${roles.map(r => `<td>${esc(m[r])}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
   <p class="hint">Acceso efectivo = rol + equipo_asignado + permiso Sí/No + tipo de responsabilidad. Un "Sí" del archivo nunca da acceso global por sí solo.</p></section>
-  <section class="card"><h2 class="h-sm">Permisos del archivo que se acotaron</h2><ul class="mini">
-    <li><b>TI</b> tiene "puede_asignar_responsables = Sí". Sprint solo le deja reasignar entre cuentas TI y solo en hitos de Equipo y Acceso.</li>
-    <li><b>TI</b> tiene "puede_ver_metricas = Sí". Ve solo cifras agregadas de hitos técnicos, sin nombres.</li>
-    <li><b>Jefatura</b> tiene "puede_ver_datos_personales = Sí". Solo aplica a su equipo_asignado y nunca incluye el canal de contacto.</li>
-    <li><b>Colaborador</b> tiene "puede_ver_datos_personales = Sí". Solo ve sus propios datos.</li>
-  </ul></section>`;
+  <section class="blk"><p class="caption">Permisos del archivo que se acotaron</p>${stats([
+    ['TI · puede_asignar_responsables = Sí', 'Solo entre cuentas TI, solo Equipo y Acceso'],
+    ['TI · puede_ver_metricas = Sí', 'Solo cifras agregadas de hitos técnicos'],
+    ['Jefatura · puede_ver_datos_personales = Sí', 'Solo su equipo, nunca el canal de contacto'],
+    ['Colaborador · puede_ver_datos_personales = Sí', 'Solo sus propios datos'],
+  ])}</section>`;
 }
 
 function tBitacora() {
   if (!store.state.auth.puedeVerBitacora(store.state.user)) return '';
   const b = store.state.bitacora;
-  return `<section class="card"><div class="row-between"><h2 class="h-sm">Bitácora de cambios y accesos</h2>
+  return `<section class="blk"><div class="row-between"><p class="caption">${b.length} movimientos</p>
     <div class="row"><button class="btn btn-ghost btn-sm" data-act="export" data-arg="bitacora">Copiar bitácora (CSV)</button><button class="btn btn-ghost btn-sm" data-act="export" data-arg="hitos">Copiar hitos actualizados (CSV)</button></div></div>
     ${ui.exportTexto ? `<label for="exp" class="sr">CSV</label><textarea id="exp" class="export" rows="6" readonly>${esc(ui.exportTexto)}</textarea>` : ''}
     ${b.length ? `<div class="table-wrap"><table><thead><tr><th>Cuándo</th><th>Usuario</th><th>Acción</th><th>Objetivo</th><th>Detalle</th><th>Resultado</th></tr></thead><tbody>
-    ${b.slice(0, 200).map(x => `<tr><td class="num"><small>${esc(new Date(x.ts).toLocaleString('es-CL'))}</small></td><td><code>${esc(x.usuario)}</code><br><small>${esc(x.rol)}</small></td><td>${esc(x.accion)}</td><td><code>${esc(x.objetivo)}</code></td><td>${esc(x.detalle)}</td><td>${x.resultado === 'ok' ? '<span class="chip chip-ok">ok</span>' : '<span class="chip chip-bad">denegado</span>'}</td></tr>`).join('')}
+    ${b.slice(0, 200).map(x => `<tr><td class="num"><small>${esc(new Date(x.ts).toLocaleString('es-CL'))}</small></td><td><code>${esc(x.usuario)}</code><br><small class="dim">${esc(x.rol)}</small></td><td>${esc(x.accion)}</td><td><code>${esc(x.objetivo)}</code></td><td>${esc(x.detalle)}</td><td>${x.resultado === 'ok' ? '<span class="chip chip-ok">ok</span>' : `<span class="chip chip-bad">${esc(x.resultado)}</span>`}</td></tr>`).join('')}
     </tbody></table></div>` : '<p class="empty">Sin movimientos todavía.</p>'}</section>`;
 }
 
 function tDatos() {
   const s = store.state;
-  return `<section class="card"><h2 class="h-sm">Fecha de corte</h2>
-    <form data-form="hoy" class="inline-form"><label for="hoy">Calcular atrasos al</label><input type="date" id="hoy" name="hoy" value="${esc(s.hoy)}" required><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></form></section>
-  <section class="card"><h2 class="h-sm">Cargar archivos nuevos</h2>
-    <p class="hint">Usa exclusivamente los CSV sintéticos del kit con su nombre original. No cargues datos reales, credenciales ni columnas adicionales. Se rechazan campos ajenos al diccionario y la carga queda solo en memoria.</p>
-    <form data-form="carga" class="stack"><label for="files">Archivos CSV (máximo 2 MB por archivo)</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form>
+  return `<section class="blk"><p class="caption">Fecha de corte</p>
+    <form data-form="hoy" class="form form-inline"><div class="field"><label for="hoy">Calcular atrasos al*</label><input type="date" id="hoy" name="hoy" value="${esc(s.hoy)}" required></div><div><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></div></form></section>
+  <section class="blk"><p class="caption">Cargar archivos nuevos</p>
+    <p class="lead">Usa exclusivamente los CSV sintéticos del kit con su nombre original. No cargues datos reales, credenciales ni columnas adicionales. Se rechazan campos ajenos al diccionario y la carga queda solo en memoria.</p>
+    <form data-form="carga" class="form"><div class="field"><label for="files">Archivos CSV* (máximo 2 MB por archivo)</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple></div><div><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></div></form>
     ${ui.cargaErrores ? `<div class="notice notice-bad" role="alert"><b>No se cargó nada.</b> Corrige esto y vuelve a intentar:<ul class="mini">${ui.cargaErrores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}</section>
-  <section class="card"><h2 class="h-sm">Reiniciar la demo</h2><p class="hint">Vuelve a los datos originales y borra los reportes y movimientos de esta sesión. También se borran al recargar.</p>
-    <button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></section>`;
+  <section class="blk"><p class="caption">Reiniciar la demo</p><p class="lead">Vuelve a los datos originales y borra los reportes y movimientos de esta sesión. También se borran al recargar.</p>
+    <div><button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></div></section>`;
 }
 
 // ---------- eventos ----------
@@ -502,9 +576,9 @@ function onClick(e) {
     case 'quick': { const r = store.login(arg, 'recorrido de demo'); if (!r.ok) return toastMsg(r.motivo); resetUi(); return render(); }
     case 'logout': store.logout(); resetUi(); ui.loginStep = null; return render();
     case 'login-back': ui.loginStep = null; ui.loginError = ''; return render();
-    case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; return render();
+    case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; render(); return window.scrollTo(0, 0);
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();
-    case 'ti-filtro': ui.tiFiltro = arg; return render();
+    case 'ti-filtro': ui.tiFiltro = arg; ui.reasignando = null; return render();
     case 'reasignar-open': ui.reasignando = arg; return render();
     case 'reasignar-close': ui.reasignando = null; return render();
     case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
