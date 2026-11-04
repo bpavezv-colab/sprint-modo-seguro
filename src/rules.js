@@ -18,7 +18,23 @@ export const DOMINIOS = {
   estado: ['Pendiente', 'Cumplido', 'Atrasado'],
   responsable_tipo: ['Personas', 'TI', 'Jefatura'],
   nivel_criticidad: ['Bajo', 'Medio', 'Alto'],
+  rol: ['Colaborador', 'Jefatura', 'Personas', 'TI', 'Administrador'],
+  si_no: ['Sí', 'No'],
+  responsable_inicial: ['Personas', 'TI', 'Jefatura'],
+  plazo_ficticio: ['Antes del día 1', 'Día 1', 'Primera semana'],
+  criticidad: ['Alta', 'Media'],
 };
+
+export const FORMATO = {
+  colaborador_id: /^COL-\d{3}$/,
+  hito_id: /^HITO-\d{3}$/,
+  usuario_id: /^(COL|JEF|PER|TI|ADM)-\d{3}$/,
+  jefatura_id: /^JEF-\d{3}$/,
+  responsable_id: /^(PER|TI|JEF)-\d{3}$/,
+};
+const PREFIJO_POR_ROL = { Colaborador: 'COL-', Jefatura: 'JEF-', Personas: 'PER-', TI: 'TI-', Administrador: 'ADM-' };
+// Errores que impiden usar un archivo cargado (se rechaza la carga completa).
+export const BLOQUEANTES = ['id_duplicado', 'formato_id', 'relacion_inexistente', 'tipo_fuera_catalogo', 'rol_invalido', 'catalogo_invalido'];
 
 const PREFIJO_ROL = { Personas: 'PER-', TI: 'TI-', Jefatura: 'JEF-' };
 const CRIT_NORM = { Alta: 'Alto', Alto: 'Alto', Media: 'Medio', Medio: 'Medio', Bajo: 'Bajo', Baja: 'Bajo' };
@@ -140,6 +156,10 @@ export const REGLAS = {
   campo_vacio: { titulo: 'Dato operativo faltante', sev: 'media', accion: 'Validar con el colaborador; no suponer un valor.' },
   estado_onboarding_inconsistente: { titulo: 'Estado general no coincide con los hitos', sev: 'media', accion: 'El avance se calcula desde los hitos.' },
   permiso_acotado: { titulo: 'Permiso del archivo acotado por mínimo privilegio', sev: 'info', accion: 'Se aplica rol + equipo_asignado + tipo de hito.' },
+  formato_id: { titulo: 'Identificador con formato inválido', sev: 'alta', accion: 'Usar el formato del diccionario (COL-###, HITO-###, JEF-###…).' },
+  rol_invalido: { titulo: 'Cuenta con rol inválido o inconsistente', sev: 'alta', accion: 'La cuenta queda bloqueada hasta corregir el rol.' },
+  catalogo_invalido: { titulo: 'Regla de catálogo inválida', sev: 'alta', accion: 'Corregir plazo, responsable o criticidad del catálogo.' },
+  equipo_inexistente: { titulo: 'equipo_asignado incluye personas que no existen', sev: 'media', accion: 'Depurar el equipo en el sistema de origen.' },
 };
 
 export function validar(data, idx, hoy) {
@@ -153,6 +173,21 @@ export function validar(data, idx, hoy) {
   dup(data.colaboradores, 'colaborador_id', 'colaborador');
   dup(data.hitos, 'hito_id', 'hito');
   dup(data.usuarios, 'usuario_id', 'usuario');
+  const fmtId = (v, campo, ent, id) => { if (v !== null && v !== undefined && !FORMATO[campo].test(v)) add('formato_id', ent, id ?? v, `${campo} = "${v}"`); };
+  for (const c of data.colaboradores) { fmtId(c.colaborador_id, 'colaborador_id', 'colaborador'); fmtId(c.jefatura_id, 'jefatura_id', 'colaborador', c.colaborador_id); }
+  for (const h of data.hitos) { fmtId(h.hito_id, 'hito_id', 'hito'); fmtId(h.responsable_id, 'responsable_id', 'hito', h.hito_id); }
+  for (const u of data.usuarios) {
+    fmtId(u.usuario_id, 'usuario_id', 'usuario');
+    if (!DOMINIOS.rol.includes(u.rol)) add('rol_invalido', 'usuario', u.usuario_id, `rol = "${u.rol}"`);
+    else if (u.usuario_id && !u.usuario_id.startsWith(PREFIJO_POR_ROL[u.rol])) add('rol_invalido', 'usuario', u.usuario_id, `rol ${u.rol} con identificador ${u.usuario_id}`);
+    for (const f of ['puede_ver_datos_personales', 'puede_editar_hitos', 'puede_asignar_responsables', 'puede_ver_metricas']) if (!DOMINIOS.si_no.includes(u[f])) add('valor_fuera_dominio', 'usuario', u.usuario_id, `${f} = "${u[f] ?? 'vacío'}" (se trata como No)`);
+    if (!u.nombre_ficticio) add('campo_vacio', 'usuario', u.usuario_id, 'Nombre vacío');
+    if (u.rol === 'Jefatura') for (const id of (u.equipo_asignado || '').split('|').map(x => x.trim()).filter(Boolean)) if (!idx.colab.has(id)) add('equipo_inexistente', 'usuario', u.usuario_id, `${id} no existe`);
+  }
+  for (const k of data.catalogo) {
+    if (!TIPOS_HITO.includes(k.tipo_hito) || !DOMINIOS.responsable_inicial.includes(k.responsable_inicial) || !DOMINIOS.plazo_ficticio.includes(k.plazo_ficticio) || !DOMINIOS.criticidad.includes(k.criticidad)) add('catalogo_invalido', 'catálogo', k.tipo_hito ?? '—', `${k.responsable_inicial} · ${k.plazo_ficticio} · ${k.criticidad}`);
+  }
+  dup(data.catalogo, 'tipo_hito', 'catálogo');
 
   // colaboradores
   const camposDom = ['area', 'sede', 'modalidad', 'tipo_turno', 'canal_contacto', 'correo_corporativo_activo', 'dispositivo_principal', 'estado_onboarding'];

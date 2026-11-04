@@ -225,3 +225,25 @@ test('Interfaz: los identificadores cargados no pueden inyectar HTML', () => {
   assert.equal(html.includes(id), false);
   assert.ok(html.includes('&lt;img'));
 });
+
+test('Interfaz: mantiene el límite de 2 MB y rechaza fallos de lectura sin cambiar datos', async () => {
+  const st = crearStore(fresh()); st.login('PER-001');
+  const anteriorDoc = globalThis.document; const anteriorForm = globalThis.FormData;
+  globalThis.document = { addEventListener() {} };
+  globalThis.FormData = class { get() { return null; } };
+  const handlers = {}; const root = { innerHTML: '', addEventListener(k, fn) { handlers[k] = fn; } };
+  let lecturas = 0;
+  const enviar = file => handlers.submit({ preventDefault() {}, target: { closest() {
+    return { dataset: { form: 'carga' }, querySelector() { return { files: [file] }; } };
+  } } });
+  try {
+    mount(root, st);
+    await enviar({ name: 'colaboradores.csv', size: 2 * 1024 * 1024 + 1, async text() { lecturas++; return ''; } });
+    assert.equal(lecturas, 0);
+    assert.equal(st.state.bitacora[0].resultado, 'denegado');
+    await enviar({ name: 'colaboradores.csv', size: 10, async text() { throw new Error('SECRETO'); } });
+    assert.equal(st.state.bitacora[0].resultado, 'denegado');
+    assert.equal(JSON.stringify(st.state.bitacora).includes('SECRETO'), false);
+    assert.deepEqual(st.state.base.colaboradores, base.colaboradores);
+  } finally { globalThis.document = anteriorDoc; globalThis.FormData = anteriorForm; }
+});

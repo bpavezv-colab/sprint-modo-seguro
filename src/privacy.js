@@ -10,11 +10,12 @@ export const ARCHIVOS = {
 export const TIPOS_REPORTE = ['Mis tareas no coinciden con lo ofrecido', 'Mi turno cambió o no lo conozco', 'No tengo equipo o accesos', 'No sé quién es mi jefatura', 'Otro'];
 export const ESTADOS_REPORTE = ['Nuevo', 'En gestión', 'Cerrado'];
 
-export function validarCampos(datos) {
+export function validarCampos(datos, { permitirVacios = false } = {}) {
+  if (!datos || typeof datos !== 'object' || Array.isArray(datos)) return false;
   const esquemas = new Map(Object.values(ARCHIVOS));
   for (const [tabla, filas] of Object.entries(datos)) {
     const campos = esquemas.get(tabla);
-    if (!campos || !Array.isArray(filas) || !filas.length) return false;
+    if (!campos || !Array.isArray(filas) || (!permitirVacios && !filas.length)) return false;
     for (const fila of filas) {
       if (!fila || typeof fila !== 'object' || Array.isArray(fila)) return false;
       if (Object.keys(fila).some(c => !campos.includes(c)) || campos.some(c => !Object.hasOwn(fila, c))) return false;

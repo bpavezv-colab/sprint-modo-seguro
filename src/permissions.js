@@ -3,8 +3,13 @@
 // Un "Sí" del archivo nunca concede acceso global por sí solo (diccionario, convenciones generales).
 
 export const HITOS_TECNICOS = ['Equipo', 'Acceso'];
+export const ROLES_VALIDOS = ['Colaborador', 'Jefatura', 'Personas', 'TI', 'Administrador'];
+const PREFIJO_CUENTA = { Colaborador: 'COL-', Jefatura: 'JEF-', Personas: 'PER-', TI: 'TI-', Administrador: 'ADM-' };
+// Denegar por defecto: una cuenta con rol desconocido o con un ID que no calza con su rol no tiene alcance.
+export function cuentaValida(u) {
+  return !!u && ROLES_VALIDOS.includes(u.rol) && typeof u.usuario_id === 'string' && u.usuario_id.startsWith(PREFIJO_CUENTA[u.rol]);
+}
 const PREFIJO_ROL = { Personas: 'PER-', TI: 'TI-', Jefatura: 'JEF-' };
-const ROLES = ['Colaborador', 'Jefatura', 'Personas', 'TI', 'Administrador'];
 
 // "COL-001|COL-013", "COL-001 a COL-060", "COL-001 a COL-060 (solo hitos Equipo y Acceso)", "Todos los usuarios"
 export function parseEquipo(texto, todosLosColabs) {
@@ -23,17 +28,19 @@ export function crearAuth(data) {
   const ids = data.colaboradores.map(c => c.colaborador_id);
   const scopes = new Map();
   for (const u of data.usuarios) {
+    if (!cuentaValida(u)) { scopes.set(u.usuario_id, new Set()); continue; }
     let s = parseEquipo(u.equipo_asignado, ids);
     if (u.rol === 'Colaborador') s = new Set(s.has(u.usuario_id) ? [u.usuario_id] : []); // solo uno mismo
     scopes.set(u.usuario_id, s);
   }
   const colab = new Map(data.colaboradores.map(c => [c.colaborador_id, c]));
   const users = new Map(data.usuarios.map(u => [u.usuario_id, u]));
-  const conocido = u => !!u && ROLES.includes(u.rol) && users.get(u.usuario_id) === u;
+  const conocido = u => cuentaValida(u) && users.get(u.usuario_id) === u;
   const si = (u, f) => conocido(u) && u[f] === 'Sí';
 
   const auth = {
     users,
+    cuentaValida,
     scope(u) { return new Set(conocido(u) ? scopes.get(u.usuario_id) : []); },
     enAlcance(u, colId) { return auth.scope(u).has(colId); },
 

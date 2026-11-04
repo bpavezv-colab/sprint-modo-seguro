@@ -1,10 +1,10 @@
 // Demo sintética: estado solo en memoria. Nunca persistir reportes, motivos ni bitácoras.
-import { indexData, validar, HOY_DEFAULT, isISO } from './rules.js';
+import { indexData, validar, HOY_DEFAULT, isISO, BLOQUEANTES } from './rules.js';
 import { crearAuth } from './permissions.js';
 import { limpiarPersistenciaAnterior, validarCampos, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 
 export function crearStore(base, { now = () => new Date().toISOString() } = {}) {
-  if (!validarCampos(base)) throw new Error('Los datos deben contener únicamente los campos del kit sintético.');
+  if (!validarCampos(base, { permitirVacios: true })) throw new Error('Los datos deben contener únicamente los campos del kit sintético.');
   const original = structuredClone(base);
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
@@ -24,6 +24,7 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
   }
   function log(accion, objetivo, detalle, resultado = 'ok') {
     s.bitacora.unshift({ ts: now(), usuario: s.user?.usuario_id || '—', rol: s.user?.rol || '—', accion, objetivo: objetivoSeguro(objetivo), detalle, resultado });
+    if (s.bitacora.length > 2000) s.bitacora.length = 2000;
   }
   function denegar(accion, objetivo, motivo) { log(accion, objetivo, motivo, 'denegado'); return { ok: false, motivo }; }
   function hito(id) { return s.data.hitos.find(h => h.hito_id === id); }
@@ -36,9 +37,10 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
       const accion = entrada === 'ingreso' ? 'ingreso' : 'carga_archivos';
       return denegar(accion, '—', 'Entrada rechazada en el formulario; no se registra su contenido');
     },
-    login(usuarioId) {
+    login(usuarioId, via, opciones = {}) {
       const u = s.auth.users.get(usuarioId);
       if (!u || !s.auth.puedeVerColaborador(u, [...s.auth.scope(u)][0])) return denegar('ingreso', '—', 'Cuenta sin acceso autorizado');
+      if (opciones?.soloInterno && u.rol === 'Colaborador') return denegar('ingreso', usuarioId, 'Los colaboradores ingresan con su código');
       s.user = u; log('ingreso', usuarioId, 'Selección de cuenta sintética (simulación)'); return { ok: true };
     },
     logout() { if (s.user) log('salida', s.user.usuario_id, ''); s.user = null; },
@@ -96,9 +98,17 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
     cargarArchivos(nuevo) {
       if (!s.auth.puedeCargarArchivos(s.user)) return denegar('carga_archivos', '—', 'Sin permiso');
       if (!validarCampos(nuevo)) return denegar('carga_archivos', '—', 'Carga rechazada: usa solo las columnas del kit sintético, sin información adicional');
-      s.base = { ...s.base, ...structuredClone(nuevo) }; s.overrides = {}; rebuild();
-      log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true };
+      const candidato = { ...s.base, ...structuredClone(nuevo) };
+      const errores = validar(candidato, indexData(candidato), s.hoy).filter(a => BLOQUEANTES.includes(a.regla));
+      if (errores.length) {
+        const r = denegar('carga_archivos', '—', `Carga rechazada: ${errores.length} errores bloqueantes. Los datos actuales no cambiaron.`);
+        return { ...r, errores };
+      }
+      s.base = candidato; s.overrides = {}; rebuild();
+      if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
+      log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true, sesionCerrada: !s.user };
     },
+    registrarError() { log('error', '—', 'Error inesperado; no se registra el mensaje ni su contenido', 'error'); },
     exportar(tipo) {
       if (!s.auth.puedeVerCalidad(s.user)) return denegar('exportar', '—', 'Sin permiso para exportar');
       if (tipo === 'bitacora' && !s.auth.puedeVerBitacora(s.user)) return denegar('exportar', '—', 'La bitácora completa requiere alcance global');
@@ -114,5 +124,19 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
       return { ok: true };
     },
   };
+  // Una entrada inválida o un fallo inesperado nunca escapa a los handlers de la UI.
+  for (const nombre of Object.keys(api)) {
+    if (typeof api[nombre] !== 'function') continue;
+    const ejecutar = api[nombre];
+    api[nombre] = (...args) => {
+      try { return ejecutar(...args); }
+      catch {
+        log('error', '—', 'No se pudo completar la acción; no se registra su contenido', 'error');
+        if (nombre === 'verColaborador') return null;
+        if (['reportesVisibles', 'misReportes'].includes(nombre)) return [];
+        return { ok: false, motivo: 'No se pudo completar la acción. Revisa los datos e intenta nuevamente.' };
+      }
+    };
+  }
   return api;
 }

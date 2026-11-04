@@ -18,6 +18,7 @@ const ui = {
   busqueda: null,       // { id, ok }
   exportTexto: null,
   alertaAbierta: null,
+  cargaErrores: null,
 };
 let store; let root;
 
@@ -72,7 +73,7 @@ function header() {
     <div class="top-in">
       <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>Sprint</strong><small>Onboarding · Modo Seguro</small></div></div>
       ${u ? `<div class="who">
-          <div class="who-txt"><strong>${esc(u.nombre_ficticio)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
+          <div class="who-txt"><strong>${esc(u.nombre_ficticio || u.usuario_id)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
           <button class="btn btn-ghost" data-act="logout">Cambiar usuario</button>
         </div>` : ''}
     </div>
@@ -81,15 +82,30 @@ function header() {
   </header>`;
 }
 
+const VISTAS = { Colaborador: u => vColaborador(u), Jefatura: u => vJefatura(u), TI: u => vTI(u), Personas: u => vPersonas(u), Administrador: u => vPersonas(u) };
+
+function vDenegado() {
+  return `<section class="card"><h1>No tienes acceso</h1><p>Tu cuenta no tiene un rol válido para esta herramienta. Contacta al equipo de Personas.</p>
+    <div><button class="btn btn-primary" data-act="logout">Volver al inicio</button></div></section>`;
+}
+function vError() {
+  return `<section class="card"><h1>Algo no funcionó en esta vista</h1>
+    <p>No se perdió ningún dato y el error quedó en la bitácora. Puedes volver al inicio o, si se repite, reiniciar la demo.</p>
+    <div class="row"><button class="btn btn-primary" data-act="logout">Volver al inicio</button><button class="btn btn-ghost" data-act="reset">Reiniciar demo</button></div></section>`;
+}
 function render() {
   const s = store.state; const u = s.user;
   let body;
-  if (!u) body = vLogin();
-  else if (u.rol === 'Colaborador') body = vColaborador(u);
-  else if (u.rol === 'Jefatura') body = vJefatura(u);
-  else if (u.rol === 'TI') body = vTI(u);
-  else body = vPersonas(u);
-  root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : '');
+  try {
+    if (!u) body = vLogin();
+    else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) body = vDenegado(); // denegar por defecto
+    else body = VISTAS[u.rol](u);
+  } catch (err) {
+    console.error(err);
+    try { store.registrarError(`vista ${u ? u.rol : 'ingreso'}`, err && err.message); } catch { /* noop */ }
+    body = vError();
+  }
+  root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
 }
 
 function modal() {
@@ -371,7 +387,7 @@ function tCasos(u) {
 function tCalidad(u) {
   const grupos = agruparAlertas(alertasVisibles(u));
   return `<p class="hint">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige automáticamente: cada alerta indica qué hacer.</p>
-  <div class="alerts">${grupos.map(g => `<details class="alert alert-${g.sev}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${g.regla}">
+  <div class="alerts">${grupos.map(g => `<details class="alert alert-${esc(g.sev)}" ${ui.alertaAbierta === g.regla ? 'open' : ''} data-regla="${esc(g.regla)}">
     <summary><span class="sev">${g.sev === 'alta' ? 'Alta' : g.sev === 'media' ? 'Media' : 'Info'}</span><b>${esc(g.titulo)}</b><span class="num count">${g.items.length}</span></summary>
     <p class="accion">${esc(g.accion)}</p>
     <ul class="mini">${g.items.slice(0, 60).map(a => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join('')}${g.items.length > 60 ? `<li>… y ${g.items.length - 60} más</li>` : ''}</ul>
@@ -417,12 +433,14 @@ function tDatos() {
     <form data-form="hoy" class="inline-form"><label for="hoy">Calcular atrasos al</label><input type="date" id="hoy" name="hoy" value="${esc(s.hoy)}" required><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></form></section>
   <section class="card"><h2 class="h-sm">Cargar archivos nuevos</h2>
     <p class="hint">Usa exclusivamente los CSV sintéticos del kit con su nombre original. No cargues datos reales, credenciales ni columnas adicionales. Se rechazan campos ajenos al diccionario y la carga queda solo en memoria.</p>
-    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form></section>
+    <form data-form="carga" class="stack"><label for="files">Archivos CSV (máximo 2 MB por archivo)</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form>
+    ${ui.cargaErrores ? `<div class="notice notice-bad" role="alert"><b>No se cargó nada.</b> Corrige esto y vuelve a intentar:<ul class="mini">${ui.cargaErrores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}</section>
   <section class="card"><h2 class="h-sm">Reiniciar la demo</h2><p class="hint">Vuelve a los datos originales y borra los reportes y movimientos de esta sesión. También se borran al recargar.</p>
     <button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></section>`;
 }
 
 // ---------- eventos ----------
+const MAX_ARCHIVO = 2 * 1024 * 1024;
 async function onSubmit(e) {
   const f = e.target.closest('form[data-form]'); if (!f) return;
   e.preventDefault();
@@ -437,7 +455,7 @@ async function onSubmit(e) {
     if (!r.ok || s.user.rol !== 'Colaborador') { store.logout(); ui.loginError = 'No encontramos una cuenta de colaborador autorizada.'; return render(); }
     ui.loginStep = null; ui.loginError = ''; resetUi(); return render();
   }
-  if (kind === 'staff') { const r = store.login(String(fd.get('id'))); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
+  if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
   if (kind === 'reporte') { const r = store.reportar(String(fd.get('tipo'))); return toastMsg(r.ok ? 'Solicitud creada en esta demo para revisión de Personas. Se borra al recargar.' : r.motivo); }
   if (kind === 'buscar') {
     const id = String(fd.get('q') || '').trim().toUpperCase(); if (!id) return;
@@ -450,30 +468,38 @@ async function onSubmit(e) {
   if (kind === 'hoy') { const v = String(fd.get('hoy')); const r = store.setHoy(v); return toastMsg(r.ok ? `Atrasos recalculados al ${fmt(v)}.` : r.motivo); }
   if (kind === 'carga') {
     const files = [...(f.querySelector('input[type=file]').files || [])];
+    ui.cargaErrores = null;
     if (!files.length) { store.rechazarEntrada('carga'); return toastMsg('Elige al menos un archivo CSV.'); }
     const nuevo = {}; const errores = [];
     for (const file of files) {
       const def = ARCHIVOS[file.name.toLowerCase()];
       if (!def) { errores.push('Archivo no reconocido; usa los nombres del kit sintético'); continue; }
-      const rows = parseCSV(await file.text());
+      if (file.size > MAX_ARCHIVO) { errores.push(`${file.name}: pesa más de 2 MB.`); continue; }
+      let rows;
+      try { rows = parseCSV(await file.text()); }
+      catch { errores.push(`${file.name}: no se pudo leer como texto UTF-8.`); continue; }
       const faltan = def[1].filter(c => !(rows[0] && c in rows[0]));
-      if (!rows.length || faltan.length) { errores.push(`${file.name}: faltan columnas ${faltan.join(', ') || '(archivo vacío)'}`); continue; }
+      if (!rows.length) { errores.push(`${file.name}: no tiene filas.`); continue; }
+      if (faltan.length) { errores.push(`${file.name}: faltan columnas ${faltan.join(', ')}.`); continue; }
       nuevo[def[0]] = rows;
     }
-    if (errores.length) { store.rechazarEntrada('carga'); return toastMsg(`No se cargó: ${errores.join(' · ')}`); }
-    const r = store.cargarArchivos(nuevo); if (!r.ok) return toastMsg(r.motivo);
+    if (errores.length) { store.rechazarEntrada('carga'); ui.cargaErrores = errores; return toastMsg('Carga rechazada. Los datos actuales no cambiaron.'); }
+    const r = store.cargarArchivos(nuevo);
+    if (!r.ok) { ui.cargaErrores = (r.errores || []).slice(0, 30).map(a => `${a.titulo}: ${a.id} · ${a.detalle}`); return toastMsg(r.motivo); }
+    if (r.sesionCerrada) { resetUi(); return toastMsg('Archivos cargados solo en memoria. Tu cuenta ya no existe: ingresa de nuevo.'); }
     ui.tab = 'calidad'; return toastMsg('Archivos sintéticos cargados solo en memoria. Revisa las alertas de calidad.');
   }
 }
 
-function resetUi() { Object.assign(ui, { tab: 'resumen', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null }); }
+function resetUi() { Object.assign(ui, { tab: 'resumen', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act; const arg = b.dataset.arg; const s = store.state;
   const h = arg ? s.data.hitos.find(x => x.hito_id === arg) : null;
+  if (['completar', 'tomar', 'reasignar-open'].includes(act) && !h) { toastMsg('Ese hito ya no existe. La vista se actualizó.'); return; }
   switch (act) {
-    case 'quick': store.login(arg, 'recorrido de demo'); resetUi(); return render();
+    case 'quick': { const r = store.login(arg, 'recorrido de demo'); if (!r.ok) return toastMsg(r.motivo); resetUi(); return render(); }
     case 'logout': store.logout(); resetUi(); ui.loginStep = null; return render();
     case 'login-back': ui.loginStep = null; ui.loginError = ''; return render();
     case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; return render();
@@ -481,8 +507,8 @@ function onClick(e) {
     case 'ti-filtro': ui.tiFiltro = arg; return render();
     case 'reasignar-open': ui.reasignando = arg; return render();
     case 'reasignar-close': ui.reasignando = null; return render();
-    case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${h.colaborador_id} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
-    case 'tomar': ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${h.colaborador_id}). La asignación queda en la bitácora.`, act: 'tomar', arg }; return render();
+    case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
+    case 'tomar': ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${esc(h.colaborador_id)}). La asignación queda en la bitácora.`, act: 'tomar', arg }; return render();
     case 'reset': ui.confirm = { texto: 'Volver a los datos originales y borrar la bitácora y los reportes de este navegador.', act: 'reset' }; return render();
     case 'cancel': ui.confirm = null; return render();
     case 'confirm-ok': {
@@ -512,12 +538,23 @@ function onChange(e) {
 }
 function onToggle(e) { const d = e.target; if (d.matches && d.matches('details[data-regla]')) ui.alertaAbierta = d.open ? d.dataset.regla : (ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta); }
 
+// Ningún error de un botón o formulario deja la pantalla rota: se informa, se registra y se vuelve a dibujar.
+function fallo(contexto, err) {
+  console.error(err);
+  try { store.registrarError(contexto, err && err.message); } catch { /* noop */ }
+  ui.confirm = null; ui.toast = 'No se pudo completar la acción. Quedó registrado en la bitácora.';
+  try { render(); } catch { root.textContent = 'Error al dibujar la página. Recarga para continuar.'; }
+}
+const seguro = (nombre, fn) => (e) => { try { const r = fn(e); return r && typeof r.catch === 'function' ? r.catch(err => fallo(nombre, err)) : r; } catch (err) { fallo(nombre, err); } };
+
 export function mount(el, st) {
   root = el; store = st;
-  root.addEventListener('click', onClick);
-  root.addEventListener('submit', onSubmit);
-  root.addEventListener('change', onChange);
-  root.addEventListener('toggle', onToggle, true);
+  root.addEventListener('click', seguro('clic', onClick));
+  root.addEventListener('submit', seguro('formulario', onSubmit));
+  root.addEventListener('change', seguro('cambio', onChange));
+  root.addEventListener('toggle', seguro('detalle', onToggle), true);
+  globalThis.window?.addEventListener('error', e => fallo('global', e.error || new Error(e.message)));
+  globalThis.window?.addEventListener('unhandledrejection', e => fallo('promesa', e.reason instanceof Error ? e.reason : new Error(String(e.reason))));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.confirm) { ui.confirm = null; render(); } });
   render();
 }

@@ -44,6 +44,15 @@ En `dist/index.html`, entra como COL-002 y crea una solicitud. Cambia a JEF-002 
 - `estado_onboarding` que no coincide con los hitos; vacíos en turno, canal y estado.
 - Permisos del archivo que se acotan por mínimo privilegio (TI asignar/métricas).
 
+## Manejo de errores y casos borde
+La suite incluye pruebas de reglas, excepciones y privacidad (`tests/core.test.mjs`, `tests/excepciones.test.mjs`, `tests/privacy.test.mjs`):
+- Rol desconocido o inconsistente → acceso denegado (no cae en ninguna vista por defecto).
+- Carga de CSV con IDs duplicados, mal formados o con HTML/JS inyectado → rechazada completa, datos intactos.
+- Estado guardado por la versión anterior → se elimina sin leer ni restaurar su contenido; si el navegador impide borrarlo, se avisa. Esta versión no persiste datos.
+- Vacíos y fechas inválidas → alerta "dato faltante", nunca un valor inventado; las vistas siguen funcionando.
+- Manipular la página para forzar acciones (completar hitos ajenos, entrar como colaborador por el acceso interno) → denegado y registrado.
+- Cualquier error inesperado → pantalla de recuperación y registro en la bitácora, sin pantalla en blanco.
+
 ## Recorrido de demo (3 minutos)
 1. **Camila Rojas (COL-002)** en el teléfono: 1 de 5 listo, 4 atrasos que no dependen de ella; envía "Mis tareas no coinciden".
 2. **Felipe Jefatura 02**: ve solo a sus 5 personas; marca la Reunión de Camila; busca COL-006 → "fuera de tu alcance" (queda en la bitácora).
