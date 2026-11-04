@@ -1,0 +1,61 @@
+﻿colaborador_id,fecha_ingreso,area,sede,modalidad,tipo_turno,jefatura_id,canal_contacto,correo_corporativo_activo,dispositivo_principal,estado_onboarding
+COL-001,2026-09-04,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Teléfono,No,Teléfono,No iniciado
+COL-002,2026-09-07,Operaciones,Santiago Centro,Híbrida,Jornada parcial,JEF-002,Correo corporativo,Sí,Teléfono,En proceso
+COL-003,2026-09-10,Tecnología,Santiago Centro,Remota,Turno mañana,JEF-003,Correo corporativo,Sí,Computador,Completado
+COL-004,2026-09-13,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Correo personal,No,Teléfono,No iniciado
+COL-005,2026-09-16,Personas,Providencia,Híbrida,Jornada diurna,JEF-005,Correo corporativo,Sí,Computador,En proceso
+COL-006,2026-09-19,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,Sí,Teléfono,Completado
+COL-007,2026-09-22,Tecnología,Providencia,Presencial,Turno mañana,JEF-007,Teléfono,No,Teléfono,No iniciado
+COL-008,2026-09-25,Comercial,Providencia,Híbrida,Turno tarde,JEF-008,,Sí,Computador,En proceso
+COL-009,2026-09-28,Personas,Valparaíso,Remota,Jornada diurna,JEF-009,Teléfono,No,Teléfono,Completado
+COL-010,2026-10-01,Operaciones,Valparaíso,Presencial,Jornada parcial,JEF-010,Correo corporativo,Sí,Computador,No iniciado
+COL-011,2026-10-04,Tecnología,Valparaíso,Híbrida,Turno mañana,JEF-011,Correo corporativo,Sí,Teléfono,En proceso
+COL-012,2026-10-07,Comercial,Valparaíso,Remota,Turno tarde,JEF-012,Correo personal,No,Teléfono,Completado
+COL-013,2026-10-10,Personas,Concepción,Presencial,Jornada diurna,JEF-001,Correo corporativo,Sí,Computador,No iniciado
+COL-014,2026-10-13,Operaciones,Concepción,Híbrida,Jornada parcial,JEF-002,Correo corporativo,Sí,Teléfono,En proceso
+COL-015,2026-10-16,Tecnología,Concepción,Remota,Turno mañana,JEF-003,Teléfono,No,Teléfono,Completado
+COL-016,2026-10-19,Comercial,Concepción,Presencial,Turno tarde,JEF-004,Teléfono,Sí,Computador,No iniciado
+COL-017,2026-10-22,Personas,Santiago Centro,Híbrida,Jornada diurna,JEF-005,Correo corporativo,Sí,Computador,En proceso
+COL-018,2026-10-25,Operaciones,Santiago Centro,Remota,Jornada parcial,JEF-006,Correo personal,No,Teléfono,Completado
+COL-019,2026-10-28,Tecnología,Santiago Centro,Presencial,Turno mañana,,Correo corporativo,Sí,Computador,No iniciado
+COL-020,2026-09-01,Comercial,Santiago Centro,Híbrida,Turno tarde,JEF-008,Correo personal,No,Teléfono,En proceso
+COL-021,2026-09-04,Personas,Providencia,Remota,Jornada diurna,JEF-009,Correo corporativo,Sí,Computador,Completado
+COL-022,2026-09-07,Operaciones,Providencia,Presencial,Jornada parcial,JEF-010,Correo corporativo,Sí,Teléfono,No iniciado
+COL-023,2026-09-10,Tecnología,Providencia,Híbrida,Turno mañana,JEF-011,Teléfono,No,Teléfono,En proceso
+COL-024,2026-09-13,Comercial,Providencia,Remota,Turno tarde,JEF-012,Teléfono,Sí,Computador,Completado
+COL-025,2026-09-16,Personas,Valparaíso,Presencial,Jornada diurna,JEF-001,Correo corporativo,Sí,Teléfono,No iniciado
+COL-026,2026-09-19,Operaciones,Valparaíso,Híbrida,Jornada parcial,JEF-002,Correo personal,No,Computador,En proceso
+COL-027,2026-09-22,Tecnología,Valparaíso,Remota,Turno mañana,JEF-003,Correo corporativo,Sí,Teléfono,Completado
+COL-028,2026-09-25,Comercial,Valparaíso,Presencial,Turno tarde,JEF-004,Teléfono,Sí,Computador,No iniciado
+COL-029,2026-09-28,Personas,Concepción,Híbrida,Jornada diurna,JEF-005,Teléfono,No,Teléfono,En proceso
+COL-030,2026-10-01,Operaciones,Concepción,Remota,Jornada parcial,JEF-006,Correo corporativo,Sí,Computador,Completado
+COL-031,2026-10-04,Tecnología,Concepción,Presencial,Turno mañana,JEF-007,Teléfono,No,Teléfono,No iniciado
+COL-032,2026-10-07,Comercial,Concepción,Híbrida,Turno tarde,JEF-008,Teléfono,Sí,Computador,En proceso
+COL-033,2026-10-10,Personas,Santiago Centro,Remota,Jornada diurna,JEF-009,Correo corporativo,Sí,Teléfono,Completado
+COL-034,2026-10-13,Operaciones,Santiago Centro,Presencial,Jornada parcial,JEF-010,Correo personal,No,Teléfono,No iniciado
+COL-035,2026-10-16,Tecnología,Santiago Centro,Híbrida,Turno mañana,JEF-011,,Sí,Computador,En proceso
+COL-036,2026-10-19,Comercial,Santiago Centro,Remota,Turno tarde,JEF-012,Teléfono,Sí,Computador,Completado
+COL-037,2026-10-22,Personas,Providencia,Presencial,Jornada diurna,JEF-001,Teléfono,No,Teléfono,No iniciado
+COL-038,2026-10-25,Operaciones,Providencia,Híbrida,Jornada parcial,JEF-002,Correo corporativo,Sí,Computador,En proceso
+COL-039,2026-10-28,Tecnología,Providencia,Remota,Turno mañana,JEF-003,Correo corporativo,Sí,Computador,Completado
+COL-040,2026-09-01,Comercial,Providencia,Presencial,Turno tarde,JEF-004,Correo personal,No,Teléfono,No iniciado
+COL-041,2026-09-04,Personas,Valparaíso,Híbrida,Jornada diurna,JEF-005,Correo corporativo,Sí,Computador,En proceso
+COL-042,2026-09-07,Operaciones,Valparaíso,Remota,Jornada parcial,JEF-006,Correo personal,No,Teléfono,Completado
+COL-043,2026-09-10,Tecnología,Valparaíso,Presencial,Turno mañana,JEF-007,Correo corporativo,Sí,Computador,No iniciado
+COL-044,2026-09-13,Comercial,Valparaíso,Híbrida,Turno tarde,JEF-008,Teléfono,Sí,Computador,En proceso
+COL-045,2026-09-16,Personas,Concepción,Remota,Jornada diurna,JEF-009,Teléfono,No,Teléfono,Completado
+COL-046,2026-09-19,Operaciones,Concepción,Presencial,Jornada parcial,JEF-010,Correo corporativo,Sí,Computador,No iniciado
+COL-047,2026-09-22,Tecnología,Concepción,Híbrida,Turno mañana,JEF-011,Correo corporativo,Sí,Computador,En proceso
+COL-048,2026-09-25,Comercial,Concepción,Remota,,JEF-012,Correo personal,No,Teléfono,Completado
+COL-049,2026-09-28,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Correo corporativo,Sí,Computador,No iniciado
+COL-050,2026-10-01,Operaciones,Santiago Centro,Híbrida,Jornada parcial,JEF-002,Correo corporativo,Sí,Computador,En proceso
+COL-051,2026-10-04,Tecnología,Santiago Centro,Remota,Turno mañana,JEF-003,Teléfono,No,Teléfono,Completado
+COL-052,2026-10-07,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Teléfono,Sí,Computador,No iniciado
+COL-053,2026-10-10,Personas,Providencia,Híbrida,Jornada diurna,JEF-005,Correo corporativo,Sí,Computador,En proceso
+COL-054,2026-10-13,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,Sí,Computador,Completado
+COL-055,2026-10-16,Tecnología,Providencia,Presencial,Turno mañana,JEF-007,Teléfono,No,Teléfono,No iniciado
+COL-056,2026-10-19,Comercial,Providencia,Híbrida,Turno tarde,JEF-008,Teléfono,Sí,Computador,
+COL-057,2026-10-22,Personas,Valparaíso,Remota,Jornada diurna,JEF-009,Correo corporativo,Sí,Computador,Completado
+COL-058,2026-10-25,Operaciones,Valparaíso,Presencial,Jornada parcial,JEF-010,Correo corporativo,Sí,Computador,No iniciado
+COL-059,2026-10-28,Tecnología,Valparaíso,Híbrida,Turno mañana,JEF-011,Teléfono,No,Teléfono,En proceso
+COL-060,2026-09-01,Comercial,Valparaíso,Remota,Turno tarde,JEF-012,Teléfono,Sí,Computador,Completado

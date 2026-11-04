@@ -1,0 +1,1412 @@
+<title>Sprint Onboarding Seguro</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>/* Layout: app de trabajo. Barra superior de identidad, contenido en columna de 1120px; la vista del colaborador se estrecha a un teléfono. */
+:root {
+  --bg: #f5f5fa; --surface: #ffffff; --surface-2: #eef0f8; --ink: #1b1d3a; --muted: #5b5e7e; --line: #dcdde8;
+  --brand: #292c69; --brand-ink: #ffffff; --accent: #ff860d; --accent-ink: #9c4a00;
+  --ok: #1d7f53; --ok-bg: #e3f4ec; --warn: #9a6400; --warn-bg: #fdf1dc; --bad: #b9382f; --bad-bg: #fbe6e4; --neutral-bg: #eceef5;
+  --f-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --f-body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 10px;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #11122a; --surface: #1a1c3a; --surface-2: #23264a; --ink: #ecedf7; --muted: #a4a7c6; --line: #2f3258;
+  --brand: #8f96ff; --brand-ink: #11122a; --accent: #ff9a3c; --accent-ink: #ffb46b;
+  --ok: #5fd39b; --ok-bg: #173a2c; --warn: #f2c063; --warn-bg: #3a2f17; --bad: #ff8a80; --bad-bg: #44201e; --neutral-bg: #262a50; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #11122a; --surface: #1a1c3a; --surface-2: #23264a; --ink: #ecedf7; --muted: #a4a7c6; --line: #2f3258;
+  --brand: #8f96ff; --brand-ink: #11122a; --accent: #ff9a3c; --accent-ink: #ffb46b;
+  --ok: #5fd39b; --ok-bg: #173a2c; --warn: #f2c063; --warn-bg: #3a2f17; --bad: #ff8a80; --bad-bg: #44201e; --neutral-bg: #262a50; color-scheme: dark }
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 15px; line-height: 1.5; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+h1, h2, h3 { font-family: var(--f-display); text-wrap: balance; margin: 0; line-height: 1.15; }
+h1 { font-size: clamp(1.5rem, 3.2vw, 2.1rem); font-weight: 800; letter-spacing: -0.01em; }
+.h-sm { font-size: 1.05rem; font-weight: 600; }
+.h-xs { font-size: .9rem; font-weight: 600; margin-top: 4px; }
+p { margin: 0; }
+code { font-family: var(--f-mono); font-size: .82em; color: var(--muted); }
+.num { font-variant-numeric: tabular-nums; }
+.eyebrow { text-transform: uppercase; letter-spacing: .08em; font-size: .72rem; font-weight: 700; color: var(--accent-ink); }
+.lead { color: var(--muted); max-width: 60ch; font-size: 1.05rem; }
+.muted, .hint { color: var(--muted); font-size: .85rem; }
+.missing { color: var(--warn); font-style: italic; }
+.err { color: var(--bad); font-weight: 700; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+
+/* barra superior */
+.top { background: var(--surface); border-bottom: 1px solid var(--line); }
+@media (min-width: 760px) { .top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; } }
+.top-in { max-width: 1120px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+  padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand strong { font-family: var(--f-display); font-size: 1.15rem; display: block; line-height: 1; }
+.brand small { color: var(--muted); font-size: .75rem; }
+.brand-mark { width: 34px; height: 34px; border-radius: 9px; background: var(--brand); color: var(--brand-ink); display: grid; place-items: center; font-family: var(--f-display); font-weight: 800; font-size: 1.1rem; box-shadow: inset -6px -6px 0 var(--accent); }
+.who { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.who-txt { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.who-txt small { display: flex; gap: 6px; align-items: center; }
+.role { font-size: .7rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 1px 7px; border-radius: 99px; background: var(--surface-2); color: var(--brand); }
+.cut { background: var(--surface-2); color: var(--muted); font-size: .78rem; text-align: center; padding-block: 4px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.cut b { color: var(--ink); }
+
+.wrap { max-width: 1120px; margin: 0 auto; display: flex; flex-direction: column; gap: 16px;
+  padding-block: 20px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.stack { display: flex; flex-direction: column; gap: 8px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row-end { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
+.row-between { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; }
+.page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+
+/* controles */
+label { font-weight: 700; font-size: .85rem; }
+input, select, textarea { font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; min-width: 0; max-width: 100%; }
+textarea { resize: vertical; }
+.btn { font: inherit; font-weight: 700; border-radius: 8px; padding: 9px 14px; border: 1px solid transparent; cursor: pointer; line-height: 1.2; }
+.btn-primary { background: var(--brand); color: var(--brand-ink); }
+.btn-primary:hover { filter: brightness(1.1); }
+.btn-ghost { background: transparent; color: var(--brand); border-color: var(--line); }
+.btn-ghost:hover { background: var(--surface-2); }
+.btn-sm { padding: 6px 10px; font-size: .85rem; }
+.link { background: none; border: 0; color: var(--brand); text-decoration: underline; font: inherit; cursor: pointer; padding: 0; }
+.search { display: flex; gap: 8px; flex-wrap: wrap; }
+.search input { width: 220px; }
+.inline-form { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+.inline-form label { width: 100%; margin-bottom: -4px; }
+
+/* estado */
+.chip { display: inline-block; font-size: .75rem; font-weight: 700; padding: 2px 9px; border-radius: 99px; white-space: nowrap; }
+.chip-ok { background: var(--ok-bg); color: var(--ok); }
+.chip-warn { background: var(--warn-bg); color: var(--warn); }
+.chip-bad { background: var(--bad-bg); color: var(--bad); }
+.chip-neutral { background: var(--neutral-bg); color: var(--muted); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; vertical-align: middle; }
+.dot-rojo { background: var(--bad); } .dot-amarillo { background: var(--warn); } .dot-verde { background: var(--ok); } .dot-gris { background: var(--line); }
+.bar { height: 6px; background: var(--neutral-bg); border-radius: 99px; overflow: hidden; min-width: 60px; }
+.bar span { display: block; height: 100%; background: var(--ok); border-radius: 99px; }
+.bar-lg { height: 10px; flex: 1; }
+.bar-bad span { background: var(--bad); }
+.notice { background: var(--surface-2); border-radius: 8px; padding: 10px 12px; font-size: .9rem; }
+.notice-bad { background: var(--bad-bg); color: var(--ink); border-left: 4px solid var(--bad); }
+.empty { color: var(--muted); font-style: italic; }
+.badge { background: var(--accent); color: #1b1d3a; border-radius: 99px; font-size: .7rem; padding: 0 7px; margin-left: 4px; }
+.badge-soft { background: var(--bad-bg); color: var(--bad); }
+
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; }
+.kpi { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 14px; display: flex; flex-direction: column; gap: 2px; }
+.kpi b { font-family: var(--f-display); font-size: 1.9rem; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; }
+.kpi span { color: var(--muted); font-size: .85rem; }
+.kpi-bad b { color: var(--bad); } .kpi-warn b { color: var(--warn); }
+
+/* tablas */
+.table-wrap { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-size: .9rem; }
+th, td { text-align: left; padding: 9px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { font-size: .72rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+tbody th { font-weight: 700; }
+tr.sub > td { background: var(--surface-2); padding: 12px; }
+table.inner { background: var(--surface); border-radius: 8px; }
+td .row { min-width: 140px; }
+.nw { white-space: nowrap; }
+.heatmap td.heat { text-align: center; font-weight: 700; background: color-mix(in srgb, var(--ok) calc(var(--p) * 0.45%), var(--surface)); }
+.heatmap th { text-align: center; } .heatmap tbody th { text-align: left; }
+
+.metric-rows { display: flex; flex-direction: column; gap: 10px; }
+.metric { display: grid; grid-template-columns: minmax(90px, 140px) 1fr 48px 60px; gap: 10px; align-items: center; }
+.metric small { color: var(--muted); }
+
+.actions { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.actions li { display: flex; justify-content: space-between; gap: 12px; align-items: center; flex-wrap: wrap; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.actions li:last-child { border-bottom: 0; }
+.actions small, .checklist small { display: block; color: var(--muted); font-size: .82rem; }
+.mini { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 4px; font-size: .9rem; }
+
+/* tabs */
+.tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--line); }
+.tab { font: inherit; font-weight: 700; background: none; border: 0; border-bottom: 3px solid transparent; padding: 10px 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+.segs { display: flex; gap: 6px; flex-wrap: wrap; }
+.seg { font: inherit; font-weight: 700; font-size: .85rem; border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 99px; padding: 6px 12px; cursor: pointer; }
+.seg.on { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+
+/* alertas de calidad */
+.alerts { display: flex; flex-direction: column; gap: 8px; }
+.alert { background: var(--surface); border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 8px; padding: 0 14px; }
+.alert-alta { border-left-color: var(--bad); } .alert-media { border-left-color: var(--warn); } .alert-info { border-left-color: var(--brand); }
+.alert summary { display: grid; grid-template-columns: 52px 1fr auto; gap: 10px; align-items: center; padding: 12px 0; cursor: pointer; list-style: none; }
+.alert summary::-webkit-details-marker { display: none; }
+.alert .sev { font-size: .7rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+.alert .count { font-family: var(--f-display); font-weight: 800; font-size: 1.2rem; }
+.alert .accion { font-size: .88rem; color: var(--muted); margin-bottom: 8px; }
+.alert .mini { padding-bottom: 12px; max-height: 260px; overflow: auto; }
+
+/* login */
+.login { display: flex; flex-direction: column; gap: 20px; }
+.login-intro { display: flex; flex-direction: column; gap: 10px; padding-block: 8px; }
+.login-intro h1 { max-width: 22ch; font-size: clamp(1.7rem, 4.4vw, 2.7rem); }
+.login-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.demo { display: flex; flex-direction: column; gap: 10px; }
+.demo-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; }
+.demo-item { font: inherit; text-align: left; background: var(--surface); border: 1px dashed var(--line); border-radius: var(--r); padding: 12px; cursor: pointer; display: flex; flex-direction: column; gap: 2px; color: var(--ink); }
+.demo-item:hover { border-color: var(--accent); border-style: solid; }
+.demo-item span { color: var(--muted); font-size: .85rem; }
+
+/* colaborador */
+.mobile { width: 100%; max-width: 520px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.hello { background: var(--brand); color: var(--brand-ink); border-color: var(--brand); }
+.hello .eyebrow { color: var(--accent); }
+.hello .notice { background: color-mix(in srgb, var(--brand-ink) 14%, transparent); color: var(--brand-ink); }
+.hello .notice-bad { border-left-color: var(--accent); }
+.hello .missing { color: inherit; opacity: .85; }
+.progress { display: flex; flex-direction: column; gap: 6px; }
+.hello .bar { background: color-mix(in srgb, var(--brand-ink) 22%, transparent); height: 8px; }
+.hello .bar span { background: var(--accent); }
+.group { display: flex; flex-direction: column; gap: 8px; }
+.checklist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.check { background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.check-ok { opacity: .8; } .check-bad { border-color: var(--bad); } .check-warn { border-color: var(--warn); }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 14px; margin: 0; }
+.kv dt { color: var(--muted); font-size: .88rem; } .kv dd { margin: 0; font-weight: 700; }
+
+/* diálogo y toast */
+.overlay { position: fixed; inset: 0; background: color-mix(in srgb, var(--ink) 45%, transparent); display: grid; place-items: center; z-index: 20; padding: 16px; }
+.dialog { background: var(--surface); border-radius: 12px; padding: 20px; max-width: 440px; width: 100%; display: flex; flex-direction: column; gap: 14px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(18px + env(safe-area-inset-bottom, 0px)); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 8px; z-index: 30; max-width: calc(100% - 32px); font-weight: 700; font-size: .9rem; }
+.export { width: 100%; font-family: var(--f-mono); font-size: .75rem; }
+
+@media (max-width: 560px) {
+  .who-txt { align-items: flex-start; }
+  .metric { grid-template-columns: 1fr 44px; }
+  .metric .bar { grid-column: 1 / -1; grid-row: 2; }
+  .metric small { display: none; }
+  .search input { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+<div id="app"></div>
+<script>(() => {
+  // src/csv.js
+  function parseCSV(text) {
+    const rows = [];
+    let row = [];
+    let cell = "";
+    let quoted = false;
+    const src = text.replace(/^﻿/, "");
+    for (let i = 0; i < src.length; i++) {
+      const ch = src[i];
+      if (quoted) {
+        if (ch === '"') {
+          if (src[i + 1] === '"') {
+            cell += '"';
+            i++;
+          } else {
+            quoted = false;
+          }
+        } else cell += ch;
+      } else if (ch === '"') quoted = true;
+      else if (ch === ",") {
+        row.push(cell);
+        cell = "";
+      } else if (ch === "\n" || ch === "\r") {
+        if (ch === "\r" && src[i + 1] === "\n") i++;
+        row.push(cell);
+        rows.push(row);
+        row = [];
+        cell = "";
+      } else cell += ch;
+    }
+    if (cell !== "" || row.length) {
+      row.push(cell);
+      rows.push(row);
+    }
+    const clean = rows.filter((r) => r.some((c) => c.trim() !== ""));
+    if (!clean.length) return [];
+    const header2 = clean[0].map((h) => h.trim());
+    return clean.slice(1).map((r) => {
+      const o = {};
+      header2.forEach((h, j) => {
+        const v = (r[j] ?? "").trim();
+        o[h] = v === "" ? null : v;
+      });
+      return o;
+    });
+  }
+  function toCSV(rows, columns) {
+    const cols = columns || (rows[0] ? Object.keys(rows[0]) : []);
+    const q = (v) => {
+      if (v === null || v === void 0) return "";
+      const s = String(v);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    };
+    return [cols.join(","), ...rows.map((r) => cols.map((c) => q(r[c])).join(","))].join("\n") + "\n";
+  }
+
+  // src/rules.js
+  var HOY_DEFAULT = "2026-11-04";
+  var TIPOS_HITO = ["Contrato", "Equipo", "Acceso", "Reuni\xF3n", "Plan"];
+  var PLAZO_OFFSET = { "Antes del d\xEDa 1": -1, "D\xEDa 1": 0, "Primera semana": 7 };
+  var TOLERANCIA_DIAS = 1;
+  var DOMINIOS = {
+    area: ["Personas", "Operaciones", "Tecnolog\xEDa", "Comercial"],
+    sede: ["Santiago Centro", "Providencia", "Valpara\xEDso", "Concepci\xF3n"],
+    modalidad: ["Presencial", "H\xEDbrida", "Remota"],
+    tipo_turno: ["Jornada diurna", "Jornada parcial", "Turno ma\xF1ana", "Turno tarde"],
+    canal_contacto: ["Tel\xE9fono", "Correo personal", "Correo corporativo"],
+    correo_corporativo_activo: ["S\xED", "No"],
+    dispositivo_principal: ["Tel\xE9fono", "Computador"],
+    estado_onboarding: ["No iniciado", "En proceso", "Completado"],
+    estado: ["Pendiente", "Cumplido", "Atrasado"],
+    responsable_tipo: ["Personas", "TI", "Jefatura"],
+    nivel_criticidad: ["Bajo", "Medio", "Alto"]
+  };
+  var PREFIJO_ROL = { Personas: "PER-", TI: "TI-", Jefatura: "JEF-" };
+  var CRIT_NORM = { Alta: "Alto", Alto: "Alto", Media: "Medio", Medio: "Medio", Bajo: "Bajo", Baja: "Bajo" };
+  var CRIT_PESO = { Alto: 3, Medio: 2, Bajo: 1 };
+  var NOMBRE_HITO = {
+    Contrato: "Firma de contrato",
+    Equipo: "Entrega de equipo",
+    Acceso: "Accesos y cuentas",
+    "Reuni\xF3n": "Reuni\xF3n con tu jefatura",
+    Plan: "Plan de primera semana"
+  };
+  function isISO(s) {
+    if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+    const d = /* @__PURE__ */ new Date(s + "T00:00:00Z");
+    return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+  }
+  function addDays(iso, n) {
+    const d = /* @__PURE__ */ new Date(iso + "T00:00:00Z");
+    d.setUTCDate(d.getUTCDate() + n);
+    return d.toISOString().slice(0, 10);
+  }
+  function diffDays(a, b) {
+    return Math.round((Date.parse(a + "T00:00:00Z") - Date.parse(b + "T00:00:00Z")) / 864e5);
+  }
+  function fmt(iso) {
+    if (!isISO(iso)) return "\u2014";
+    const [y, m, d] = iso.split("-");
+    return `${d}-${m}-${y}`;
+  }
+  function normCrit(v) {
+    return CRIT_NORM[v] || null;
+  }
+  function indexData(data) {
+    const colab = new Map(data.colaboradores.map((c) => [c.colaborador_id, c]));
+    const users = new Map(data.usuarios.map((u) => [u.usuario_id, u]));
+    const catalogo = new Map(data.catalogo.map((k) => [k.tipo_hito, k]));
+    const hitosPorColab = /* @__PURE__ */ new Map();
+    for (const h of data.hitos) {
+      if (!hitosPorColab.has(h.colaborador_id)) hitosPorColab.set(h.colaborador_id, []);
+      hitosPorColab.get(h.colaborador_id).push(h);
+    }
+    for (const list of hitosPorColab.values()) list.sort((a, b) => TIPOS_HITO.indexOf(a.tipo_hito) - TIPOS_HITO.indexOf(b.tipo_hito));
+    return { colab, users, catalogo, hitosPorColab };
+  }
+  function plazoRegla(hito, idx) {
+    const c = idx.colab.get(hito.colaborador_id);
+    const k = idx.catalogo.get(hito.tipo_hito);
+    if (!c || !k || !isISO(c.fecha_ingreso) || !(k.plazo_ficticio in PLAZO_OFFSET)) return null;
+    return addDays(c.fecha_ingreso, PLAZO_OFFSET[k.plazo_ficticio]);
+  }
+  function evaluarHito(h, idx, hoy) {
+    const flags = [];
+    const regla = plazoRegla(h, idx);
+    const limiteReg = isISO(h.fecha_limite) ? h.fecha_limite : null;
+    const limite = regla || limiteReg;
+    if (!limiteReg) flags.push("fecha_limite_invalida");
+    if (regla && limiteReg && diffDays(limiteReg, regla) > TOLERANCIA_DIAS) flags.push("plazo_corrido");
+    if (!h.responsable_id) flags.push("responsable_vacio");
+    else if (!idx.users.has(h.responsable_id)) flags.push("responsable_inexistente");
+    if (h.ultima_actualizacion && isISO(h.ultima_actualizacion) && h.ultima_actualizacion > hoy) flags.push("actualizacion_futura");
+    let estadoReal;
+    if (!DOMINIOS.estado.includes(h.estado)) {
+      estadoReal = "Por verificar";
+      flags.push("estado_invalido");
+    } else if (h.estado === "Cumplido") {
+      if (!h.fecha_cumplimiento) {
+        estadoReal = "Por verificar";
+        flags.push("cumplido_sin_fecha");
+      } else if (!isISO(h.fecha_cumplimiento)) {
+        estadoReal = "Por verificar";
+        flags.push("fecha_cumplimiento_invalida");
+      } else if (h.fecha_cumplimiento > hoy) {
+        estadoReal = "Por verificar";
+        flags.push("cumplido_fecha_futura");
+      } else estadoReal = "Cumplido";
+    } else {
+      if (h.fecha_cumplimiento) flags.push("abierto_con_fecha_cumplimiento");
+      estadoReal = limite && hoy > limite ? "Vencido" : "Pendiente";
+      if (h.estado === "Pendiente" && estadoReal === "Vencido") flags.push("pendiente_vencido_segun_regla");
+    }
+    const diasVencido = estadoReal === "Vencido" ? diffDays(hoy, limite) : 0;
+    const k = idx.catalogo.get(h.tipo_hito);
+    const crit = normCrit(h.nivel_criticidad) || normCrit(k && k.criticidad) || "Medio";
+    return { estadoReal, limite, limiteRegistrado: limiteReg, regla, diasVencido, crit, flags };
+  }
+  function avanceColaborador(colId, idx, hoy) {
+    const hs = idx.hitosPorColab.get(colId) || [];
+    const ev = hs.map((h) => evaluarHito(h, idx, hoy));
+    const cumplidos = ev.filter((e) => e.estadoReal === "Cumplido").length;
+    const vencidos = ev.filter((e) => e.estadoReal === "Vencido").length;
+    const porVerificar = ev.filter((e) => e.estadoReal === "Por verificar").length;
+    const vencidosAltos = ev.filter((e) => e.estadoReal === "Vencido" && e.crit === "Alto").length;
+    const semaforo = vencidosAltos ? "rojo" : vencidos || porVerificar ? "amarillo" : cumplidos === hs.length && hs.length ? "verde" : "gris";
+    return { total: hs.length, cumplidos, vencidos, porVerificar, vencidosAltos, semaforo };
+  }
+  var REGLAS = {
+    id_duplicado: { titulo: "Identificador duplicado", sev: "alta", accion: "Rechazar o depurar el registro duplicado en el origen." },
+    relacion_inexistente: { titulo: "Relaci\xF3n inexistente", sev: "alta", accion: "Revisar el identificador en el archivo de origen." },
+    hitos_incompletos: { titulo: "Colaborador sin sus 5 hitos", sev: "alta", accion: "Completar los hitos faltantes seg\xFAn el cat\xE1logo." },
+    tipo_fuera_catalogo: { titulo: "Tipo de hito fuera del cat\xE1logo", sev: "alta", accion: "No se admiten categor\xEDas nuevas." },
+    responsable_vacio: { titulo: "Hito sin responsable", sev: "alta", accion: "Asignar responsable expl\xEDcitamente (sin asignaci\xF3n autom\xE1tica)." },
+    responsable_inexistente: { titulo: "Responsable no existe en usuarios", sev: "alta", accion: "Corregir responsable_id." },
+    responsable_rol_distinto: { titulo: "Responsable con rol distinto al tipo", sev: "media", accion: "Reasignar a una cuenta del \xE1rea responsable." },
+    responsable_tipo_vs_catalogo: { titulo: "\xC1rea responsable distinta al cat\xE1logo", sev: "media", accion: "Confirmar con Personas si la excepci\xF3n es v\xE1lida." },
+    jefatura_hito_distinta: { titulo: "Hito de jefatura asignado a otra jefatura", sev: "media", accion: "Alinear con la jefatura del colaborador." },
+    cumplido_sin_fecha: { titulo: "Cumplido sin fecha de cumplimiento", sev: "alta", accion: 'Pedir evidencia al responsable; queda "Por verificar".' },
+    cumplido_fecha_futura: { titulo: "Cumplido con fecha futura", sev: "alta", accion: "No contar como cumplido hasta verificar." },
+    actualizacion_futura: { titulo: "\xDAltima actualizaci\xF3n con fecha futura", sev: "media", accion: "Revisar trazabilidad del registro." },
+    abierto_con_fecha_cumplimiento: { titulo: "Hito abierto con fecha de cumplimiento", sev: "media", accion: "Aclarar si se cumpli\xF3 o no." },
+    plazo_corrido: { titulo: "Fecha l\xEDmite m\xE1s tarde que la regla del cat\xE1logo", sev: "alta", accion: "Se usa el plazo del cat\xE1logo; la fecha movida no oculta el atraso." },
+    pendiente_vencido_segun_regla: { titulo: '"Pendiente" que ya est\xE1 vencido seg\xFAn el cat\xE1logo', sev: "alta", accion: "Tratar como atrasado y escalar al responsable." },
+    fecha_invalida: { titulo: "Fecha con formato inv\xE1lido", sev: "alta", accion: "Usar formato ISO AAAA-MM-DD." },
+    valor_fuera_dominio: { titulo: "Valor fuera de los permitidos", sev: "media", accion: "Corregir seg\xFAn el diccionario." },
+    jefatura_vacia: { titulo: "Colaborador sin jefatura", sev: "alta", accion: "Derivar a Personas para asignar jefatura." },
+    fuera_de_equipo: { titulo: "Colaborador no aparece en el equipo de su jefatura", sev: "alta", accion: "Corregir equipo_asignado o jefatura_id." },
+    campo_vacio: { titulo: "Dato operativo faltante", sev: "media", accion: "Validar con el colaborador; no suponer un valor." },
+    estado_onboarding_inconsistente: { titulo: "Estado general no coincide con los hitos", sev: "media", accion: "El avance se calcula desde los hitos." },
+    permiso_acotado: { titulo: "Permiso del archivo acotado por m\xEDnimo privilegio", sev: "info", accion: "Se aplica rol + equipo_asignado + tipo de hito." }
+  };
+  function validar(data, idx, hoy) {
+    const out = [];
+    const add = (regla, entidad, id, detalle) => out.push({ regla, entidad, id, detalle, ...REGLAS[regla] });
+    const dup = (rows, key, ent) => {
+      const seen = /* @__PURE__ */ new Set();
+      for (const r of rows) {
+        if (seen.has(r[key])) add("id_duplicado", ent, r[key], `${key} repetido`);
+        seen.add(r[key]);
+      }
+    };
+    dup(data.colaboradores, "colaborador_id", "colaborador");
+    dup(data.hitos, "hito_id", "hito");
+    dup(data.usuarios, "usuario_id", "usuario");
+    const camposDom = ["area", "sede", "modalidad", "tipo_turno", "canal_contacto", "correo_corporativo_activo", "dispositivo_principal", "estado_onboarding"];
+    const vaciosOperativos = { tipo_turno: "Turno", canal_contacto: "Canal de contacto", estado_onboarding: "Estado de onboarding" };
+    const equipoDe = /* @__PURE__ */ new Map();
+    for (const u of data.usuarios.filter((u2) => u2.rol === "Jefatura")) {
+      for (const id of (u.equipo_asignado || "").split("|").map((s) => s.trim()).filter(Boolean)) {
+        if (!equipoDe.has(id)) equipoDe.set(id, []);
+        equipoDe.get(id).push(u.usuario_id);
+      }
+    }
+    for (const c of data.colaboradores) {
+      if (!isISO(c.fecha_ingreso)) add("fecha_invalida", "colaborador", c.colaborador_id, "fecha_ingreso");
+      for (const f of camposDom) if (c[f] !== null && !DOMINIOS[f].includes(c[f])) add("valor_fuera_dominio", "colaborador", c.colaborador_id, `${f} = "${c[f]}"`);
+      for (const [f, label] of Object.entries(vaciosOperativos)) if (c[f] === null) add("campo_vacio", "colaborador", c.colaborador_id, `${label} vac\xEDo`);
+      if (!c.jefatura_id) add("jefatura_vacia", "colaborador", c.colaborador_id, "Sin jefatura_id y sin equipo asignado");
+      else if (!idx.users.has(c.jefatura_id)) add("relacion_inexistente", "colaborador", c.colaborador_id, `jefatura ${c.jefatura_id} no existe`);
+      else if (!(equipoDe.get(c.colaborador_id) || []).includes(c.jefatura_id)) add("fuera_de_equipo", "colaborador", c.colaborador_id, `${c.jefatura_id} no lo tiene en equipo_asignado`);
+      const hs = idx.hitosPorColab.get(c.colaborador_id) || [];
+      const tipos = new Set(hs.map((h) => h.tipo_hito));
+      if (hs.length !== 5 || TIPOS_HITO.some((t) => !tipos.has(t))) add("hitos_incompletos", "colaborador", c.colaborador_id, `${hs.length} hitos`);
+      if (c.estado_onboarding) {
+        const av = avanceColaborador(c.colaborador_id, idx, hoy);
+        if (c.estado_onboarding === "Completado" && av.cumplidos < av.total || c.estado_onboarding === "No iniciado" && av.cumplidos > 0) {
+          add("estado_onboarding_inconsistente", "colaborador", c.colaborador_id, `Registrado "${c.estado_onboarding}" con ${av.cumplidos}/${av.total} hitos cumplidos`);
+        }
+      }
+    }
+    for (const h of data.hitos) {
+      if (!idx.colab.has(h.colaborador_id)) add("relacion_inexistente", "hito", h.hito_id, `colaborador ${h.colaborador_id} no existe`);
+      const k = idx.catalogo.get(h.tipo_hito);
+      if (!k) {
+        add("tipo_fuera_catalogo", "hito", h.hito_id, `tipo "${h.tipo_hito}"`);
+        continue;
+      }
+      if (h.responsable_tipo !== k.responsable_inicial) add("responsable_tipo_vs_catalogo", "hito", h.hito_id, `${h.responsable_tipo} vs cat\xE1logo ${k.responsable_inicial}`);
+      for (const f of ["fecha_limite", "fecha_cumplimiento", "ultima_actualizacion"]) if (h[f] !== null && !isISO(h[f])) add("fecha_invalida", "hito", h.hito_id, f);
+      for (const f of ["estado", "responsable_tipo", "nivel_criticidad"]) if (h[f] !== null && !DOMINIOS[f].includes(h[f])) add("valor_fuera_dominio", "hito", h.hito_id, `${f} = "${h[f]}"`);
+      if (h.responsable_id && idx.users.has(h.responsable_id) && !h.responsable_id.startsWith(PREFIJO_ROL[h.responsable_tipo] || "?")) add("responsable_rol_distinto", "hito", h.hito_id, `${h.responsable_id} para ${h.responsable_tipo}`);
+      if (h.responsable_tipo === "Jefatura" && h.responsable_id) {
+        const c = idx.colab.get(h.colaborador_id);
+        if (c && c.jefatura_id && c.jefatura_id !== h.responsable_id) add("jefatura_hito_distinta", "hito", h.hito_id, `${h.responsable_id} vs jefatura ${c.jefatura_id}`);
+      }
+      const ev = evaluarHito(h, idx, hoy);
+      for (const f of ev.flags) {
+        if (!REGLAS[f]) continue;
+        let det = `${h.tipo_hito} de ${h.colaborador_id}`;
+        if (f === "plazo_corrido") det += `: registrada ${fmt(ev.limiteRegistrado)}, regla ${fmt(ev.regla)}`;
+        if (f === "cumplido_fecha_futura") det += `: cumplimiento ${fmt(h.fecha_cumplimiento)}`;
+        if (f === "pendiente_vencido_segun_regla") det += `: vencido hace ${ev.diasVencido} d\xEDas`;
+        add(f, "hito", h.hito_id, det);
+      }
+    }
+    for (const u of data.usuarios) {
+      if (u.rol === "TI" && u.puede_asignar_responsables === "S\xED") add("permiso_acotado", "usuario", u.usuario_id, "Asignar: solo entre cuentas TI y solo hitos Equipo/Acceso");
+      if (u.rol === "TI" && u.puede_ver_metricas === "S\xED") add("permiso_acotado", "usuario", u.usuario_id, "M\xE9tricas: solo agregadas de hitos t\xE9cnicos");
+    }
+    return out;
+  }
+  function agruparAlertas(alertas) {
+    const g = /* @__PURE__ */ new Map();
+    for (const a of alertas) {
+      if (!g.has(a.regla)) g.set(a.regla, { regla: a.regla, titulo: a.titulo, sev: a.sev, accion: a.accion, items: [] });
+      g.get(a.regla).items.push(a);
+    }
+    const orden = { alta: 0, media: 1, info: 2 };
+    return [...g.values()].sort((a, b) => orden[a.sev] - orden[b.sev] || b.items.length - a.items.length);
+  }
+
+  // src/permissions.js
+  var HITOS_TECNICOS = ["Equipo", "Acceso"];
+  var PREFIJO_ROL2 = { Personas: "PER-", TI: "TI-", Jefatura: "JEF-" };
+  function parseEquipo(texto, todosLosColabs) {
+    if (!texto) return /* @__PURE__ */ new Set();
+    const t = texto.trim();
+    if (/^todos/i.test(t)) return new Set(todosLosColabs);
+    const rango = t.match(/COL-(\d+)\s+a\s+COL-(\d+)/i);
+    if (rango) {
+      const [a, b] = [Number(rango[1]), Number(rango[2])];
+      return new Set(todosLosColabs.filter((id) => {
+        const n = Number(id.slice(4));
+        return n >= a && n <= b;
+      }));
+    }
+    return new Set(t.split("|").map((s) => s.trim()).filter((s) => todosLosColabs.includes(s)));
+  }
+  function crearAuth(data) {
+    const ids = data.colaboradores.map((c) => c.colaborador_id);
+    const scopes = /* @__PURE__ */ new Map();
+    for (const u of data.usuarios) {
+      let s = parseEquipo(u.equipo_asignado, ids);
+      if (u.rol === "Colaborador") s = new Set(s.has(u.usuario_id) ? [u.usuario_id] : []);
+      scopes.set(u.usuario_id, s);
+    }
+    const colab = new Map(data.colaboradores.map((c) => [c.colaborador_id, c]));
+    const users = new Map(data.usuarios.map((u) => [u.usuario_id, u]));
+    const si = (u, f) => u && u[f] === "S\xED";
+    const auth = {
+      users,
+      scope(u) {
+        return scopes.get(u.usuario_id) || /* @__PURE__ */ new Set();
+      },
+      enAlcance(u, colId) {
+        return auth.scope(u).has(colId);
+      },
+      puedeVerColaborador(u, colId) {
+        return !!u && auth.enAlcance(u, colId);
+      },
+      // Campos de colaboradores.csv según la columna "Quién puede visualizarlo" del diccionario
+      puedeVerCampo(u, colId, campo) {
+        if (!auth.puedeVerColaborador(u, colId)) return false;
+        const c = colab.get(colId);
+        const propio = u.usuario_id === colId;
+        const jefAsignada = u.rol === "Jefatura" && c && c.jefatura_id === u.usuario_id;
+        const PA = u.rol === "Personas" || u.rol === "Administrador";
+        switch (campo) {
+          case "colaborador_id":
+          case "area":
+            return true;
+          case "nombre":
+            return si(u, "puede_ver_datos_personales");
+          // TI = No
+          case "canal_contacto":
+            return propio || PA;
+          // nunca TI ni otras jefaturas (ni la propia)
+          case "jefatura_id":
+            return propio || jefAsignada || PA;
+          case "fecha_ingreso":
+            return propio || jefAsignada || PA || u.rol === "TI";
+          case "sede":
+          case "modalidad":
+          case "tipo_turno":
+          case "correo_corporativo_activo":
+          case "dispositivo_principal":
+          case "estado_onboarding":
+            return propio || u.rol === "Jefatura" || PA || u.rol === "TI";
+          default:
+            return false;
+        }
+      },
+      puedeVerHito(u, h) {
+        if (!auth.puedeVerColaborador(u, h.colaborador_id)) return false;
+        if (u.rol === "TI") return HITOS_TECNICOS.includes(h.tipo_hito);
+        return true;
+      },
+      puedeVerResponsableId(u, h) {
+        return auth.puedeVerHito(u, h) && u.rol !== "Colaborador";
+      },
+      // Completar = marcar cumplido. Solo el responsable de ese hito, dentro de su alcance y su tipo.
+      // hoy: un "Cumplido" sin fecha o con fecha futura puede confirmarse de nuevo con la fecha real.
+      puedeCompletar(u, h, hoy) {
+        if (!auth.puedeVerHito(u, h) || !si(u, "puede_editar_hitos")) return { ok: false, motivo: "Sin permiso de edici\xF3n" };
+        if (h.estado === "Cumplido" && h.fecha_cumplimiento && (!hoy || h.fecha_cumplimiento <= hoy)) return { ok: false, motivo: "Ya est\xE1 cumplido" };
+        if (u.rol === "Jefatura") {
+          if (h.responsable_tipo !== "Jefatura") return { ok: false, motivo: `Responsabilidad de ${h.responsable_tipo}` };
+          if (h.responsable_id !== u.usuario_id) return { ok: false, motivo: "Asignado a otra cuenta" };
+          return { ok: true };
+        }
+        if (u.rol === "TI") {
+          if (!HITOS_TECNICOS.includes(h.tipo_hito) || h.responsable_tipo !== "TI") return { ok: false, motivo: "Fuera de hitos t\xE9cnicos" };
+          if (h.responsable_id !== u.usuario_id) return { ok: false, motivo: h.responsable_id ? "Asignado a otra cuenta TI" : "Sin responsable: primero tomar el caso" };
+          return { ok: true };
+        }
+        if (u.rol === "Personas") {
+          if (h.responsable_tipo !== "Personas") return { ok: false, motivo: `Responsabilidad de ${h.responsable_tipo}` };
+          return { ok: true };
+        }
+        return { ok: false, motivo: "Separaci\xF3n de funciones: este rol no ejecuta hitos" };
+      },
+      // Reasignar responsable: explícito, con motivo y trazable.
+      puedeReasignar(u, h, nuevoId) {
+        if (!auth.puedeVerHito(u, h) || !si(u, "puede_asignar_responsables")) return { ok: false, motivo: "Sin permiso para asignar" };
+        const nuevo = nuevoId ? users.get(nuevoId) : null;
+        if (nuevoId && !nuevo) return { ok: false, motivo: "El responsable no existe" };
+        if (nuevo && !nuevo.usuario_id.startsWith(PREFIJO_ROL2[h.responsable_tipo] || "?")) return { ok: false, motivo: `Debe ser una cuenta de ${h.responsable_tipo}` };
+        if (nuevo && h.responsable_tipo === "Jefatura" && !auth.enAlcance(nuevo, h.colaborador_id)) return { ok: false, motivo: "Esa jefatura no tiene a la persona en su equipo" };
+        if (u.rol === "TI") {
+          if (!HITOS_TECNICOS.includes(h.tipo_hito)) return { ok: false, motivo: "TI solo reasigna hitos t\xE9cnicos" };
+          if (nuevo && nuevo.rol !== "TI") return { ok: false, motivo: "TI solo reasigna entre cuentas TI" };
+          return { ok: true };
+        }
+        if (u.rol === "Personas" || u.rol === "Administrador") return { ok: true };
+        return { ok: false, motivo: "Rol sin permiso para asignar" };
+      },
+      candidatos(u, h) {
+        return [...users.values()].filter((x) => auth.puedeReasignar(u, h, x.usuario_id).ok && x.usuario_id !== h.responsable_id);
+      },
+      puedeVerMetricas(u) {
+        return u.rol !== "Colaborador" && si(u, "puede_ver_metricas");
+      },
+      alcanceMetricas(u) {
+        if (!auth.puedeVerMetricas(u)) return "ninguno";
+        if (u.rol === "TI") return "tecnico";
+        if (u.rol === "Jefatura") return "equipo";
+        return "global";
+      },
+      puedeVerReportes(u) {
+        return u.rol === "Personas" || u.rol === "Administrador";
+      },
+      // comentarios sensibles
+      puedeReportar(u, colId) {
+        return u.rol === "Colaborador" && u.usuario_id === colId;
+      },
+      puedeVerCalidad(u) {
+        return u.rol === "Personas" || u.rol === "Administrador";
+      },
+      puedeCargarArchivos(u) {
+        return u.rol === "Personas" || u.rol === "Administrador";
+      }
+    };
+    return auth;
+  }
+  var MATRIZ_EFECTIVA = [
+    { cap: "Ver personas", Colaborador: "Solo a s\xED mismo", Jefatura: "Solo su equipo_asignado", TI: "Todos, solo como ID", Personas: "Todos" },
+    { cap: "Ver nombre", Colaborador: "El propio", Jefatura: "Su equipo", TI: "No (sin datos personales)", Personas: "S\xED" },
+    { cap: "Ver canal de contacto", Colaborador: "El propio", Jefatura: "No", TI: "No", Personas: "S\xED" },
+    { cap: "Ver hitos", Colaborador: "Los propios", Jefatura: "Los de su equipo", TI: "Solo Equipo y Acceso", Personas: "Todos" },
+    { cap: "Marcar cumplido", Colaborador: "No", Jefatura: "Reuni\xF3n/Plan asignados a \xE9l", TI: "Equipo/Acceso asignados a \xE9l", Personas: "Contrato" },
+    { cap: "Reasignar responsable", Colaborador: "No", Jefatura: "No", TI: "Entre cuentas TI, solo hitos t\xE9cnicos", Personas: "S\xED, con motivo" },
+    { cap: "Ver m\xE9tricas", Colaborador: "No", Jefatura: "Agregadas de su equipo", TI: "Agregadas t\xE9cnicas", Personas: "Agregadas globales" },
+    { cap: "Ver reportes sensibles", Colaborador: "Crea los suyos", Jefatura: "No", TI: "No", Personas: "S\xED" },
+    { cap: "Editar fecha l\xEDmite", Colaborador: "No", Jefatura: "No", TI: "No", Personas: "No (no se ocultan atrasos)" }
+  ];
+
+  // src/store.js
+  var KEY = "sprint-modo-seguro-v1";
+  function safeGet() {
+    try {
+      return JSON.parse(localStorage.getItem(KEY) || "null");
+    } catch {
+      return null;
+    }
+  }
+  function safeSet(v) {
+    try {
+      localStorage.setItem(KEY, JSON.stringify(v));
+    } catch {
+    }
+  }
+  function safeDel() {
+    try {
+      localStorage.removeItem(KEY);
+    } catch {
+    }
+  }
+  function crearStore(base2, { persist = true, now = () => (/* @__PURE__ */ new Date()).toISOString() } = {}) {
+    const saved = persist ? safeGet() : null;
+    const s = {
+      base: base2,
+      data: null,
+      idx: null,
+      auth: null,
+      alertas: [],
+      hoy: saved && saved.hoy || HOY_DEFAULT,
+      overrides: saved && saved.overrides || {},
+      // hito_id -> campos modificados
+      bitacora: saved && saved.bitacora || [],
+      reportes: saved && saved.reportes || [],
+      user: null
+    };
+    function rebuild() {
+      const hitos = s.base.hitos.map((h) => s.overrides[h.hito_id] ? { ...h, ...s.overrides[h.hito_id] } : h);
+      s.data = { ...s.base, hitos };
+      s.idx = indexData(s.data);
+      s.auth = crearAuth(s.data);
+      s.alertas = validar(s.data, s.idx, s.hoy);
+    }
+    function save() {
+      if (persist) safeSet({ hoy: s.hoy, overrides: s.overrides, bitacora: s.bitacora, reportes: s.reportes });
+    }
+    function log(accion, objetivo, detalle, resultado = "ok") {
+      s.bitacora.unshift({ ts: now(), usuario: s.user ? s.user.usuario_id : "\u2014", rol: s.user ? s.user.rol : "\u2014", accion, objetivo, detalle, resultado });
+      save();
+    }
+    function hito(id) {
+      return s.data.hitos.find((h) => h.hito_id === id);
+    }
+    function patch(id, campos) {
+      s.overrides[id] = { ...s.overrides[id] || {}, ...campos };
+      rebuild();
+      save();
+    }
+    rebuild();
+    const api = {
+      get state() {
+        return s;
+      },
+      login(usuarioId, via) {
+        const u = s.auth.users.get(usuarioId);
+        if (!u) return { ok: false, motivo: "Cuenta no encontrada" };
+        s.user = u;
+        log("ingreso", usuarioId, via || "selector demo");
+        return { ok: true };
+      },
+      logout() {
+        if (s.user) log("salida", s.user.usuario_id, "");
+        s.user = null;
+      },
+      // Consulta con control de alcance: si está fuera, se registra el intento.
+      verColaborador(colId) {
+        const u = s.user;
+        if (!u || !s.auth.puedeVerColaborador(u, colId)) {
+          log("acceso_denegado", colId, "Fuera de alcance", "denegado");
+          return null;
+        }
+        return s.idx.colab.get(colId) || null;
+      },
+      completar(hitoId) {
+        const h = hito(hitoId);
+        const u = s.user;
+        if (!h) return { ok: false, motivo: "Hito no existe" };
+        const p = s.auth.puedeCompletar(u, h, s.hoy);
+        if (!p.ok) {
+          log("completar", hitoId, p.motivo, "denegado");
+          return p;
+        }
+        const antes = `${h.estado} / ${h.fecha_cumplimiento || "sin fecha"}`;
+        patch(hitoId, { estado: "Cumplido", fecha_cumplimiento: s.hoy, ultima_actualizacion: s.hoy });
+        log("completar", hitoId, `${h.tipo_hito} de ${h.colaborador_id}: ${antes} \u2192 Cumplido / ${s.hoy}`);
+        return { ok: true };
+      },
+      reasignar(hitoId, nuevoId, motivo) {
+        const h = hito(hitoId);
+        const u = s.user;
+        if (!h) return { ok: false, motivo: "Hito no existe" };
+        if (!motivo || motivo.trim().length < 5) return { ok: false, motivo: "Indica un motivo (m\xEDn. 5 caracteres)" };
+        const p = s.auth.puedeReasignar(u, h, nuevoId);
+        if (!p.ok) {
+          log("reasignar", hitoId, p.motivo, "denegado");
+          return p;
+        }
+        const antes = h.responsable_id || "sin responsable";
+        patch(hitoId, { responsable_id: nuevoId, ultima_actualizacion: s.hoy });
+        log("reasignar", hitoId, `${antes} \u2192 ${nuevoId}. Motivo: ${motivo.trim()}`);
+        return { ok: true };
+      },
+      reportar(tipo, texto) {
+        const u = s.user;
+        if (!u || !s.auth.puedeReportar(u, u.usuario_id)) return { ok: false, motivo: "Solo el colaborador puede reportar sobre s\xED mismo" };
+        const r = { id: `REP-${String(s.reportes.length + 1).padStart(3, "0")}`, colaborador_id: u.usuario_id, tipo, texto: (texto || "").slice(0, 500), estado: "Nuevo", fecha: s.hoy };
+        s.reportes.unshift(r);
+        log("reporte_creado", r.id, `${tipo} (contenido visible solo para Personas)`);
+        return { ok: true, id: r.id };
+      },
+      reportesVisibles() {
+        return s.user && s.auth.puedeVerReportes(s.user) ? s.reportes : [];
+      },
+      misReportes() {
+        return s.user ? s.reportes.filter((r) => r.colaborador_id === s.user.usuario_id) : [];
+      },
+      cambiarEstadoReporte(id, estado) {
+        if (!s.user || !s.auth.puedeVerReportes(s.user)) return { ok: false, motivo: "Sin permiso" };
+        const r = s.reportes.find((x) => x.id === id);
+        if (!r) return { ok: false };
+        const antes = r.estado;
+        r.estado = estado;
+        log("reporte_estado", id, `${antes} \u2192 ${estado}`);
+        return { ok: true };
+      },
+      setHoy(iso) {
+        if (!s.user || !s.auth.puedeVerCalidad(s.user)) return { ok: false };
+        const antes = s.hoy;
+        s.hoy = iso;
+        rebuild();
+        log("fecha_corte", "\u2014", `${antes} \u2192 ${iso}`);
+        return { ok: true };
+      },
+      cargarArchivos(nuevo, resumen) {
+        if (!s.user || !s.auth.puedeCargarArchivos(s.user)) return { ok: false, motivo: "Sin permiso" };
+        s.base = { ...s.base, ...nuevo };
+        s.overrides = {};
+        rebuild();
+        log("carga_archivos", "\u2014", resumen);
+        return { ok: true };
+      },
+      reiniciar() {
+        s.overrides = {};
+        s.bitacora = [];
+        s.reportes = [];
+        s.hoy = HOY_DEFAULT;
+        s.user = null;
+        safeDel();
+        rebuild();
+      }
+    };
+    return api;
+  }
+
+  // src/ui.js
+  var esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  var ui = {
+    loginStep: null,
+    // { id, canal } durante el ingreso con código
+    loginError: "",
+    tab: "resumen",
+    // pestaña Personas/Admin
+    detalle: null,
+    // colaborador expandido (jefatura / Personas)
+    tiFiltro: "todos",
+    reasignando: null,
+    // hito_id con formulario abierto
+    confirm: null,
+    // { texto, act, arg }
+    toast: "",
+    busqueda: null,
+    // { id, ok }
+    exportTexto: null,
+    alertaAbierta: null
+  };
+  var store;
+  var root;
+  var nombreDe = (id) => {
+    const u = store.state.auth.users.get(id);
+    return u ? u.nombre_ficticio : id;
+  };
+  var funcion = { Personas: "Equipo de Personas", TI: "Soporte TI", Jefatura: "Jefatura" };
+  function chip(ev) {
+    const m = {
+      Cumplido: ["ok", "Listo"],
+      Pendiente: ["neutral", "Pendiente"],
+      Vencido: ["bad", `Atrasado \xB7 ${ev.diasVencido} d`],
+      "Por verificar": ["warn", "Por verificar"]
+    }[ev.estadoReal];
+    return `<span class="chip chip-${m[0]}">${esc(m[1])}</span>`;
+  }
+  var dot = (s) => `<span class="dot dot-${s}" aria-hidden="true"></span>`;
+  var semTxt = { rojo: "Atraso cr\xEDtico", amarillo: "Con atrasos o por verificar", verde: "Completo", gris: "En curso" };
+  function barra(av) {
+    const pct = av.total ? Math.round(av.cumplidos / av.total * 100) : 0;
+    return `<div class="bar" role="img" aria-label="${av.cumplidos} de ${av.total} hitos listos"><span style="width:${pct}%"></span></div>`;
+  }
+  var toastMsg = (t) => {
+    ui.toast = t;
+    render();
+    setTimeout(() => {
+      if (ui.toast === t) {
+        ui.toast = "";
+        render();
+      }
+    }, 3200);
+  };
+  function hitosVisibles(u) {
+    const { data, auth, idx, hoy } = store.state;
+    return data.hitos.filter((h) => auth.puedeVerHito(u, h)).map((h) => ({ h, ev: evaluarHito(h, idx, hoy) }));
+  }
+  function header() {
+    const s = store.state;
+    const u = s.user;
+    return `<header class="top">
+    <div class="top-in">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">S</span><div><strong>Sprint</strong><small>Onboarding \xB7 Modo Seguro</small></div></div>
+      ${u ? `<div class="who">
+          <div class="who-txt"><strong>${esc(u.nombre_ficticio)}</strong><small><span class="role role-${esc(u.rol)}">${esc(u.rol)}</span> ${esc(u.usuario_id)}</small></div>
+          <button class="btn btn-ghost" data-act="logout">Cambiar usuario</button>
+        </div>` : ""}
+    </div>
+    <div class="cut">Fecha de corte <b>${fmt(s.hoy)}</b> \xB7 datos 100% sint\xE9ticos \xB7 todo cambio queda en la bit\xE1cora</div>
+  </header>`;
+  }
+  function render() {
+    const s = store.state;
+    const u = s.user;
+    let body;
+    if (!u) body = vLogin();
+    else if (u.rol === "Colaborador") body = vColaborador(u);
+    else if (u.rol === "Jefatura") body = vJefatura(u);
+    else if (u.rol === "TI") body = vTI(u);
+    else body = vPersonas(u);
+    root.innerHTML = header() + `<main class="wrap">${body}</main>` + modal() + (ui.toast ? `<div class="toast" role="status">${esc(ui.toast)}</div>` : "");
+  }
+  function modal() {
+    if (!ui.confirm) return "";
+    return `<div class="overlay"><div class="dialog" role="dialog" aria-modal="true" aria-labelledby="dlg-t">
+    <h3 id="dlg-t">Confirmar acci\xF3n</h3><p>${esc(ui.confirm.texto)}</p>
+    <div class="row-end"><button class="btn btn-ghost" data-act="cancel">Cancelar</button><button class="btn btn-primary" data-act="confirm-ok">Confirmar</button></div>
+  </div></div>`;
+  }
+  var DEMO = [
+    ["COL-002", "Camila Rojas", "Colaboradora de Operaciones, sin acceso a\xFAn"],
+    ["COL-019", "Hugo Soto", "Colaborador sin jefatura asignada"],
+    ["JEF-002", "Felipe Jefatura 02", "Jefatura de Operaciones"],
+    ["TI-004", "Alex Soporte TI 04", "Soporte TI: no ve datos personales"],
+    ["PER-001", "Hugo Personas 01", "Equipo de Personas: visi\xF3n completa"]
+  ];
+  function vLogin() {
+    const s = store.state;
+    const internos = ["Jefatura", "Personas", "TI", "Administrador"].map((rol) => `<optgroup label="${rol}">${s.data.usuarios.filter((x) => x.rol === rol).map((x) => `<option value="${esc(x.usuario_id)}">${esc(x.usuario_id)} \xB7 ${esc(x.nombre_ficticio)}</option>`).join("")}</optgroup>`).join("");
+    let paso;
+    if (!ui.loginStep) {
+      paso = `<form data-form="col-id" class="stack">
+      <label for="col-id">Tu c\xF3digo de colaborador</label>
+      <input id="col-id" name="id" placeholder="COL-002" autocomplete="off" inputmode="text" required>
+      <button class="btn btn-primary" type="submit">Continuar</button>
+      <p class="hint">No necesitas correo corporativo.</p></form>`;
+    } else {
+      const st = ui.loginStep;
+      paso = `<form data-form="col-code" class="stack">
+      <p>${st.canal ? `Te enviamos un c\xF3digo de 6 d\xEDgitos por <b>${esc(st.canal)}</b>.` : "No tienes un canal de contacto registrado. Pide tu c\xF3digo al equipo de Personas."}</p>
+      <label for="col-code">C\xF3digo</label>
+      <input id="col-code" name="code" inputmode="numeric" maxlength="6" placeholder="123456" required>
+      <button class="btn btn-primary" type="submit">Ingresar</button>
+      <p class="hint">Demo: el c\xF3digo es 123456. <button type="button" class="link" data-act="login-back">Usar otro c\xF3digo de colaborador</button></p></form>`;
+    }
+    return `<section class="login">
+    <div class="login-intro">
+      <p class="eyebrow">Nexo Laboral Group \xB7 Piloto</p>
+      <h1>Qu\xE9 falta para tu ingreso, qui\xE9n lo resuelve y para cu\xE1ndo.</h1>
+      <p class="lead">Cada persona ve solo lo que necesita: el colaborador su checklist, la jefatura su equipo, TI los equipos y accesos, y Personas el proceso completo.</p>
+    </div>
+    <div class="login-grid">
+      <div class="card"><h2>Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ""}${paso}</div>
+      <div class="card"><h2>Equipo interno</h2>
+        <form data-form="staff" class="stack">
+          <label for="staff-id">Cuenta</label>
+          <select id="staff-id" name="id">${internos}</select>
+          <button class="btn btn-primary" type="submit">Ingresar</button>
+          <p class="hint">En producci\xF3n entra con el inicio de sesi\xF3n corporativo.</p>
+        </form></div>
+    </div>
+    <div class="demo"><h2 class="h-sm">Recorrido de demo</h2><div class="demo-list">
+      ${DEMO.map(([id, n, d]) => `<button class="demo-item" data-act="quick" data-arg="${id}"><b>${esc(n)}</b><span>${esc(d)}</span><code>${id}</code></button>`).join("")}
+    </div></div>
+  </section>`;
+  }
+  var GRUPOS = [["Antes de tu d\xEDa 1", ["Contrato"]], ["Tu d\xEDa 1", ["Equipo", "Acceso"]], ["Tu primera semana", ["Reuni\xF3n", "Plan"]]];
+  function vColaborador(u) {
+    const s = store.state;
+    const c = store.verColaborador(u.usuario_id);
+    if (!c) return `<div class="card"><p>No encontramos tu ficha. Contacta al equipo de Personas.</p></div>`;
+    const items = hitosVisibles(u);
+    const av = avanceColaborador(c.colaborador_id, s.idx, s.hoy);
+    const vencidos = items.filter((x) => x.ev.estadoReal === "Vencido");
+    const jef = c.jefatura_id ? s.auth.users.get(c.jefatura_id) : null;
+    const misRep = store.misReportes();
+    return `<div class="mobile">
+    <section class="card hello">
+      <p class="eyebrow">${esc(c.area)} \xB7 ${esc(c.sede)} \xB7 ${esc(c.modalidad)}</p>
+      <h1>Hola, ${esc(u.nombre_ficticio.split(" ")[0])}</h1>
+      <p>Ingreso: <b>${fmt(c.fecha_ingreso)}</b> \xB7 Turno: ${c.tipo_turno ? `<b>${esc(c.tipo_turno)}</b>` : '<span class="missing">por confirmar (Personas lo est\xE1 validando)</span>'}</p>
+      <div class="progress"><span><b>${av.cumplidos}</b> de ${av.total} listos</span>${barra(av)}</div>
+      ${vencidos.length ? `<p class="notice notice-bad">${vencidos.length} ${vencidos.length === 1 ? "tarea est\xE1 atrasada" : "tareas est\xE1n atrasadas"}, y ninguna depende de ti. Los responsables las tienen en su bandeja.</p>` : ""}
+      ${c.correo_corporativo_activo === "No" ? '<p class="notice">A\xFAn no tienes correo corporativo. Puedes usar esta p\xE1gina desde tu tel\xE9fono igual.</p>' : ""}
+    </section>
+    ${GRUPOS.map(([g, tipos]) => `<section class="group"><h2 class="h-sm">${g}</h2><ul class="checklist">
+      ${items.filter((x) => tipos.includes(x.h.tipo_hito)).map(({ h, ev }) => `<li class="check check-${ev.estadoReal === "Cumplido" ? "ok" : ev.estadoReal === "Vencido" ? "bad" : ev.estadoReal === "Por verificar" ? "warn" : "neutral"}">
+        <div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><small>Lo gestiona: ${esc(h.responsable_tipo === "Jefatura" ? "tu jefatura" : funcion[h.responsable_tipo])} \xB7 Plazo <span class="nw">${fmt(ev.limite)}</span></small>
+        ${ev.estadoReal === "Por verificar" ? '<small class="missing">Figura como listo, pero falta confirmar la fecha.</small>' : ""}</div>${chip(ev)}</li>`).join("")}
+    </ul></section>`).join("")}
+    <section class="card"><h2 class="h-sm">A qui\xE9n pedir ayuda</h2><dl class="kv">
+      <dt>Tu jefatura</dt><dd>${jef ? esc(jef.nombre_ficticio) : '<span class="missing">A\xFAn no tienes jefatura asignada. Personas ya tiene la alerta.</span>'}</dd>
+      <dt>Equipo y accesos</dt><dd>Soporte TI</dd>
+      <dt>Contrato y dudas generales</dt><dd>Equipo de Personas</dd>
+      <dt>Tu canal registrado</dt><dd>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>'}</dd>
+    </dl></section>
+    <section class="card"><h2 class="h-sm">\xBFAlgo no coincide con lo que te dijeron?</h2>
+      <form data-form="reporte" class="stack">
+        <label for="rep-tipo">Qu\xE9 pas\xF3</label>
+        <select id="rep-tipo" name="tipo">
+          <option>Mis tareas no coinciden con lo ofrecido</option><option>Mi turno cambi\xF3 o no lo conozco</option>
+          <option>No tengo equipo o accesos</option><option>No s\xE9 qui\xE9n es mi jefatura</option><option>Otro</option></select>
+        <label for="rep-txt">Cu\xE9ntanos m\xE1s (opcional)</label>
+        <textarea id="rep-txt" name="texto" rows="3" maxlength="500"></textarea>
+        <p class="hint">Solo lo lee el equipo de Personas. Tu jefatura no lo ve y no se usa para evaluarte.</p>
+        <button class="btn btn-primary" type="submit">Enviar a Personas</button>
+      </form>
+      ${misRep.length ? `<ul class="mini">${misRep.map((r) => `<li>${esc(r.tipo)} <span class="chip chip-neutral">${esc(r.estado)}</span></li>`).join("")}</ul>` : ""}
+    </section>
+  </div>`;
+  }
+  function vJefatura(u) {
+    const s = store.state;
+    const { auth, idx, hoy } = s;
+    const equipo = [...auth.scope(u)].map((id) => idx.colab.get(id)).filter(Boolean).sort((a, b) => b.fecha_ingreso.localeCompare(a.fecha_ingreso));
+    const items = hitosVisibles(u);
+    const mias = items.filter((x) => x.h.responsable_id === u.usuario_id && x.ev.estadoReal !== "Cumplido").sort((a, b) => b.ev.diasVencido - a.ev.diasVencido);
+    const vencEquipo = items.filter((x) => x.ev.estadoReal === "Vencido");
+    const proximos = equipo.filter((c) => c.fecha_ingreso > hoy);
+    const recientes = equipo.filter((c) => c.fecha_ingreso <= hoy && diffDays(hoy, c.fecha_ingreso) <= 30);
+    const metr = auth.alcanceMetricas(u) === "equipo" ? metricasPorTipo(items) : null;
+    return `<div class="page-head"><div><p class="eyebrow">${esc(u.area)}</p><h1>Tu equipo de ingreso</h1></div>
+      <form data-form="buscar" class="search"><label for="q" class="sr">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Buscar por ID, ej. COL-014"><button class="btn btn-ghost" type="submit">Buscar</button></form></div>
+    ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? "" : "notice-bad"}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} est\xE1 en tu equipo.` : `${esc(ui.busqueda.id)} est\xE1 fuera de tu alcance. El intento qued\xF3 registrado en la bit\xE1cora.`}</p>` : ""}
+    <div class="kpis">
+      ${kpi(equipo.length, "personas en tu equipo")}
+      ${kpi(mias.length, "acciones tuyas por hacer", mias.length ? "warn" : "")}
+      ${kpi(vencEquipo.length, "hitos atrasados del equipo (de cualquier \xE1rea)", vencEquipo.length ? "bad" : "")}
+    </div>
+    <section class="card"><h2 class="h-sm">Tus acciones</h2>
+      ${mias.length ? `<ul class="actions">${mias.map(({ h, ev }) => `<li><div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b> \xB7 ${esc(nombreDe(h.colaborador_id))}<small>Plazo ${fmt(ev.limite)}${ev.flags.includes("plazo_corrido") ? ` \xB7 registrado para ${fmt(ev.limiteRegistrado)}` : ""}</small></div>
+        <div class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar como cumplido</button></div></li>`).join("")}</ul>` : '<p class="empty">No tienes acciones pendientes.</p>'}
+    </section>
+    <section class="card"><h2 class="h-sm">Pr\xF3ximos ingresos</h2>
+      ${proximos.length ? listaIngresos(proximos) : `<p class="empty">No hay ingresos con fecha posterior al ${fmt(hoy)} en tu equipo.</p>`}
+      ${recientes.length ? `<h3 class="h-xs">Ingresaron en los \xFAltimos 30 d\xEDas</h3>${listaIngresos(recientes)}` : ""}
+    </section>
+    <section class="card"><h2 class="h-sm">Personas de tu equipo</h2>
+      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
+      ${equipo.map((c) => {
+      const av = avanceColaborador(c.colaborador_id, idx, hoy);
+      return `<tr>
+        <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
+        <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
+        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
+        <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Ver hitos"}</button></td></tr>
+        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`;
+    }).join("")}
+      </tbody></table></div>
+      <p class="hint">No ves canales de contacto ni los reportes que las personas env\xEDan a Personas.</p>
+    </section>
+    ${metr ? `<section class="card"><h2 class="h-sm">Cumplimiento de tu equipo por hito</h2>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ""}`;
+  }
+  var listaIngresos = (l) => `<ul class="mini">${l.map((c) => `<li><b>${esc(nombreDe(c.colaborador_id))}</b> \xB7 ${fmt(c.fecha_ingreso)} \xB7 ${esc(c.modalidad)} \xB7 ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}</li>`).join("")}</ul>`;
+  var kpi = (n, t, tone = "") => `<div class="kpi ${tone ? "kpi-" + tone : ""}"><b>${n}</b><span>${esc(t)}</span></div>`;
+  function tablaHitos(u, colId) {
+    const s = store.state;
+    const rows = (s.idx.hitosPorColab.get(colId) || []).filter((h) => s.auth.puedeVerHito(u, h));
+    return `<div class="table-wrap"><table class="inner"><thead><tr><th>Hito</th><th>Responsable</th><th>Plazo (cat\xE1logo)</th><th>Fecha registrada</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${rows.map((h) => {
+      const ev = evaluarHito(h, s.idx, s.hoy);
+      const pc = s.auth.puedeCompletar(u, h, s.hoy);
+      const pr = s.auth.puedeReasignar(u, h);
+      return `<tr><td><b>${esc(h.tipo_hito)}</b><br><code>${h.hito_id}</code></td>
+      <td>${esc(funcion[h.responsable_tipo])}${s.auth.puedeVerResponsableId(u, h) ? `<br><code>${h.responsable_id ? esc(h.responsable_id) : '<span class="missing">sin responsable</span>'}</code>` : ""}</td>
+      <td class="num">${fmt(ev.limite)}</td><td class="num">${fmt(ev.limiteRegistrado)}${ev.flags.includes("plazo_corrido") ? ' <span class="chip chip-warn">movida</span>' : ""}</td>
+      <td>${chip(ev)}</td>
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Cumplido</button>` : ""}
+        ${pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ""}
+        ${!pc.ok && !pr.ok && ev.estadoReal !== "Cumplido" ? `<small class="muted">${esc(pc.motivo)}</small>` : ""}</div></td></tr>
+      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="6">${formReasignar(u, h)}</td></tr>` : ""}`;
+    }).join("")}
+  </tbody></table></div>`;
+  }
+  function formReasignar(u, h) {
+    const cands = store.state.auth.candidatos(u, h);
+    if (!cands.length) return `<p class="notice notice-bad">No hay cuentas v\xE1lidas para este hito. ${h.responsable_tipo === "Jefatura" ? "Ninguna jefatura tiene a esta persona en su equipo_asignado: hay que corregirlo en el sistema de origen." : ""}</p>`;
+    return `<form data-form="reasignar" data-arg="${h.hito_id}" class="inline-form">
+    <label for="re-${h.hito_id}">Nuevo responsable</label>
+    <select id="re-${h.hito_id}" name="nuevo">${cands.map((c) => `<option value="${esc(c.usuario_id)}">${esc(c.usuario_id)} \xB7 ${esc(u.rol === "TI" ? c.nombre_ficticio : c.nombre_ficticio)}</option>`).join("")}</select>
+    <label for="rm-${h.hito_id}">Motivo (queda en la bit\xE1cora)</label>
+    <input id="rm-${h.hito_id}" name="motivo" required minlength="5" placeholder="Ej.: responsable vac\xEDo desde la carga">
+    <div class="row"><button class="btn btn-primary btn-sm" type="submit">Reasignar</button><button class="btn btn-ghost btn-sm" type="button" data-act="reasignar-close">Cancelar</button></div>
+  </form>`;
+  }
+  function metricasPorTipo(items) {
+    const tipos = [...new Set(items.map((x) => x.h.tipo_hito))].sort((a, b) => TIPOS_HITO.indexOf(a) - TIPOS_HITO.indexOf(b));
+    return `<div class="metric-rows">${tipos.map((t) => {
+      const l = items.filter((x) => x.h.tipo_hito === t);
+      const ok = l.filter((x) => x.ev.estadoReal === "Cumplido").length;
+      const pct = Math.round(ok / l.length * 100);
+      return `<div class="metric"><span>${esc(t)}</span><div class="bar bar-lg"><span style="width:${pct}%"></span></div><b class="num">${pct}%</b><small class="num">${ok}/${l.length}</small></div>`;
+    }).join("")}</div>`;
+  }
+  function vTI(u) {
+    const s = store.state;
+    const abiertos = hitosVisibles(u).filter((x) => x.ev.estadoReal !== "Cumplido").sort((a, b) => b.ev.diasVencido - a.ev.diasVencido || CRIT_PESO[b.ev.crit] - CRIT_PESO[a.ev.crit]);
+    const filtros = { todos: abiertos, mios: abiertos.filter((x) => x.h.responsable_id === u.usuario_id), sin: abiertos.filter((x) => !x.h.responsable_id) };
+    const lista = filtros[ui.tiFiltro];
+    const btnF = (k, t) => `<button class="seg ${ui.tiFiltro === k ? "on" : ""}" data-act="ti-filtro" data-arg="${k}" aria-pressed="${ui.tiFiltro === k}">${t} <span class="num">${filtros[k].length}</span></button>`;
+    return `<div class="page-head"><div><p class="eyebrow">Soporte TI</p><h1>Equipos y accesos por entregar</h1></div></div>
+    <p class="notice">Ves solo los hitos de Equipo y Acceso, identificados por c\xF3digo. Los nombres y canales de contacto no son necesarios para resolverlos.</p>
+    <div class="kpis">
+      ${kpi(abiertos.length, "casos t\xE9cnicos abiertos")}
+      ${kpi(abiertos.filter((x) => x.ev.estadoReal === "Vencido").length, "vencidos seg\xFAn el plazo del cat\xE1logo", "bad")}
+      ${kpi(filtros.sin.length, "sin responsable asignado", filtros.sin.length ? "warn" : "")}
+      ${kpi(filtros.mios.length, "asignados a ti")}
+    </div>
+    <div class="segs" role="group" aria-label="Filtro">${btnF("todos", "Todos")}${btnF("mios", "Mis casos")}${btnF("sin", "Sin responsable")}</div>
+    <section class="card"><div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Deb\xEDa estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
+    ${lista.map(({ h, ev }) => {
+      const c = s.idx.colab.get(h.colaborador_id);
+      const pc = s.auth.puedeCompletar(u, h, s.hoy);
+      const pr = s.auth.puedeReasignar(u, h);
+      return `<tr><td><code>${h.hito_id}</code><br><small><code>${h.colaborador_id}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
+      <td><small>${esc(c.sede)} \xB7 ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal).toLowerCase()} \xB7 correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
+      <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
+      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
+      <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${h.hito_id}">Marcar entregado</button>` : ""}
+        ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${h.hito_id}">Tomar caso</button>` : ""}
+        ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${h.hito_id}">Reasignar</button>` : ""}</div></td></tr>
+      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ""}`;
+    }).join("") || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
+    </tbody></table></div></section>`;
+  }
+  var TABS = [["resumen", "Resumen"], ["casos", "Casos cr\xEDticos"], ["calidad", "Calidad de datos"], ["reportes", "Reportes"], ["permisos", "Permisos"], ["bitacora", "Bit\xE1cora"], ["datos", "Datos"]];
+  function vPersonas(u) {
+    const rep = store.reportesVisibles().filter((r) => r.estado !== "Cerrado").length;
+    const body = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+    return `<div class="page-head"><div><p class="eyebrow">${u.rol === "Administrador" ? "Administraci\xF3n" : "Equipo de Personas"}</p><h1>Proceso de ingreso completo</h1></div></div>
+    <nav class="tabs" role="tablist">${TABS.map(([k, t]) => `<button role="tab" aria-selected="${ui.tab === k}" class="tab ${ui.tab === k ? "on" : ""}" data-act="tab" data-arg="${k}">${t}${k === "reportes" && rep ? ` <span class="badge">${rep}</span>` : ""}${k === "calidad" ? ` <span class="badge badge-soft" title="Reglas con alertas de severidad alta">${new Set(store.state.alertas.filter((a) => a.sev === "alta").map((a) => a.regla)).size}</span>` : ""}</button>`).join("")}</nav>
+    ${body}`;
+  }
+  function tResumen(u) {
+    const s = store.state;
+    const items = hitosVisibles(u);
+    const abiertos = items.filter((x) => x.ev.estadoReal !== "Cumplido" && x.ev.estadoReal !== "Por verificar");
+    const venc = items.filter((x) => x.ev.estadoReal === "Vencido").length;
+    const reg = items.filter((x) => x.h.estado === "Atrasado").length;
+    const pv = items.filter((x) => x.ev.estadoReal === "Por verificar").length;
+    const personasCrit = s.data.colaboradores.filter((c) => avanceColaborador(c.colaborador_id, s.idx, s.hoy).vencidosAltos > 0).length;
+    const areas = ["Operaciones", "Comercial", "Tecnolog\xEDa", "Personas"];
+    const celda = (l) => {
+      if (!l.length) return "<td>\u2014</td>";
+      const p = Math.round(l.filter((x) => x.ev.estadoReal === "Cumplido").length / l.length * 100);
+      return `<td class="num heat" style="--p:${p}">${p}%</td>`;
+    };
+    return `<div class="kpis">
+      ${kpi(abiertos.length, "hitos abiertos")}
+      ${kpi(venc, `atrasados seg\xFAn el cat\xE1logo (el registro dice ${reg})`, "bad")}
+      ${kpi(pv, 'marcados "Cumplido" sin respaldo de fecha', "warn")}
+      ${kpi(personasCrit, "personas con un atraso cr\xEDtico", "bad")}
+    </div>
+    ${venc > reg ? `<p class="notice notice-bad"><b>El registro subestima los atrasos.</b> ${venc - reg} hitos figuran como "Pendiente", pero su fecha l\xEDmite se movi\xF3 m\xE1s all\xE1 del plazo del cat\xE1logo. Aqu\xED se cuentan como atrasados.</p>` : ""}
+    <section class="card"><h2 class="h-sm">Cumplimiento real por hito y \xE1rea</h2>
+      <div class="table-wrap"><table class="heatmap"><thead><tr><th>Hito</th>${areas.map((a) => `<th>${a}</th>`).join("")}<th>Total</th></tr></thead><tbody>
+      ${TIPOS_HITO.map((t) => `<tr><th scope="row">${t}</th>${areas.map((a) => celda(items.filter((x) => x.h.tipo_hito === t && s.idx.colab.get(x.h.colaborador_id)?.area === a))).join("")}${celda(items.filter((x) => x.h.tipo_hito === t))}</tr>`).join("")}
+      </tbody></table></div><p class="hint">Porcentaje de hitos cumplidos con fecha v\xE1lida. Datos agregados, sin identificar personas.</p></section>
+    <section class="card"><h2 class="h-sm">Atrasos por sede</h2>${porSede(items)}</section>`;
+  }
+  function porSede(items) {
+    const s = store.state;
+    const sedes = ["Santiago Centro", "Providencia", "Valpara\xEDso", "Concepci\xF3n"];
+    const max = Math.max(1, ...sedes.map((se) => items.filter((x) => x.ev.estadoReal === "Vencido" && s.idx.colab.get(x.h.colaborador_id)?.sede === se).length));
+    return `<div class="metric-rows">${sedes.map((se) => {
+      const n = items.filter((x) => x.ev.estadoReal === "Vencido" && s.idx.colab.get(x.h.colaborador_id)?.sede === se).length;
+      return `<div class="metric"><span>${se}</span><div class="bar bar-lg bar-bad"><span style="width:${Math.round(n / max * 100)}%"></span></div><b class="num">${n}</b><small>atrasados</small></div>`;
+    }).join("")}</div>`;
+  }
+  function tCasos(u) {
+    const s = store.state;
+    const lista = s.data.colaboradores.map((c) => ({ c, av: avanceColaborador(c.colaborador_id, s.idx, s.hoy) })).filter((x) => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id).sort((a, b) => !b.c.jefatura_id - !a.c.jefatura_id || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
+    return `<p class="hint">${lista.length} personas con atrasos, hitos por verificar o sin jefatura. Abre un caso para reasignar responsables.</p>
+  <section class="card"><div class="table-wrap"><table><thead><tr><th>Persona</th><th>\xC1rea \xB7 sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
+  ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${c.colaborador_id}</code></td>
+    <td>${esc(c.area)}<br><small>${esc(c.sede)}</small></td>
+    <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
+    <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
+    <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small>(${av.vencidosAltos} cr\xEDticos)</small>` : ""}${av.porVerificar ? `<br><small>${av.porVerificar} por verificar</small>` : ""}</td>
+    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${c.colaborador_id}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Abrir"}</button></td></tr>
+    ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`).join("")}
+  </tbody></table></div></section>`;
+  }
+  function tCalidad() {
+    const grupos = agruparAlertas(store.state.alertas);
+    return `<p class="hint">Reglas del diccionario de datos aplicadas a los 4 archivos. Nada se corrige autom\xE1ticamente: cada alerta indica qu\xE9 hacer.</p>
+  <div class="alerts">${grupos.map((g) => `<details class="alert alert-${g.sev}" ${ui.alertaAbierta === g.regla ? "open" : ""} data-regla="${g.regla}">
+    <summary><span class="sev">${g.sev === "alta" ? "Alta" : g.sev === "media" ? "Media" : "Info"}</span><b>${esc(g.titulo)}</b><span class="num count">${g.items.length}</span></summary>
+    <p class="accion">${esc(g.accion)}</p>
+    <ul class="mini">${g.items.slice(0, 60).map((a) => `<li><code>${esc(a.id)}</code> ${esc(a.detalle)}</li>`).join("")}${g.items.length > 60 ? `<li>\u2026 y ${g.items.length - 60} m\xE1s</li>` : ""}</ul>
+  </details>`).join("")}</div>`;
+  }
+  function tReportes() {
+    const reps = store.reportesVisibles();
+    if (!reps.length) return `<section class="card"><p class="empty">A\xFAn no hay reportes. Para verlos en la demo, entra como un colaborador (por ejemplo Camila Rojas) y usa "\xBFAlgo no coincide?".</p></section>`;
+    return `<section class="card"><p class="hint">Contenido sensible: lo ve solo Personas. No se comparte con la jefatura y no se usa para evaluar ni seleccionar.</p>
+  <ul class="actions">${reps.map((r) => `<li><div><b>${esc(r.tipo)}</b> \xB7 ${esc(nombreDe(r.colaborador_id))} <code>${r.colaborador_id}</code><small>${fmt(r.fecha)} \xB7 ${esc(r.id)}${r.texto ? ` \xB7 \u201C${esc(r.texto)}\u201D` : ""}</small></div>
+    <div class="row"><label for="st-${r.id}" class="sr">Estado</label><select id="st-${r.id}" data-change="rep-estado" data-arg="${r.id}">${["Nuevo", "En gesti\xF3n", "Cerrado"].map((e) => `<option ${e === r.estado ? "selected" : ""}>${e}</option>`).join("")}</select></div></li>`).join("")}</ul></section>`;
+  }
+  function tPermisos() {
+    const roles = ["Colaborador", "Jefatura", "TI", "Personas"];
+    return `<section class="card"><h2 class="h-sm">Lo que cada rol puede hacer en Sprint</h2>
+  <div class="table-wrap"><table><thead><tr><th>Capacidad</th>${roles.map((r) => `<th>${r}</th>`).join("")}</tr></thead><tbody>
+  ${MATRIZ_EFECTIVA.map((m) => `<tr><th scope="row">${esc(m.cap)}</th>${roles.map((r) => `<td>${esc(m[r])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
+  <p class="hint">Acceso efectivo = rol + equipo_asignado + permiso S\xED/No + tipo de responsabilidad. Un "S\xED" del archivo nunca da acceso global por s\xED solo.</p></section>
+  <section class="card"><h2 class="h-sm">Permisos del archivo que se acotaron</h2><ul class="mini">
+    <li><b>TI</b> tiene "puede_asignar_responsables = S\xED". Sprint solo le deja reasignar entre cuentas TI y solo en hitos de Equipo y Acceso.</li>
+    <li><b>TI</b> tiene "puede_ver_metricas = S\xED". Ve solo cifras agregadas de hitos t\xE9cnicos, sin nombres.</li>
+    <li><b>Jefatura</b> tiene "puede_ver_datos_personales = S\xED". Solo aplica a su equipo_asignado y nunca incluye el canal de contacto.</li>
+    <li><b>Colaborador</b> tiene "puede_ver_datos_personales = S\xED". Solo ve sus propios datos.</li>
+  </ul></section>`;
+  }
+  function tBitacora() {
+    const b = store.state.bitacora;
+    return `<section class="card"><div class="row-between"><h2 class="h-sm">Bit\xE1cora de cambios y accesos</h2>
+    <div class="row"><button class="btn btn-ghost btn-sm" data-act="export" data-arg="bitacora">Copiar bit\xE1cora (CSV)</button><button class="btn btn-ghost btn-sm" data-act="export" data-arg="hitos">Copiar hitos actualizados (CSV)</button></div></div>
+    ${ui.exportTexto ? `<label for="exp" class="sr">CSV</label><textarea id="exp" class="export" rows="6" readonly>${esc(ui.exportTexto)}</textarea>` : ""}
+    ${b.length ? `<div class="table-wrap"><table><thead><tr><th>Cu\xE1ndo</th><th>Usuario</th><th>Acci\xF3n</th><th>Objetivo</th><th>Detalle</th><th>Resultado</th></tr></thead><tbody>
+    ${b.slice(0, 200).map((x) => `<tr><td class="num"><small>${esc(new Date(x.ts).toLocaleString("es-CL"))}</small></td><td><code>${esc(x.usuario)}</code><br><small>${esc(x.rol)}</small></td><td>${esc(x.accion)}</td><td><code>${esc(x.objetivo)}</code></td><td>${esc(x.detalle)}</td><td>${x.resultado === "ok" ? '<span class="chip chip-ok">ok</span>' : '<span class="chip chip-bad">denegado</span>'}</td></tr>`).join("")}
+    </tbody></table></div>` : '<p class="empty">Sin movimientos todav\xEDa.</p>'}</section>`;
+  }
+  function tDatos() {
+    const s = store.state;
+    return `<section class="card"><h2 class="h-sm">Fecha de corte</h2>
+    <form data-form="hoy" class="inline-form"><label for="hoy">Calcular atrasos al</label><input type="date" id="hoy" name="hoy" value="${s.hoy}" required><button class="btn btn-primary btn-sm" type="submit">Aplicar</button></form></section>
+  <section class="card"><h2 class="h-sm">Cargar archivos nuevos</h2>
+    <p class="hint">Sube uno o m\xE1s CSV con el nombre original (colaboradores.csv, hitos_onboarding.csv, usuarios_roles.csv, catalogo_hitos.csv). Se validan antes de usarse.</p>
+    <form data-form="carga" class="stack"><label for="files">Archivos CSV</label><input type="file" id="files" name="files" accept=".csv,text/csv" multiple><button class="btn btn-primary btn-sm" type="submit">Validar y cargar</button></form></section>
+  <section class="card"><h2 class="h-sm">Reiniciar la demo</h2><p class="hint">Vuelve a los datos originales y borra la bit\xE1cora y los reportes de este navegador.</p>
+    <button class="btn btn-ghost btn-sm" data-act="reset">Reiniciar demo</button></section>`;
+  }
+  var ARCHIVOS = {
+    "colaboradores.csv": ["colaboradores", ["colaborador_id", "fecha_ingreso", "area", "sede", "modalidad", "tipo_turno", "jefatura_id", "canal_contacto", "correo_corporativo_activo", "dispositivo_principal", "estado_onboarding"]],
+    "hitos_onboarding.csv": ["hitos", ["hito_id", "colaborador_id", "tipo_hito", "responsable_tipo", "responsable_id", "fecha_limite", "fecha_cumplimiento", "estado", "nivel_criticidad", "ultima_actualizacion"]],
+    "usuarios_roles.csv": ["usuarios", ["usuario_id", "nombre_ficticio", "rol", "area", "equipo_asignado", "puede_ver_datos_personales", "puede_editar_hitos", "puede_asignar_responsables", "puede_ver_metricas"]],
+    "catalogo_hitos.csv": ["catalogo", ["tipo_hito", "responsable_inicial", "plazo_ficticio", "criticidad"]]
+  };
+  async function onSubmit(e) {
+    const f = e.target.closest("form[data-form]");
+    if (!f) return;
+    e.preventDefault();
+    const fd = new FormData(f);
+    const kind = f.dataset.form;
+    const s = store.state;
+    if (kind === "col-id") {
+      const id = String(fd.get("id") || "").trim().toUpperCase();
+      const u = s.auth.users.get(id);
+      const c = s.idx.colab.get(id);
+      if (!u || u.rol !== "Colaborador" || !c) {
+        ui.loginError = "No encontramos ese c\xF3digo. Revisa que tenga la forma COL-### o pide ayuda a Personas.";
+        return render();
+      }
+      const canal = c.canal_contacto || (c.correo_corporativo_activo === "S\xED" ? "Correo corporativo" : null);
+      ui.loginStep = { id, canal };
+      ui.loginError = "";
+      return render();
+    }
+    if (kind === "col-code") {
+      if (String(fd.get("code")).trim() !== "123456") {
+        ui.loginError = "El c\xF3digo no es correcto. En la demo es 123456.";
+        return render();
+      }
+      store.login(ui.loginStep.id, `c\xF3digo por ${ui.loginStep.canal || "Personas"}`);
+      ui.loginStep = null;
+      ui.loginError = "";
+      return render();
+    }
+    if (kind === "staff") {
+      store.login(String(fd.get("id")));
+      resetUi();
+      return render();
+    }
+    if (kind === "reporte") {
+      const r = store.reportar(String(fd.get("tipo")), String(fd.get("texto") || ""));
+      return toastMsg(r.ok ? "Enviado a Personas. Lo ver\xE1s aqu\xED con su estado." : r.motivo);
+    }
+    if (kind === "buscar") {
+      const id = String(fd.get("q") || "").trim().toUpperCase();
+      if (!id) return;
+      const c = store.verColaborador(id);
+      ui.busqueda = { id, ok: !!c };
+      if (c) ui.detalle = id;
+      return render();
+    }
+    if (kind === "reasignar") {
+      const r = store.reasignar(f.dataset.arg, String(fd.get("nuevo")), String(fd.get("motivo") || ""));
+      if (r.ok) ui.reasignando = null;
+      return toastMsg(r.ok ? "Responsable reasignado y registrado en la bit\xE1cora." : r.motivo);
+    }
+    if (kind === "hoy") {
+      const v = String(fd.get("hoy"));
+      if (isISO(v)) {
+        store.setHoy(v);
+        toastMsg(`Atrasos recalculados al ${fmt(v)}.`);
+      }
+      return;
+    }
+    if (kind === "carga") {
+      const files = [...f.querySelector("input[type=file]").files || []];
+      if (!files.length) return toastMsg("Elige al menos un archivo CSV.");
+      const nuevo = {};
+      const errores = [];
+      for (const file of files) {
+        const def = ARCHIVOS[file.name.toLowerCase()];
+        if (!def) {
+          errores.push(`${file.name}: nombre no reconocido`);
+          continue;
+        }
+        const rows = parseCSV(await file.text());
+        const faltan = def[1].filter((c) => !(rows[0] && c in rows[0]));
+        if (!rows.length || faltan.length) {
+          errores.push(`${file.name}: faltan columnas ${faltan.join(", ") || "(archivo vac\xEDo)"}`);
+          continue;
+        }
+        nuevo[def[0]] = rows;
+      }
+      if (errores.length) return toastMsg(`No se carg\xF3: ${errores.join(" \xB7 ")}`);
+      store.cargarArchivos(nuevo, `Archivos: ${files.map((x) => x.name).join(", ")}`);
+      ui.tab = "calidad";
+      return toastMsg("Archivos cargados. Revisa las alertas de calidad.");
+    }
+  }
+  function resetUi() {
+    Object.assign(ui, { tab: "resumen", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null });
+  }
+  function onClick(e) {
+    const b = e.target.closest("[data-act]");
+    if (!b) return;
+    const act = b.dataset.act;
+    const arg = b.dataset.arg;
+    const s = store.state;
+    const h = arg ? s.data.hitos.find((x) => x.hito_id === arg) : null;
+    switch (act) {
+      case "quick":
+        store.login(arg, "recorrido de demo");
+        resetUi();
+        return render();
+      case "logout":
+        store.logout();
+        resetUi();
+        ui.loginStep = null;
+        return render();
+      case "login-back":
+        ui.loginStep = null;
+        ui.loginError = "";
+        return render();
+      case "tab":
+        ui.tab = arg;
+        ui.detalle = null;
+        ui.reasignando = null;
+        ui.exportTexto = null;
+        return render();
+      case "detalle":
+        ui.detalle = ui.detalle === arg ? null : arg;
+        ui.reasignando = null;
+        return render();
+      case "ti-filtro":
+        ui.tiFiltro = arg;
+        return render();
+      case "reasignar-open":
+        ui.reasignando = arg;
+        return render();
+      case "reasignar-close":
+        ui.reasignando = null;
+        return render();
+      case "completar":
+        ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${h.colaborador_id} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: "completar", arg };
+        return render();
+      case "tomar":
+        ui.confirm = { texto: `Asignarte el caso ${arg} (${h.tipo_hito} de ${h.colaborador_id}). La asignaci\xF3n queda en la bit\xE1cora.`, act: "tomar", arg };
+        return render();
+      case "reset":
+        ui.confirm = { texto: "Volver a los datos originales y borrar la bit\xE1cora y los reportes de este navegador.", act: "reset" };
+        return render();
+      case "cancel":
+        ui.confirm = null;
+        return render();
+      case "confirm-ok": {
+        const c = ui.confirm;
+        ui.confirm = null;
+        if (c.act === "completar") {
+          const r = store.completar(c.arg);
+          return toastMsg(r.ok ? "Hito marcado como cumplido." : r.motivo);
+        }
+        if (c.act === "tomar") {
+          const r = store.reasignar(c.arg, s.user.usuario_id, `Caso tomado por ${s.user.usuario_id}`);
+          return toastMsg(r.ok ? "Caso asignado a ti." : r.motivo);
+        }
+        if (c.act === "reset") {
+          store.reiniciar();
+          resetUi();
+          return toastMsg("Demo reiniciada.");
+        }
+        return render();
+      }
+      case "export": {
+        ui.exportTexto = arg === "bitacora" ? toCSV(s.bitacora, ["ts", "usuario", "rol", "accion", "objetivo", "detalle", "resultado"]) : toCSV(s.data.hitos);
+        render();
+        const t = ui.exportTexto;
+        try {
+          navigator.clipboard.writeText(t).then(() => toastMsg("CSV copiado al portapapeles."), () => selExport());
+        } catch {
+          selExport();
+        }
+        return void 0;
+      }
+      default:
+        return void 0;
+    }
+  }
+  function selExport() {
+    const t = root.querySelector("#exp");
+    if (t) {
+      t.focus();
+      t.select();
+    }
+    toastMsg("Selecciona y copia el CSV del recuadro.");
+  }
+  function onChange(e) {
+    const el = e.target.closest("[data-change]");
+    if (!el) return;
+    if (el.dataset.change === "rep-estado") {
+      store.cambiarEstadoReporte(el.dataset.arg, el.value);
+      toastMsg("Estado actualizado.");
+    }
+  }
+  function onToggle(e) {
+    const d = e.target;
+    if (d.matches && d.matches("details[data-regla]")) ui.alertaAbierta = d.open ? d.dataset.regla : ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta;
+  }
+  function mount(el, st) {
+    root = el;
+    store = st;
+    root.addEventListener("click", onClick);
+    root.addEventListener("submit", onSubmit);
+    root.addEventListener("change", onChange);
+    root.addEventListener("toggle", onToggle, true);
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && ui.confirm) {
+        ui.confirm = null;
+        render();
+      }
+    });
+    render();
+  }
+
+  // src/data.generated.js
+  var data_generated_default = { "colaboradores": "\uFEFFcolaborador_id,fecha_ingreso,area,sede,modalidad,tipo_turno,jefatura_id,canal_contacto,correo_corporativo_activo,dispositivo_principal,estado_onboarding\r\nCOL-001,2026-09-04,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-002,2026-09-07,Operaciones,Santiago Centro,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-003,2026-09-10,Tecnolog\xEDa,Santiago Centro,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Computador,Completado\r\nCOL-004,2026-09-13,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-005,2026-09-16,Personas,Providencia,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-006,2026-09-19,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-007,2026-09-22,Tecnolog\xEDa,Providencia,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-008,2026-09-25,Comercial,Providencia,H\xEDbrida,Turno tarde,JEF-008,,S\xED,Computador,En proceso\r\nCOL-009,2026-09-28,Personas,Valpara\xEDso,Remota,Jornada diurna,JEF-009,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-010,2026-10-01,Operaciones,Valpara\xEDso,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-011,2026-10-04,Tecnolog\xEDa,Valpara\xEDso,H\xEDbrida,Turno ma\xF1ana,JEF-011,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-012,2026-10-07,Comercial,Valpara\xEDso,Remota,Turno tarde,JEF-012,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-013,2026-10-10,Personas,Concepci\xF3n,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-014,2026-10-13,Operaciones,Concepci\xF3n,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Tel\xE9fono,En proceso\r\nCOL-015,2026-10-16,Tecnolog\xEDa,Concepci\xF3n,Remota,Turno ma\xF1ana,JEF-003,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-016,2026-10-19,Comercial,Concepci\xF3n,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-017,2026-10-22,Personas,Santiago Centro,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-018,2026-10-25,Operaciones,Santiago Centro,Remota,Jornada parcial,JEF-006,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-019,2026-10-28,Tecnolog\xEDa,Santiago Centro,Presencial,Turno ma\xF1ana,,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-020,2026-09-01,Comercial,Santiago Centro,H\xEDbrida,Turno tarde,JEF-008,Correo personal,No,Tel\xE9fono,En proceso\r\nCOL-021,2026-09-04,Personas,Providencia,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Computador,Completado\r\nCOL-022,2026-09-07,Operaciones,Providencia,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Tel\xE9fono,No iniciado\r\nCOL-023,2026-09-10,Tecnolog\xEDa,Providencia,H\xEDbrida,Turno ma\xF1ana,JEF-011,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-024,2026-09-13,Comercial,Providencia,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\nCOL-025,2026-09-16,Personas,Valpara\xEDso,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Tel\xE9fono,No iniciado\r\nCOL-026,2026-09-19,Operaciones,Valpara\xEDso,H\xEDbrida,Jornada parcial,JEF-002,Correo personal,No,Computador,En proceso\r\nCOL-027,2026-09-22,Tecnolog\xEDa,Valpara\xEDso,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-028,2026-09-25,Comercial,Valpara\xEDso,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-029,2026-09-28,Personas,Concepci\xF3n,H\xEDbrida,Jornada diurna,JEF-005,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-030,2026-10-01,Operaciones,Concepci\xF3n,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Computador,Completado\r\nCOL-031,2026-10-04,Tecnolog\xEDa,Concepci\xF3n,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-032,2026-10-07,Comercial,Concepci\xF3n,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,En proceso\r\nCOL-033,2026-10-10,Personas,Santiago Centro,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Tel\xE9fono,Completado\r\nCOL-034,2026-10-13,Operaciones,Santiago Centro,Presencial,Jornada parcial,JEF-010,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-035,2026-10-16,Tecnolog\xEDa,Santiago Centro,H\xEDbrida,Turno ma\xF1ana,JEF-011,,S\xED,Computador,En proceso\r\nCOL-036,2026-10-19,Comercial,Santiago Centro,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\nCOL-037,2026-10-22,Personas,Providencia,Presencial,Jornada diurna,JEF-001,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-038,2026-10-25,Operaciones,Providencia,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-039,2026-10-28,Tecnolog\xEDa,Providencia,Remota,Turno ma\xF1ana,JEF-003,Correo corporativo,S\xED,Computador,Completado\r\nCOL-040,2026-09-01,Comercial,Providencia,Presencial,Turno tarde,JEF-004,Correo personal,No,Tel\xE9fono,No iniciado\r\nCOL-041,2026-09-04,Personas,Valpara\xEDso,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-042,2026-09-07,Operaciones,Valpara\xEDso,Remota,Jornada parcial,JEF-006,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-043,2026-09-10,Tecnolog\xEDa,Valpara\xEDso,Presencial,Turno ma\xF1ana,JEF-007,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-044,2026-09-13,Comercial,Valpara\xEDso,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,En proceso\r\nCOL-045,2026-09-16,Personas,Concepci\xF3n,Remota,Jornada diurna,JEF-009,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-046,2026-09-19,Operaciones,Concepci\xF3n,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-047,2026-09-22,Tecnolog\xEDa,Concepci\xF3n,H\xEDbrida,Turno ma\xF1ana,JEF-011,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-048,2026-09-25,Comercial,Concepci\xF3n,Remota,,JEF-012,Correo personal,No,Tel\xE9fono,Completado\r\nCOL-049,2026-09-28,Personas,Santiago Centro,Presencial,Jornada diurna,JEF-001,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-050,2026-10-01,Operaciones,Santiago Centro,H\xEDbrida,Jornada parcial,JEF-002,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-051,2026-10-04,Tecnolog\xEDa,Santiago Centro,Remota,Turno ma\xF1ana,JEF-003,Tel\xE9fono,No,Tel\xE9fono,Completado\r\nCOL-052,2026-10-07,Comercial,Santiago Centro,Presencial,Turno tarde,JEF-004,Tel\xE9fono,S\xED,Computador,No iniciado\r\nCOL-053,2026-10-10,Personas,Providencia,H\xEDbrida,Jornada diurna,JEF-005,Correo corporativo,S\xED,Computador,En proceso\r\nCOL-054,2026-10-13,Operaciones,Providencia,Remota,Jornada parcial,JEF-006,Correo corporativo,S\xED,Computador,Completado\r\nCOL-055,2026-10-16,Tecnolog\xEDa,Providencia,Presencial,Turno ma\xF1ana,JEF-007,Tel\xE9fono,No,Tel\xE9fono,No iniciado\r\nCOL-056,2026-10-19,Comercial,Providencia,H\xEDbrida,Turno tarde,JEF-008,Tel\xE9fono,S\xED,Computador,\r\nCOL-057,2026-10-22,Personas,Valpara\xEDso,Remota,Jornada diurna,JEF-009,Correo corporativo,S\xED,Computador,Completado\r\nCOL-058,2026-10-25,Operaciones,Valpara\xEDso,Presencial,Jornada parcial,JEF-010,Correo corporativo,S\xED,Computador,No iniciado\r\nCOL-059,2026-10-28,Tecnolog\xEDa,Valpara\xEDso,H\xEDbrida,Turno ma\xF1ana,JEF-011,Tel\xE9fono,No,Tel\xE9fono,En proceso\r\nCOL-060,2026-09-01,Comercial,Valpara\xEDso,Remota,Turno tarde,JEF-012,Tel\xE9fono,S\xED,Computador,Completado\r\n", "hitos": "\uFEFFhito_id,colaborador_id,tipo_hito,responsable_tipo,responsable_id,fecha_limite,fecha_cumplimiento,estado,nivel_criticidad,ultima_actualizacion\r\nHITO-001,COL-001,Contrato,Personas,PER-001,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-002,COL-001,Equipo,TI,TI-002,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-003,COL-001,Acceso,TI,TI-003,2026-11-08,,Pendiente,Alto,2026-10-30\r\nHITO-004,COL-001,Reuni\xF3n,Jefatura,JEF-001,2026-11-09,,Pendiente,Medio,2026-10-31\r\nHITO-005,COL-001,Plan,Jefatura,JEF-001,2026-10-04,2026-10-02,Cumplido,Medio,2026-10-03\r\nHITO-006,COL-002,Contrato,Personas,PER-002,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-007,COL-002,Equipo,TI,TI-003,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-008,COL-002,Acceso,TI,TI-004,2026-11-05,,Pendiente,Alto,2026-10-28\r\nHITO-009,COL-002,Reuni\xF3n,Jefatura,JEF-002,2026-11-06,,Pendiente,Medio,2026-10-29\r\nHITO-010,COL-002,Plan,Jefatura,JEF-002,2026-10-07,2026-10-06,Cumplido,Medio,2026-10-06\r\nHITO-011,COL-003,Contrato,Personas,PER-003,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-012,COL-003,Equipo,TI,TI-004,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-013,COL-003,Acceso,TI,TI-005,2026-11-10,,Pendiente,Alto,2026-11-02\r\nHITO-014,COL-003,Reuni\xF3n,Jefatura,JEF-003,2026-11-11,,Pendiente,Medio,2026-10-27\r\nHITO-015,COL-003,Plan,Jefatura,JEF-003,2026-10-10,2026-10-10,Cumplido,Medio,2026-10-11\r\nHITO-016,COL-004,Contrato,Personas,PER-004,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-017,COL-004,Equipo,TI,TI-005,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-018,COL-004,Acceso,TI,TI-006,2026-11-07,,Pendiente,Alto,2026-10-31\r\nHITO-019,COL-004,Reuni\xF3n,Jefatura,JEF-004,2026-11-08,,Pendiente,Medio,2026-11-01\r\nHITO-020,COL-004,Plan,Jefatura,JEF-004,2026-10-13,2026-10-11,Cumplido,Medio,2026-10-11\r\nHITO-021,COL-005,Contrato,Personas,PER-001,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-022,COL-005,Equipo,TI,TI-006,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-023,COL-005,Acceso,TI,TI-001,2026-11-12,,Pendiente,Alto,2026-10-29\r\nHITO-024,COL-005,Reuni\xF3n,Jefatura,JEF-005,2026-11-05,,Pendiente,Medio,2026-10-30\r\nHITO-025,COL-005,Plan,Jefatura,JEF-005,2026-10-16,2026-10-15,Cumplido,Medio,2026-10-16\r\nHITO-026,COL-006,Contrato,Personas,PER-002,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-027,COL-006,Equipo,TI,TI-001,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-028,COL-006,Acceso,TI,TI-002,2026-11-09,,Pendiente,Alto,2026-10-27\r\nHITO-029,COL-006,Reuni\xF3n,Jefatura,JEF-006,2026-11-10,,Pendiente,Medio,2026-10-28\r\nHITO-030,COL-006,Plan,Jefatura,JEF-006,2026-10-19,2026-10-19,Cumplido,Medio,2026-10-19\r\nHITO-031,COL-007,Contrato,Personas,PER-003,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-032,COL-007,Equipo,TI,TI-002,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-033,COL-007,Acceso,TI,,2026-11-06,,Pendiente,Alto,2026-11-01\r\nHITO-034,COL-007,Reuni\xF3n,Jefatura,JEF-007,2026-11-07,,Pendiente,Medio,2026-11-02\r\nHITO-035,COL-007,Plan,Jefatura,JEF-007,2026-10-22,2026-10-20,Cumplido,Medio,2026-10-21\r\nHITO-036,COL-008,Contrato,Personas,PER-004,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-037,COL-008,Equipo,TI,TI-003,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-038,COL-008,Acceso,TI,TI-004,2026-11-11,,Pendiente,Alto,2026-10-30\r\nHITO-039,COL-008,Reuni\xF3n,Jefatura,JEF-008,2026-11-12,,Pendiente,Medio,2026-10-31\r\nHITO-040,COL-008,Plan,Jefatura,JEF-008,2026-10-25,2026-10-24,Cumplido,Medio,2026-10-24\r\nHITO-041,COL-009,Contrato,Personas,PER-001,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-042,COL-009,Equipo,TI,TI-004,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-043,COL-009,Acceso,TI,TI-005,2026-11-08,,Pendiente,Alto,2026-10-28\r\nHITO-044,COL-009,Reuni\xF3n,Jefatura,JEF-009,2026-11-09,,Pendiente,Medio,2026-10-29\r\nHITO-045,COL-009,Plan,Jefatura,JEF-009,2026-10-28,2026-10-28,Cumplido,Medio,2026-10-29\r\nHITO-046,COL-010,Contrato,Personas,PER-002,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-047,COL-010,Equipo,TI,TI-005,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-048,COL-010,Acceso,TI,TI-006,2026-11-05,,Pendiente,Alto,2026-11-02\r\nHITO-049,COL-010,Reuni\xF3n,Jefatura,JEF-010,2026-11-06,,Pendiente,Medio,2026-10-27\r\nHITO-050,COL-010,Plan,Jefatura,JEF-010,2026-10-31,,Cumplido,Medio,2026-10-29\r\nHITO-051,COL-011,Contrato,Personas,PER-003,2026-10-04,,Atrasado,Alto,2026-10-20\r\nHITO-052,COL-011,Equipo,TI,TI-006,2026-11-09,,Pendiente,Alto,2026-10-30\r\nHITO-053,COL-011,Acceso,TI,TI-001,2026-11-10,,Pendiente,Alto,2026-10-31\r\nHITO-054,COL-011,Reuni\xF3n,Jefatura,JEF-011,2026-10-09,2026-10-09,Cumplido,Bajo,2026-10-09\r\nHITO-055,COL-011,Plan,Jefatura,JEF-011,2026-11-03,2026-11-02,Cumplido,Medio,2026-11-03\r\nHITO-056,COL-012,Contrato,Personas,PER-004,2026-10-07,,Atrasado,Alto,2026-10-20\r\nHITO-057,COL-012,Equipo,TI,TI-001,2026-11-06,,Pendiente,Alto,2026-10-28\r\nHITO-058,COL-012,Acceso,TI,TI-002,2026-11-07,,Pendiente,Alto,2026-10-29\r\nHITO-059,COL-012,Reuni\xF3n,Jefatura,JEF-012,2026-10-12,2026-10-10,Cumplido,Bajo,2026-10-11\r\nHITO-060,COL-012,Plan,Jefatura,JEF-012,2026-11-06,2026-11-06,Cumplido,Medio,2026-11-06\r\nHITO-061,COL-013,Contrato,Personas,PER-001,2026-10-10,,Atrasado,Alto,2026-10-20\r\nHITO-062,COL-013,Equipo,TI,TI-002,2026-11-11,,Pendiente,Alto,2026-11-02\r\nHITO-063,COL-013,Acceso,TI,TI-003,2026-11-12,,Pendiente,Alto,2026-10-27\r\nHITO-064,COL-013,Reuni\xF3n,Jefatura,JEF-001,2026-10-15,2026-10-14,Cumplido,Bajo,2026-10-14\r\nHITO-065,COL-013,Plan,Jefatura,JEF-001,2026-11-09,2026-11-07,Cumplido,Medio,2026-11-08\r\nHITO-066,COL-014,Contrato,Personas,PER-002,2026-10-13,,Atrasado,Alto,2026-10-20\r\nHITO-067,COL-014,Equipo,TI,,2026-11-08,,Pendiente,Alto,2026-10-31\r\nHITO-068,COL-014,Acceso,TI,TI-004,2026-11-09,,Pendiente,Alto,2026-11-01\r\nHITO-069,COL-014,Reuni\xF3n,Jefatura,JEF-002,2026-10-18,2026-10-18,Cumplido,Bajo,2026-10-19\r\nHITO-070,COL-014,Plan,Jefatura,JEF-002,2026-11-12,2026-11-11,Cumplido,Medio,2026-11-11\r\nHITO-071,COL-015,Contrato,Personas,PER-003,2026-10-16,,Atrasado,Alto,2026-10-20\r\nHITO-072,COL-015,Equipo,TI,TI-004,2026-11-05,,Pendiente,Alto,2026-10-29\r\nHITO-073,COL-015,Acceso,TI,TI-005,2026-11-06,,Pendiente,Alto,2026-10-30\r\nHITO-074,COL-015,Reuni\xF3n,Jefatura,JEF-003,2026-10-21,2026-10-19,Cumplido,Bajo,2026-10-19\r\nHITO-075,COL-015,Plan,Jefatura,JEF-003,2026-11-15,2026-11-15,Cumplido,Medio,2026-11-16\r\nHITO-076,COL-016,Contrato,Personas,PER-004,2026-10-19,2026-10-18,Cumplido,Bajo,2026-10-18\r\nHITO-077,COL-016,Equipo,TI,TI-005,2026-11-10,,Pendiente,Alto,2026-10-27\r\nHITO-078,COL-016,Acceso,TI,TI-006,2026-11-11,,Pendiente,Alto,2026-10-28\r\nHITO-079,COL-016,Reuni\xF3n,Jefatura,JEF-004,2026-10-24,2026-10-23,Cumplido,Bajo,2026-10-24\r\nHITO-080,COL-016,Plan,Jefatura,JEF-004,2026-11-18,2026-11-16,Cumplido,Medio,2026-11-16\r\nHITO-081,COL-017,Contrato,Personas,PER-001,2026-10-22,2026-10-22,Cumplido,Bajo,2026-10-23\r\nHITO-082,COL-017,Equipo,TI,TI-006,2026-11-07,,Pendiente,Alto,2026-11-01\r\nHITO-083,COL-017,Acceso,TI,TI-001,2026-11-08,,Pendiente,Alto,2026-11-02\r\nHITO-084,COL-017,Reuni\xF3n,Jefatura,JEF-005,2026-10-27,2026-10-27,Cumplido,Bajo,2026-10-27\r\nHITO-085,COL-017,Plan,Jefatura,JEF-005,2026-11-21,2026-11-20,Cumplido,Medio,2026-11-21\r\nHITO-086,COL-018,Contrato,Personas,PER-002,2026-10-25,2026-10-23,Cumplido,Bajo,2026-10-23\r\nHITO-087,COL-018,Equipo,TI,TI-001,2026-11-12,,Pendiente,Alto,2026-10-30\r\nHITO-088,COL-018,Acceso,TI,TI-002,2026-11-05,,Pendiente,Alto,2026-10-31\r\nHITO-089,COL-018,Reuni\xF3n,Jefatura,JEF-006,2026-10-30,2026-10-28,Cumplido,Bajo,2026-10-29\r\nHITO-090,COL-018,Plan,Jefatura,JEF-006,2026-11-24,2026-11-24,Cumplido,Medio,2026-11-24\r\nHITO-091,COL-019,Contrato,Personas,PER-003,2026-10-28,2026-10-27,Cumplido,Bajo,2026-10-28\r\nHITO-092,COL-019,Equipo,TI,TI-002,2026-11-09,,Pendiente,Alto,2026-10-28\r\nHITO-093,COL-019,Acceso,TI,TI-003,2026-11-10,,Pendiente,Alto,2026-10-29\r\nHITO-094,COL-019,Reuni\xF3n,Jefatura,,2026-11-02,2026-11-01,Cumplido,Bajo,2026-11-01\r\nHITO-095,COL-019,Plan,Jefatura,,2026-11-27,2026-11-25,Cumplido,Medio,2026-11-26\r\nHITO-096,COL-020,Contrato,Personas,PER-004,2026-09-01,2026-09-01,Cumplido,Bajo,2026-09-01\r\nHITO-097,COL-020,Equipo,TI,TI-003,2026-11-06,,Pendiente,Alto,2026-11-02\r\nHITO-098,COL-020,Acceso,TI,TI-004,2026-11-07,,Pendiente,Alto,2026-10-27\r\nHITO-099,COL-020,Reuni\xF3n,Jefatura,JEF-008,2026-09-06,2026-09-06,Cumplido,Bajo,2026-09-07\r\nHITO-100,COL-020,Plan,Jefatura,JEF-008,2026-10-01,2026-09-30,Cumplido,Medio,2026-09-30\r\nHITO-101,COL-021,Contrato,Personas,PER-001,2026-09-04,,Atrasado,Alto,2026-10-20\r\nHITO-102,COL-021,Equipo,TI,TI-004,2026-09-04,2026-09-04,Cumplido,Medio,2026-09-04\r\nHITO-103,COL-021,Acceso,TI,TI-005,2026-09-05,2026-09-04,Cumplido,Medio,2026-09-05\r\nHITO-104,COL-021,Reuni\xF3n,Jefatura,JEF-009,2026-09-09,2026-09-07,Cumplido,Bajo,2026-09-07\r\nHITO-105,COL-021,Plan,Jefatura,JEF-009,2026-10-04,2026-10-04,Cumplido,Medio,2026-10-05\r\nHITO-106,COL-022,Contrato,Personas,PER-002,2026-09-07,,Atrasado,Alto,2026-10-20\r\nHITO-107,COL-022,Equipo,TI,TI-005,2026-09-07,2026-09-05,Cumplido,Medio,2026-09-06\r\nHITO-108,COL-022,Acceso,TI,TI-006,2026-09-08,2026-09-08,Cumplido,Medio,2026-09-08\r\nHITO-109,COL-022,Reuni\xF3n,Jefatura,JEF-010,2026-09-12,2026-09-11,Cumplido,Bajo,2026-09-12\r\nHITO-110,COL-022,Plan,Jefatura,JEF-010,2026-10-07,2026-10-05,Cumplido,Medio,2026-10-05\r\nHITO-111,COL-023,Contrato,Personas,PER-003,2026-09-10,,Atrasado,Alto,2026-10-20\r\nHITO-112,COL-023,Equipo,TI,TI-006,2026-09-10,2026-09-09,Cumplido,Medio,2026-09-09\r\nHITO-113,COL-023,Acceso,TI,TI-001,2026-09-11,2026-09-09,Cumplido,Medio,2026-09-10\r\nHITO-114,COL-023,Reuni\xF3n,Jefatura,JEF-011,2026-09-15,2026-09-15,Cumplido,Bajo,2026-09-15\r\nHITO-115,COL-023,Plan,Jefatura,JEF-011,2026-10-10,2026-10-09,Cumplido,Medio,2026-10-10\r\nHITO-116,COL-024,Contrato,Personas,PER-004,2026-09-13,,Atrasado,Alto,2026-10-20\r\nHITO-117,COL-024,Equipo,TI,TI-001,2026-09-13,2026-09-13,Cumplido,Medio,2026-09-14\r\nHITO-118,COL-024,Acceso,TI,TI-002,2026-09-14,2026-09-13,Cumplido,Medio,2026-09-13\r\nHITO-119,COL-024,Reuni\xF3n,Jefatura,JEF-012,2026-09-18,2026-09-16,Cumplido,Bajo,2026-09-17\r\nHITO-120,COL-024,Plan,Jefatura,JEF-012,2026-10-13,2026-10-13,Cumplido,Medio,2026-10-13\r\nHITO-121,COL-025,Contrato,Personas,PER-001,2026-09-16,,Atrasado,Alto,2026-10-20\r\nHITO-122,COL-025,Equipo,TI,TI-002,2026-09-16,2026-09-14,Cumplido,Medio,2026-09-14\r\nHITO-123,COL-025,Acceso,TI,TI-003,2026-09-17,2026-09-17,Cumplido,Medio,2026-09-18\r\nHITO-124,COL-025,Reuni\xF3n,Jefatura,JEF-001,2026-09-21,2026-09-20,Cumplido,Bajo,2026-09-20\r\nHITO-125,COL-025,Plan,Jefatura,JEF-001,2026-10-16,,Cumplido,Medio,2026-10-15\r\nHITO-126,COL-026,Contrato,Personas,,2026-09-19,,Atrasado,Alto,2026-10-20\r\nHITO-127,COL-026,Equipo,TI,TI-003,2026-09-19,2026-09-18,Cumplido,Medio,2026-09-19\r\nHITO-128,COL-026,Acceso,TI,TI-004,2026-09-20,2026-09-18,Cumplido,Medio,2026-09-18\r\nHITO-129,COL-026,Reuni\xF3n,Jefatura,JEF-002,2026-09-24,2026-09-24,Cumplido,Bajo,2026-09-25\r\nHITO-130,COL-026,Plan,Jefatura,JEF-002,2026-10-19,2026-10-18,Cumplido,Medio,2026-10-18\r\nHITO-131,COL-027,Contrato,Personas,PER-003,2026-09-22,,Atrasado,Alto,2026-10-20\r\nHITO-132,COL-027,Equipo,TI,TI-004,2026-09-22,2026-09-22,Cumplido,Medio,2026-09-22\r\nHITO-133,COL-027,Acceso,TI,TI-005,2026-09-23,2026-09-22,Cumplido,Medio,2026-09-23\r\nHITO-134,COL-027,Reuni\xF3n,Jefatura,JEF-003,2026-09-27,2026-09-25,Cumplido,Bajo,2026-09-25\r\nHITO-135,COL-027,Plan,Jefatura,JEF-003,2026-10-22,2026-10-22,Cumplido,Medio,2026-10-23\r\nHITO-136,COL-028,Contrato,Personas,PER-004,2026-09-25,,Atrasado,Alto,2026-10-20\r\nHITO-137,COL-028,Equipo,TI,TI-005,2026-09-25,2026-09-23,Cumplido,Medio,2026-09-24\r\nHITO-138,COL-028,Acceso,TI,TI-006,2026-09-26,2026-09-26,Cumplido,Medio,2026-09-26\r\nHITO-139,COL-028,Reuni\xF3n,Jefatura,JEF-004,2026-09-30,2026-09-29,Cumplido,Bajo,2026-09-30\r\nHITO-140,COL-028,Plan,Jefatura,JEF-004,2026-10-25,2026-10-23,Cumplido,Medio,2026-10-23\r\nHITO-141,COL-029,Contrato,Personas,PER-001,2026-09-28,,Atrasado,Alto,2026-10-20\r\nHITO-142,COL-029,Equipo,TI,TI-006,2026-09-28,2026-09-27,Cumplido,Medio,2026-09-27\r\nHITO-143,COL-029,Acceso,TI,TI-001,2026-09-29,2026-09-27,Cumplido,Medio,2026-09-28\r\nHITO-144,COL-029,Reuni\xF3n,Jefatura,JEF-005,2026-10-03,2026-10-03,Cumplido,Bajo,2026-10-03\r\nHITO-145,COL-029,Plan,Jefatura,JEF-005,2026-10-28,2026-10-27,Cumplido,Medio,2026-10-28\r\nHITO-146,COL-030,Contrato,Personas,PER-002,2026-10-01,,Atrasado,Alto,2026-10-20\r\nHITO-147,COL-030,Equipo,TI,TI-001,2026-10-01,2026-10-01,Cumplido,Medio,2026-10-02\r\nHITO-148,COL-030,Acceso,TI,TI-002,2026-10-02,2026-10-01,Cumplido,Medio,2026-10-01\r\nHITO-149,COL-030,Reuni\xF3n,Jefatura,JEF-006,2026-10-06,2026-10-04,Cumplido,Bajo,2026-10-05\r\nHITO-150,COL-030,Plan,Jefatura,JEF-006,2026-10-31,2026-10-31,Cumplido,Medio,2026-10-31\r\nHITO-151,COL-031,Contrato,Personas,PER-003,2026-11-12,,Pendiente,Medio,2026-10-31\r\nHITO-152,COL-031,Equipo,TI,TI-002,2026-10-04,2026-10-02,Cumplido,Medio,2026-10-02\r\nHITO-153,COL-031,Acceso,TI,TI-003,2026-10-05,2026-10-05,Cumplido,Medio,2026-10-06\r\nHITO-154,COL-031,Reuni\xF3n,Jefatura,JEF-007,2026-10-09,2026-10-08,Cumplido,Bajo,2026-10-08\r\nHITO-155,COL-031,Plan,Jefatura,JEF-007,2026-11-03,2026-11-01,Cumplido,Medio,2026-11-02\r\nHITO-156,COL-032,Contrato,Personas,PER-004,2026-11-09,,Pendiente,Medio,2026-10-29\r\nHITO-157,COL-032,Equipo,TI,TI-003,2026-10-07,2026-10-06,Cumplido,Medio,2026-10-07\r\nHITO-158,COL-032,Acceso,TI,TI-004,2026-10-08,2026-10-06,Cumplido,Medio,2026-10-06\r\nHITO-159,COL-032,Reuni\xF3n,Jefatura,JEF-008,2026-10-12,2026-10-12,Cumplido,Bajo,2026-10-13\r\nHITO-160,COL-032,Plan,Jefatura,JEF-008,2026-11-06,2026-11-05,Cumplido,Medio,2026-11-05\r\nHITO-161,COL-033,Contrato,Personas,PER-001,2026-11-06,,Pendiente,Medio,2026-10-27\r\nHITO-162,COL-033,Equipo,TI,TI-004,2026-10-10,2026-10-10,Cumplido,Medio,2026-10-10\r\nHITO-163,COL-033,Acceso,TI,TI-005,2026-10-11,2026-10-10,Cumplido,Medio,2026-10-11\r\nHITO-164,COL-033,Reuni\xF3n,Jefatura,JEF-009,2026-10-15,2026-10-13,Cumplido,Bajo,2026-10-13\r\nHITO-165,COL-033,Plan,Jefatura,JEF-009,2026-11-09,2026-11-09,Cumplido,Medio,2026-11-10\r\nHITO-166,COL-034,Contrato,Personas,PER-002,2026-11-11,,Pendiente,Medio,2026-11-01\r\nHITO-167,COL-034,Equipo,TI,TI-005,2026-10-13,2026-10-11,Cumplido,Medio,2026-10-12\r\nHITO-168,COL-034,Acceso,TI,TI-006,2026-10-14,2026-10-14,Cumplido,Medio,2026-10-14\r\nHITO-169,COL-034,Reuni\xF3n,Jefatura,JEF-010,2026-10-18,2026-10-17,Cumplido,Bajo,2026-10-18\r\nHITO-170,COL-034,Plan,Jefatura,JEF-010,2026-11-12,2026-11-10,Cumplido,Medio,2026-11-10\r\nHITO-171,COL-035,Contrato,Personas,PER-003,2026-11-08,,Pendiente,Medio,2026-10-30\r\nHITO-172,COL-035,Equipo,TI,TI-006,2026-10-16,2026-10-15,Cumplido,Medio,2026-10-15\r\nHITO-173,COL-035,Acceso,TI,TI-001,2026-10-17,2026-10-15,Cumplido,Medio,2026-10-16\r\nHITO-174,COL-035,Reuni\xF3n,Jefatura,JEF-011,2026-10-21,2026-10-21,Cumplido,Bajo,2026-10-21\r\nHITO-175,COL-035,Plan,Jefatura,JEF-011,2026-11-15,2026-11-14,Cumplido,Medio,2026-11-15\r\nHITO-176,COL-036,Contrato,Personas,PER-004,2026-11-05,,Pendiente,Medio,2026-10-28\r\nHITO-177,COL-036,Equipo,TI,TI-001,2026-10-19,2026-10-19,Cumplido,Medio,2026-10-20\r\nHITO-178,COL-036,Acceso,TI,TI-002,2026-10-20,2026-10-19,Cumplido,Medio,2026-10-19\r\nHITO-179,COL-036,Reuni\xF3n,Jefatura,JEF-012,2026-10-24,2026-10-22,Cumplido,Bajo,2026-10-23\r\nHITO-180,COL-036,Plan,Jefatura,JEF-012,2026-11-18,2026-11-18,Cumplido,Medio,2026-11-18\r\nHITO-181,COL-037,Contrato,Personas,PER-001,2026-11-10,,Pendiente,Medio,2026-11-02\r\nHITO-182,COL-037,Equipo,TI,TI-002,2026-10-22,2026-10-20,Cumplido,Medio,2026-10-20\r\nHITO-183,COL-037,Acceso,TI,TI-003,2026-10-23,2026-10-23,Cumplido,Medio,2026-10-24\r\nHITO-184,COL-037,Reuni\xF3n,Jefatura,JEF-001,2026-10-27,2026-10-26,Cumplido,Bajo,2026-10-26\r\nHITO-185,COL-037,Plan,Jefatura,JEF-001,2026-11-21,2026-11-19,Cumplido,Medio,2026-11-20\r\nHITO-186,COL-038,Contrato,Personas,PER-002,2026-11-07,,Pendiente,Medio,2026-10-31\r\nHITO-187,COL-038,Equipo,TI,TI-003,2026-10-25,2026-10-24,Cumplido,Medio,2026-10-25\r\nHITO-188,COL-038,Acceso,TI,TI-004,2026-10-26,2026-10-24,Cumplido,Medio,2026-10-24\r\nHITO-189,COL-038,Reuni\xF3n,Jefatura,JEF-002,2026-10-30,2026-10-30,Cumplido,Bajo,2026-10-31\r\nHITO-190,COL-038,Plan,Jefatura,JEF-002,2026-11-24,2026-11-23,Cumplido,Medio,2026-11-23\r\nHITO-191,COL-039,Contrato,Personas,PER-003,2026-11-12,,Pendiente,Medio,2026-10-29\r\nHITO-192,COL-039,Equipo,TI,TI-004,2026-10-28,2026-10-28,Cumplido,Medio,2026-10-28\r\nHITO-193,COL-039,Acceso,TI,TI-005,2026-10-29,2026-10-28,Cumplido,Medio,2026-10-29\r\nHITO-194,COL-039,Reuni\xF3n,Jefatura,JEF-003,2026-11-02,2026-10-31,Cumplido,Bajo,2026-10-31\r\nHITO-195,COL-039,Plan,Jefatura,JEF-003,2026-11-27,2026-11-27,Cumplido,Medio,2026-11-28\r\nHITO-196,COL-040,Contrato,Personas,PER-004,2026-11-09,,Pendiente,Medio,2026-10-27\r\nHITO-197,COL-040,Equipo,TI,TI-005,2026-09-01,2026-08-30,Cumplido,Medio,2026-08-31\r\nHITO-198,COL-040,Acceso,TI,TI-006,2026-09-02,2026-09-02,Cumplido,Medio,2026-09-02\r\nHITO-199,COL-040,Reuni\xF3n,Jefatura,JEF-004,2026-09-06,2026-09-05,Cumplido,Bajo,2026-09-06\r\nHITO-200,COL-040,Plan,Jefatura,JEF-004,2026-10-01,,Cumplido,Medio,2026-09-29\r\nHITO-201,COL-041,Contrato,Personas,PER-001,2026-11-06,,Pendiente,Medio,2026-11-01\r\nHITO-202,COL-041,Equipo,TI,TI-006,2026-09-04,2026-09-03,Cumplido,Medio,2026-09-03\r\nHITO-203,COL-041,Acceso,TI,TI-001,2026-09-05,2026-09-03,Cumplido,Medio,2026-09-04\r\nHITO-204,COL-041,Reuni\xF3n,Jefatura,JEF-005,2026-09-09,2026-09-09,Cumplido,Bajo,2026-09-09\r\nHITO-205,COL-041,Plan,Jefatura,,2026-10-04,2026-10-03,Cumplido,Medio,2026-10-04\r\nHITO-206,COL-042,Contrato,Personas,PER-002,2026-11-11,,Pendiente,Medio,2026-10-30\r\nHITO-207,COL-042,Equipo,TI,TI-001,2026-09-07,2026-09-07,Cumplido,Medio,2026-09-08\r\nHITO-208,COL-042,Acceso,TI,TI-002,2026-09-08,2026-09-07,Cumplido,Medio,2026-09-07\r\nHITO-209,COL-042,Reuni\xF3n,Jefatura,JEF-006,2026-09-12,2026-09-10,Cumplido,Bajo,2026-09-11\r\nHITO-210,COL-042,Plan,Jefatura,JEF-006,2026-10-07,2026-10-07,Cumplido,Medio,2026-10-07\r\nHITO-211,COL-043,Contrato,Personas,PER-003,2026-11-08,,Pendiente,Medio,2026-10-28\r\nHITO-212,COL-043,Equipo,TI,TI-002,2026-09-10,2026-09-08,Cumplido,Medio,2026-09-08\r\nHITO-213,COL-043,Acceso,TI,TI-003,2026-09-11,2026-09-11,Cumplido,Medio,2026-09-12\r\nHITO-214,COL-043,Reuni\xF3n,Jefatura,JEF-007,2026-09-15,2026-09-14,Cumplido,Bajo,2026-09-14\r\nHITO-215,COL-043,Plan,Jefatura,JEF-007,2026-10-10,2026-10-08,Cumplido,Medio,2026-10-09\r\nHITO-216,COL-044,Contrato,Personas,PER-004,2026-11-05,,Pendiente,Medio,2026-11-02\r\nHITO-217,COL-044,Equipo,TI,TI-003,2026-09-13,2026-09-12,Cumplido,Medio,2026-09-13\r\nHITO-218,COL-044,Acceso,TI,TI-004,2026-09-14,2026-09-12,Cumplido,Medio,2026-09-12\r\nHITO-219,COL-044,Reuni\xF3n,Jefatura,JEF-008,2026-09-18,2026-09-18,Cumplido,Bajo,2026-09-19\r\nHITO-220,COL-044,Plan,Jefatura,JEF-008,2026-10-13,2026-10-12,Cumplido,Medio,2026-10-12\r\nHITO-221,COL-045,Contrato,Personas,PER-001,2026-11-10,,Pendiente,Medio,2026-10-31\r\nHITO-222,COL-045,Equipo,TI,TI-004,2026-09-16,2026-09-16,Cumplido,Medio,2026-09-16\r\nHITO-223,COL-045,Acceso,TI,TI-005,2026-09-17,2026-09-16,Cumplido,Medio,2026-09-17\r\nHITO-224,COL-045,Reuni\xF3n,Jefatura,JEF-009,2026-09-21,2026-09-19,Cumplido,Bajo,2026-09-19\r\nHITO-225,COL-045,Plan,Jefatura,JEF-009,2026-10-16,2026-10-16,Cumplido,Medio,2026-10-17\r\nHITO-226,COL-046,Contrato,Personas,PER-002,2026-09-19,2026-09-18,Cumplido,Bajo,2026-09-18\r\nHITO-227,COL-046,Equipo,TI,TI-005,2026-09-19,2026-09-17,Cumplido,Medio,2026-09-18\r\nHITO-228,COL-046,Acceso,TI,TI-006,2026-09-20,2026-09-20,Cumplido,Medio,2026-09-20\r\nHITO-229,COL-046,Reuni\xF3n,Jefatura,JEF-010,2026-09-24,2026-09-23,Cumplido,Bajo,2026-09-24\r\nHITO-230,COL-046,Plan,Jefatura,JEF-010,2026-10-19,2026-10-17,Cumplido,Medio,2026-10-17\r\nHITO-231,COL-047,Contrato,Personas,PER-003,2026-09-22,2026-09-22,Cumplido,Bajo,2026-09-23\r\nHITO-232,COL-047,Equipo,TI,TI-006,2026-09-22,2026-09-21,Cumplido,Medio,2026-09-21\r\nHITO-233,COL-047,Acceso,TI,TI-001,2026-09-23,2026-09-21,Cumplido,Medio,2026-09-22\r\nHITO-234,COL-047,Reuni\xF3n,Jefatura,JEF-011,2026-09-27,2026-09-27,Cumplido,Bajo,2026-09-27\r\nHITO-235,COL-047,Plan,Jefatura,JEF-011,2026-10-22,2026-10-21,Cumplido,Medio,2026-10-22\r\nHITO-236,COL-048,Contrato,Personas,PER-004,2026-09-25,2026-09-23,Cumplido,Bajo,2026-09-23\r\nHITO-237,COL-048,Equipo,TI,TI-001,2026-09-25,2026-09-25,Cumplido,Medio,2026-09-26\r\nHITO-238,COL-048,Acceso,TI,TI-002,2026-09-26,2026-09-25,Cumplido,Medio,2026-09-25\r\nHITO-239,COL-048,Reuni\xF3n,Jefatura,JEF-012,2026-09-30,2026-09-28,Cumplido,Bajo,2026-09-29\r\nHITO-240,COL-048,Plan,Jefatura,JEF-012,2026-10-25,2026-10-25,Cumplido,Medio,2026-10-25\r\nHITO-241,COL-049,Contrato,Personas,PER-001,2026-09-28,2026-09-27,Cumplido,Bajo,2026-09-28\r\nHITO-242,COL-049,Equipo,TI,TI-002,2026-09-28,2026-09-26,Cumplido,Medio,2026-09-26\r\nHITO-243,COL-049,Acceso,TI,TI-003,2026-09-29,2026-09-29,Cumplido,Medio,2026-09-30\r\nHITO-244,COL-049,Reuni\xF3n,Jefatura,JEF-001,2026-10-03,2026-10-02,Cumplido,Bajo,2026-10-02\r\nHITO-245,COL-049,Plan,Jefatura,JEF-001,2026-10-28,2026-10-26,Cumplido,Medio,2026-10-27\r\nHITO-246,COL-050,Contrato,Personas,PER-002,2026-10-01,2026-10-01,Cumplido,Bajo,2026-10-01\r\nHITO-247,COL-050,Equipo,TI,TI-003,2026-10-01,2026-09-30,Cumplido,Medio,2026-10-01\r\nHITO-248,COL-050,Acceso,TI,TI-004,2026-10-02,2026-09-30,Cumplido,Medio,2026-09-30\r\nHITO-249,COL-050,Reuni\xF3n,Jefatura,JEF-002,2026-10-06,2026-10-06,Cumplido,Bajo,2026-10-07\r\nHITO-250,COL-050,Plan,Jefatura,JEF-002,2026-10-31,2026-10-30,Cumplido,Medio,2026-10-30\r\nHITO-251,COL-051,Contrato,Personas,PER-003,2026-10-04,2026-10-02,Cumplido,Bajo,2026-10-03\r\nHITO-252,COL-051,Equipo,TI,TI-004,2026-10-04,2026-10-04,Cumplido,Medio,2026-10-04\r\nHITO-253,COL-051,Acceso,TI,TI-005,2026-10-05,2026-10-04,Cumplido,Medio,2026-10-05\r\nHITO-254,COL-051,Reuni\xF3n,Jefatura,JEF-003,2026-10-09,2026-10-07,Cumplido,Bajo,2026-10-07\r\nHITO-255,COL-051,Plan,Jefatura,JEF-003,2026-11-03,2026-11-03,Cumplido,Medio,2026-11-04\r\nHITO-256,COL-052,Contrato,Personas,PER-004,2026-10-07,2026-10-06,Cumplido,Bajo,2026-10-06\r\nHITO-257,COL-052,Equipo,TI,TI-005,2026-10-07,2026-10-05,Cumplido,Medio,2026-10-06\r\nHITO-258,COL-052,Acceso,TI,TI-006,2026-10-08,2026-10-08,Cumplido,Medio,2026-10-08\r\nHITO-259,COL-052,Reuni\xF3n,Jefatura,,2026-10-12,2026-10-11,Cumplido,Bajo,2026-10-12\r\nHITO-260,COL-052,Plan,Jefatura,JEF-004,2026-11-06,2026-11-04,Cumplido,Medio,2026-11-04\r\nHITO-261,COL-053,Contrato,Personas,PER-001,2026-10-10,2026-10-10,Cumplido,Bajo,2026-10-11\r\nHITO-262,COL-053,Equipo,TI,TI-006,2026-10-10,2026-10-09,Cumplido,Medio,2026-10-09\r\nHITO-263,COL-053,Acceso,TI,TI-001,2026-10-11,2026-10-09,Cumplido,Medio,2026-10-10\r\nHITO-264,COL-053,Reuni\xF3n,Jefatura,JEF-005,2026-10-15,2026-10-15,Cumplido,Bajo,2026-10-15\r\nHITO-265,COL-053,Plan,Jefatura,JEF-005,2026-11-09,2026-11-08,Cumplido,Medio,2026-11-09\r\nHITO-266,COL-054,Contrato,Personas,PER-002,2026-10-13,2026-10-11,Cumplido,Bajo,2026-10-11\r\nHITO-267,COL-054,Equipo,TI,TI-001,2026-10-13,2026-10-13,Cumplido,Medio,2026-10-14\r\nHITO-268,COL-054,Acceso,TI,TI-002,2026-10-14,2026-10-13,Cumplido,Medio,2026-10-13\r\nHITO-269,COL-054,Reuni\xF3n,Jefatura,JEF-006,2026-10-18,2026-10-16,Cumplido,Bajo,2026-10-17\r\nHITO-270,COL-054,Plan,Jefatura,JEF-006,2026-11-12,2026-11-12,Cumplido,Medio,2026-11-12\r\nHITO-271,COL-055,Contrato,Personas,PER-003,2026-10-16,2026-10-15,Cumplido,Bajo,2026-10-16\r\nHITO-272,COL-055,Equipo,TI,TI-002,2026-10-16,2026-10-14,Cumplido,Medio,2026-10-14\r\nHITO-273,COL-055,Acceso,TI,TI-003,2026-10-17,2026-10-17,Cumplido,Medio,2026-10-18\r\nHITO-274,COL-055,Reuni\xF3n,Jefatura,JEF-007,2026-10-21,2026-10-20,Cumplido,Bajo,2026-10-20\r\nHITO-275,COL-055,Plan,Jefatura,JEF-007,2026-11-15,,Cumplido,Medio,2026-11-14\r\nHITO-276,COL-056,Contrato,Personas,PER-004,2026-10-19,2026-10-19,Cumplido,Bajo,2026-10-19\r\nHITO-277,COL-056,Equipo,TI,TI-003,2026-10-19,2026-10-18,Cumplido,Medio,2026-10-19\r\nHITO-278,COL-056,Acceso,TI,TI-004,2026-10-20,2026-10-18,Cumplido,Medio,2026-10-18\r\nHITO-279,COL-056,Reuni\xF3n,Jefatura,JEF-008,2026-10-24,2026-10-24,Cumplido,Bajo,2026-10-25\r\nHITO-280,COL-056,Plan,Jefatura,JEF-008,2026-11-18,2026-11-17,Cumplido,Medio,2026-11-17\r\nHITO-281,COL-057,Contrato,Personas,PER-001,2026-10-22,2026-10-20,Cumplido,Bajo,2026-10-21\r\nHITO-282,COL-057,Equipo,TI,TI-004,2026-10-22,2026-10-22,Cumplido,Medio,2026-10-22\r\nHITO-283,COL-057,Acceso,TI,TI-005,2026-10-23,2026-10-22,Cumplido,Medio,2026-10-23\r\nHITO-284,COL-057,Reuni\xF3n,Jefatura,JEF-009,2026-10-27,2026-10-25,Cumplido,Bajo,2026-10-25\r\nHITO-285,COL-057,Plan,Jefatura,JEF-009,2026-11-21,2026-11-21,Cumplido,Medio,2026-11-22\r\nHITO-286,COL-058,Contrato,Personas,PER-002,2026-10-25,2026-10-24,Cumplido,Bajo,2026-10-24\r\nHITO-287,COL-058,Equipo,TI,TI-005,2026-10-25,2026-10-23,Cumplido,Medio,2026-10-24\r\nHITO-288,COL-058,Acceso,TI,TI-006,2026-10-26,2026-10-26,Cumplido,Medio,2026-10-26\r\nHITO-289,COL-058,Reuni\xF3n,Jefatura,JEF-010,2026-10-30,2026-10-29,Cumplido,Bajo,2026-10-30\r\nHITO-290,COL-058,Plan,Jefatura,JEF-010,2026-11-24,2026-11-22,Cumplido,Medio,2026-11-22\r\nHITO-291,COL-059,Contrato,Personas,PER-003,2026-10-28,2026-10-28,Cumplido,Bajo,2026-10-29\r\nHITO-292,COL-059,Equipo,TI,TI-006,2026-10-28,2026-10-27,Cumplido,Medio,2026-10-27\r\nHITO-293,COL-059,Acceso,TI,TI-001,2026-10-29,2026-10-27,Cumplido,Medio,2026-10-28\r\nHITO-294,COL-059,Reuni\xF3n,Jefatura,JEF-011,2026-11-02,2026-11-02,Cumplido,Bajo,2026-11-02\r\nHITO-295,COL-059,Plan,Jefatura,JEF-011,2026-11-27,2026-11-26,Cumplido,Medio,2026-11-27\r\nHITO-296,COL-060,Contrato,Personas,PER-004,2026-09-01,2026-08-30,Cumplido,Bajo,2026-08-30\r\nHITO-297,COL-060,Equipo,TI,TI-001,2026-09-01,2026-09-01,Cumplido,Medio,2026-09-02\r\nHITO-298,COL-060,Acceso,TI,TI-002,2026-09-02,2026-09-01,Cumplido,Medio,2026-09-01\r\nHITO-299,COL-060,Reuni\xF3n,Jefatura,JEF-012,2026-09-06,2026-09-04,Cumplido,Bajo,2026-09-05\r\nHITO-300,COL-060,Plan,Jefatura,JEF-012,2026-10-01,2026-10-01,Cumplido,Medio,2026-10-01\r\n", "usuarios": "\uFEFFusuario_id,nombre_ficticio,rol,area,equipo_asignado,puede_ver_datos_personales,puede_editar_hitos,puede_asignar_responsables,puede_ver_metricas\r\nCOL-001,Alex Rojas,Colaborador,Personas,COL-001,S\xED,No,No,No\r\nCOL-002,Camila Rojas,Colaborador,Operaciones,COL-002,S\xED,No,No,No\r\nCOL-003,Daniel Rojas,Colaborador,Tecnolog\xEDa,COL-003,S\xED,No,No,No\r\nCOL-004,Emilia Rojas,Colaborador,Comercial,COL-004,S\xED,No,No,No\r\nCOL-005,Felipe Rojas,Colaborador,Personas,COL-005,S\xED,No,No,No\r\nCOL-006,Gabriela Rojas,Colaborador,Operaciones,COL-006,S\xED,No,No,No\r\nCOL-007,Hugo Rojas,Colaborador,Tecnolog\xEDa,COL-007,S\xED,No,No,No\r\nCOL-008,Isidora Rojas,Colaborador,Comercial,COL-008,S\xED,No,No,No\r\nCOL-009,Javier Rojas,Colaborador,Personas,COL-009,S\xED,No,No,No\r\nCOL-010,Karina Rojas,Colaborador,Operaciones,COL-010,S\xED,No,No,No\r\nCOL-011,Lucas Rojas,Colaborador,Tecnolog\xEDa,COL-011,S\xED,No,No,No\r\nCOL-012,Martina Rojas,Colaborador,Comercial,COL-012,S\xED,No,No,No\r\nCOL-013,Alex Soto,Colaborador,Personas,COL-013,S\xED,No,No,No\r\nCOL-014,Camila Soto,Colaborador,Operaciones,COL-014,S\xED,No,No,No\r\nCOL-015,Daniel Soto,Colaborador,Tecnolog\xEDa,COL-015,S\xED,No,No,No\r\nCOL-016,Emilia Soto,Colaborador,Comercial,COL-016,S\xED,No,No,No\r\nCOL-017,Felipe Soto,Colaborador,Personas,COL-017,S\xED,No,No,No\r\nCOL-018,Gabriela Soto,Colaborador,Operaciones,COL-018,S\xED,No,No,No\r\nCOL-019,Hugo Soto,Colaborador,Tecnolog\xEDa,COL-019,S\xED,No,No,No\r\nCOL-020,Isidora Soto,Colaborador,Comercial,COL-020,S\xED,No,No,No\r\nCOL-021,Javier Soto,Colaborador,Personas,COL-021,S\xED,No,No,No\r\nCOL-022,Karina Soto,Colaborador,Operaciones,COL-022,S\xED,No,No,No\r\nCOL-023,Lucas Soto,Colaborador,Tecnolog\xEDa,COL-023,S\xED,No,No,No\r\nCOL-024,Martina Soto,Colaborador,Comercial,COL-024,S\xED,No,No,No\r\nCOL-025,Alex Vega,Colaborador,Personas,COL-025,S\xED,No,No,No\r\nCOL-026,Camila Vega,Colaborador,Operaciones,COL-026,S\xED,No,No,No\r\nCOL-027,Daniel Vega,Colaborador,Tecnolog\xEDa,COL-027,S\xED,No,No,No\r\nCOL-028,Emilia Vega,Colaborador,Comercial,COL-028,S\xED,No,No,No\r\nCOL-029,Felipe Vega,Colaborador,Personas,COL-029,S\xED,No,No,No\r\nCOL-030,Gabriela Vega,Colaborador,Operaciones,COL-030,S\xED,No,No,No\r\nCOL-031,Hugo Vega,Colaborador,Tecnolog\xEDa,COL-031,S\xED,No,No,No\r\nCOL-032,Isidora Vega,Colaborador,Comercial,COL-032,S\xED,No,No,No\r\nCOL-033,Javier Vega,Colaborador,Personas,COL-033,S\xED,No,No,No\r\nCOL-034,Karina Vega,Colaborador,Operaciones,COL-034,S\xED,No,No,No\r\nCOL-035,Lucas Vega,Colaborador,Tecnolog\xEDa,COL-035,S\xED,No,No,No\r\nCOL-036,Martina Vega,Colaborador,Comercial,COL-036,S\xED,No,No,No\r\nCOL-037,Alex Paredes,Colaborador,Personas,COL-037,S\xED,No,No,No\r\nCOL-038,Camila Paredes,Colaborador,Operaciones,COL-038,S\xED,No,No,No\r\nCOL-039,Daniel Paredes,Colaborador,Tecnolog\xEDa,COL-039,S\xED,No,No,No\r\nCOL-040,Emilia Paredes,Colaborador,Comercial,COL-040,S\xED,No,No,No\r\nCOL-041,Felipe Paredes,Colaborador,Personas,COL-041,S\xED,No,No,No\r\nCOL-042,Gabriela Paredes,Colaborador,Operaciones,COL-042,S\xED,No,No,No\r\nCOL-043,Hugo Paredes,Colaborador,Tecnolog\xEDa,COL-043,S\xED,No,No,No\r\nCOL-044,Isidora Paredes,Colaborador,Comercial,COL-044,S\xED,No,No,No\r\nCOL-045,Javier Paredes,Colaborador,Personas,COL-045,S\xED,No,No,No\r\nCOL-046,Karina Paredes,Colaborador,Operaciones,COL-046,S\xED,No,No,No\r\nCOL-047,Lucas Paredes,Colaborador,Tecnolog\xEDa,COL-047,S\xED,No,No,No\r\nCOL-048,Martina Paredes,Colaborador,Comercial,COL-048,S\xED,No,No,No\r\nCOL-049,Alex Molina,Colaborador,Personas,COL-049,S\xED,No,No,No\r\nCOL-050,Camila Molina,Colaborador,Operaciones,COL-050,S\xED,No,No,No\r\nCOL-051,Daniel Molina,Colaborador,Tecnolog\xEDa,COL-051,S\xED,No,No,No\r\nCOL-052,Emilia Molina,Colaborador,Comercial,COL-052,S\xED,No,No,No\r\nCOL-053,Felipe Molina,Colaborador,Personas,COL-053,S\xED,No,No,No\r\nCOL-054,Gabriela Molina,Colaborador,Operaciones,COL-054,S\xED,No,No,No\r\nCOL-055,Hugo Molina,Colaborador,Tecnolog\xEDa,COL-055,S\xED,No,No,No\r\nCOL-056,Isidora Molina,Colaborador,Comercial,COL-056,S\xED,No,No,No\r\nCOL-057,Javier Molina,Colaborador,Personas,COL-057,S\xED,No,No,No\r\nCOL-058,Karina Molina,Colaborador,Operaciones,COL-058,S\xED,No,No,No\r\nCOL-059,Lucas Molina,Colaborador,Tecnolog\xEDa,COL-059,S\xED,No,No,No\r\nCOL-060,Martina Molina,Colaborador,Comercial,COL-060,S\xED,No,No,No\r\nJEF-001,Emilia Jefatura 01,Jefatura,Personas,COL-001|COL-013|COL-025|COL-037|COL-049,S\xED,S\xED,No,S\xED\r\nJEF-002,Felipe Jefatura 02,Jefatura,Operaciones,COL-002|COL-014|COL-026|COL-038|COL-050,S\xED,S\xED,No,S\xED\r\nJEF-003,Gabriela Jefatura 03,Jefatura,Tecnolog\xEDa,COL-003|COL-015|COL-027|COL-039|COL-051,S\xED,S\xED,No,S\xED\r\nJEF-004,Hugo Jefatura 04,Jefatura,Comercial,COL-004|COL-016|COL-028|COL-040|COL-052,S\xED,S\xED,No,S\xED\r\nJEF-005,Isidora Jefatura 05,Jefatura,Personas,COL-005|COL-017|COL-029|COL-041|COL-053,S\xED,S\xED,No,S\xED\r\nJEF-006,Javier Jefatura 06,Jefatura,Operaciones,COL-006|COL-018|COL-030|COL-042|COL-054,S\xED,S\xED,No,S\xED\r\nJEF-007,Karina Jefatura 07,Jefatura,Tecnolog\xEDa,COL-007|COL-031|COL-043|COL-055,S\xED,S\xED,No,S\xED\r\nJEF-008,Lucas Jefatura 08,Jefatura,Comercial,COL-008|COL-020|COL-032|COL-044|COL-056,S\xED,S\xED,No,S\xED\r\nJEF-009,Martina Jefatura 09,Jefatura,Personas,COL-009|COL-021|COL-033|COL-045|COL-057,S\xED,S\xED,No,S\xED\r\nJEF-010,Alex Jefatura 10,Jefatura,Operaciones,COL-010|COL-022|COL-034|COL-046|COL-058,S\xED,S\xED,No,S\xED\r\nJEF-011,Camila Jefatura 11,Jefatura,Tecnolog\xEDa,COL-011|COL-023|COL-035|COL-047|COL-059,S\xED,S\xED,No,S\xED\r\nJEF-012,Daniel Jefatura 12,Jefatura,Comercial,COL-012|COL-024|COL-036|COL-048|COL-060,S\xED,S\xED,No,S\xED\r\nPER-001,Hugo Personas 01,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-002,Isidora Personas 02,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-003,Javier Personas 03,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nPER-004,Karina Personas 04,Personas,Personas,COL-001 a COL-060,S\xED,S\xED,S\xED,S\xED\r\nTI-001,Karina Soporte TI 01,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-002,Lucas Soporte TI 02,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-003,Martina Soporte TI 03,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-004,Alex Soporte TI 04,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-005,Camila Soporte TI 05,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nTI-006,Daniel Soporte TI 06,TI,Tecnolog\xEDa,COL-001 a COL-060 (solo hitos Equipo y Acceso),No,S\xED,S\xED,S\xED\r\nADM-001,Renata Administraci\xF3n 01,Administrador,Administraci\xF3n,Todos los usuarios,S\xED,S\xED,S\xED,S\xED\r\nADM-002,Tom\xE1s Administraci\xF3n 02,Administrador,Administraci\xF3n,Todos los usuarios,S\xED,S\xED,S\xED,S\xED\r\n", "catalogo": "\uFEFFtipo_hito,responsable_inicial,plazo_ficticio,criticidad\r\nContrato,Personas,Antes del d\xEDa 1,Alta\r\nEquipo,TI,D\xEDa 1,Alta\r\nAcceso,TI,D\xEDa 1,Alta\r\nReuni\xF3n,Jefatura,Primera semana,Media\r\nPlan,Jefatura,Primera semana,Media\r\n" };
+
+  // src/main.js
+  var base = {
+    colaboradores: parseCSV(data_generated_default.colaboradores),
+    hitos: parseCSV(data_generated_default.hitos),
+    usuarios: parseCSV(data_generated_default.usuarios),
+    catalogo: parseCSV(data_generated_default.catalogo)
+  };
+  mount(document.getElementById("app"), crearStore(base));
+})();
+</script>
