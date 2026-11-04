@@ -129,7 +129,19 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
       log('carga_archivos', '—', `Carga del kit sintético validada; datos solo en memoria${nuevos.length ? `; ${nuevos.length} ${nuevos.length === 1 ? 'ingreso nuevo' : 'ingresos nuevos'}` : ''}`);
       for (const id of nuevos) log('nuevo_ingreso', id, 'Se notificaría a la jefatura asignada (simulado). No se envió nada.', 'ok', { entidad: 'colaborador' });
-      return { ok: true, sesionCerrada: !s.user, nuevos: nuevos.length };
+      // Turno cambiado después de enviar la ficha: la persona debe reconfirmar (el dato viene del archivo, no se edita aquí).
+      const cambios = [];
+      for (const f of Object.values(s.fichas)) {
+        const c = s.idx.colab.get(f.colaborador_id);
+        if (!c || !['enviada', 'confirmada'].includes(f.estado) || (f.turno_al_enviar ?? null) === (c.tipo_turno ?? null)) continue;
+        const antesEst = f.estado;
+        Object.assign(f, { estado: 'requiere_reconfirmacion', turno_anterior: f.turno_al_enviar ?? null });
+        cambios.push(f.colaborador_id);
+        log('cambio_turno', f.colaborador_id, 'El turno cambió después de enviar la ficha', 'ok', { entidad: 'ficha', campo: 'estado', valor_anterior: antesEst, valor_nuevo: 'requiere_reconfirmacion' });
+        log('notificacion_simulada', f.colaborador_id, 'Se notificaría a la persona que su turno cambió y debe reconfirmar su ficha. No se envió nada.');
+      }
+      if (cambios.length) rebuild();
+      return { ok: true, sesionCerrada: !s.user, nuevos: nuevos.length, reconfirmar: cambios.length };
     },
 
     // ================= Ficha de Ingreso =================
@@ -210,6 +222,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       if (respuesta === 'discrepancia' && !MOTIVOS[motivo]) return { ok: false, motivo: 'Elige qué no coincide para poder enviar el aviso.' };
       const antes = f.estado;
       if (respuesta === 'discrepancia') { const r = api.reportar(MOTIVO_A_REPORTE[motivo]); if (!r.ok) return r; f.reporte_id = r.id; }
+      if (respuesta === 'confirmo') f.turno_al_enviar = s.idx.colab.get(colId)?.tipo_turno ?? null; // confirma el turno vigente
       Object.assign(f, { estado: respuesta === 'confirmo' ? 'confirmada' : 'con_discrepancia', respuesta, motivo: respuesta === 'discrepancia' ? motivo : null, respondida_at: reloj(), respondida_via: via });
       log(respuesta === 'confirmo' ? 'confirmar_ficha' : 'reportar_discrepancia', colId, respuesta === 'confirmo' ? `Vía: ${via}` : 'Motivo visible solo para la persona y Personas', 'ok',
         { entidad: 'ficha', campo: 'estado', valor_anterior: antes, valor_nuevo: f.estado });

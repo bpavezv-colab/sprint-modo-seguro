@@ -138,3 +138,21 @@ test('Indicadores: % confirmadas antes del día 1 y discrepancias por motivo', (
   const k = st.indicadores();
   assert.equal(k.enviadas, 2); assert.equal(k.confirmadasAntesDia1, 1); assert.equal(k.pctAntesDia1, 50); assert.equal(k.porMotivo.tareas, 1);
 });
+
+test('Turno cambiado: si RR.HH. carga un turno distinto después de enviar la ficha, la persona debe reconfirmar', () => {
+  const st = nuevo();
+  st.login('JEF-002'); st.enviarFicha('COL-002', FICHA);
+  st.login('COL-002'); st.confirmarFicha();
+  st.login('PER-001');
+  const cols = structuredClone(base.colaboradores); cols.find(c => c.colaborador_id === 'COL-002').tipo_turno = 'Turno tarde';
+  const r = st.cargarArchivos({ colaboradores: cols });
+  assert.equal(r.ok, true); assert.equal(r.reconfirmar, 1);
+  assert.equal(st.state.fichas['COL-002'].estado, 'requiere_reconfirmacion');
+  assert.equal(st.state.fichas['COL-002'].turno_anterior, 'Jornada parcial');
+  assert.ok(alerta(st, 'reconfirmacion:COL-002'));
+  st.login('COL-002');
+  assert.equal(st.confirmarFicha().ok, true);
+  assert.equal(st.state.fichas['COL-002'].estado, 'confirmada');
+  st.login('PER-001');
+  assert.equal(st.cargarArchivos({ colaboradores: cols }).reconfirmar, 0);
+});

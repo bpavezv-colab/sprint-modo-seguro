@@ -271,7 +271,8 @@ function vColaborador(u) {
       <div class="detail">
         <div class="stack">
           ${vencidos.length ? `<p class="lead">${vencidos.length} ${vencidos.length === 1 ? 'paso está atrasado' : 'pasos están atrasados'} y ninguno depende de ti. Los responsables los tienen en su bandeja.</p>` : '<p class="lead">Aquí ves qué debe ocurrir, quién lo gestiona y para cuándo.</p>'}
-          ${porResponder ? '<p class="notice"><b>Tu jefatura envió tu ficha de ingreso.</b> Revísala y confírmala, o avísanos si algo no coincide.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>' : ''}
+          ${vf && vf.est === 'requiere_reconfirmacion' ? `<p class="notice notice-bad"><b>Tu turno cambió.</b> Antes era ${esc(vf.ficha?.turno_anterior || 'sin dato')}; ahora es ${esc(c.tipo_turno || 'sin dato')}. Revisa tu ficha y reconfírmala, o avísanos si no te acomoda.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>`
+            : porResponder ? '<p class="notice"><b>Tu jefatura envió tu ficha de ingreso.</b> Revísala y confírmala, o avísanos si algo no coincide.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>' : ''}
           ${c.correo_corporativo_activo === 'No' ? '<p class="hint">Aún no tienes correo corporativo. Puedes usar esta página desde tu teléfono igual.</p>' : ''}
         </div>
         ${stats([
@@ -865,6 +866,7 @@ async function onSubmit(e) {
     const r = store.cargarArchivos(nuevo);
     if (!r.ok) { ui.cargaErrores = (r.errores || []).slice(0, 30).map(a => `${a.titulo}: ${a.id} · ${a.detalle}`); return toastMsg(r.motivo); }
     if (r.sesionCerrada) { resetUi(); return toastMsg('Archivos cargados solo en memoria. Tu cuenta ya no existe: ingresa de nuevo.'); }
+    if (r.reconfirmar) toastMsg(`${r.reconfirmar} ${r.reconfirmar === 1 ? 'persona tiene' : 'personas tienen'} un turno distinto al de su ficha: deben reconfirmar.`);
     if (r.nuevos) { ui.tab = 'indicadores'; return toastMsg(`Archivos cargados. ${r.nuevos === 1 ? 'Se detectó 1 ingreso nuevo' : `Se detectaron ${r.nuevos} ingresos nuevos`}: su jefatura ya tiene el aviso.`); }
     ui.tab = 'calidad'; return toastMsg('Archivos sintéticos cargados solo en memoria. Revisa las alertas de calidad.');
   }
