@@ -8,7 +8,7 @@ Instrucciones para agentes de código (Codex u otros). Léelas completas antes d
 - Datos: `data/*.csv` son 100 % sintéticos y la **fuente oficial** es el diccionario de datos. No inventes campos, categorías ni datos externos.
 - Fecha de corte por defecto: `2026-11-04` (`HOY_DEFAULT` en `src/rules.js`).
 
-## Arquitectura (vanilla JS, sin framework, sin backend)
+## Arquitectura (vanilla JS, sin framework; servidor local opcional)
 | Archivo | Responsabilidad |
 |---|---|
 | `src/csv.js` | Parser CSV. Celda vacía → `null` (nunca `''`, `0`, `No`, `Pendiente`). |
@@ -18,10 +18,15 @@ Instrucciones para agentes de código (Codex u otros). Léelas completas antes d
 | `src/ui.js` | Render por rol (strings HTML + delegación de eventos). **Toda** visualización pasa por `auth`. Ingreso único: todas las cuentas (COL/JEF/TI/PER/ADM) entran por el mismo formulario y el rol decide la vista. |
 | `src/styles.css` | Lenguaje visual: fondo gris frío, Helvetica, líneas finas, botones celestes con "+", barra lateral. Tokens en `:root` + modo oscuro. Usa siempre tokens. |
 | `src/optimization/` | Extensión autorizada de planificación: modelo, restricciones, objetivos, ALNS lexicográfico, controlador en memoria y UI de jefaturas. `demo.js` contiene únicamente supuestos sintéticos creados por el equipo, separados del kit oficial. |
+| `server.mjs` | Servidor local opcional (`npm start`, solo 127.0.0.1): sirve `dist/index.html`, `/api/estado`, `/api/alerta` (Gmail), `/api/chat` y `/api/sugerencia` (API de Claude). Arma cada sesión con `crearStore` + permisos; no confía en datos del navegador. Config solo en `.env`. |
+| `src/integraciones.js` | UI de lo anterior: franja de modo, asistente, botón de correo y "Sugerir reparto". Sin servidor, todo cae a modo simulado. |
+| `src/contexto_ia.js` | Contexto que recibe la IA, filtrado por rol y minimizado (IDs, sin canal ni dispositivo). |
+| `src/reparto.js` | Cálculo determinista del reparto de compañeros/as de apoyo y su validación (solo equipo de la jefatura). La IA solo redacta. |
+| `src/asistente.js` | Asistente por reglas (respaldo cuando no hay IA). |
 | `scripts/build.mjs` | CSV → `src/data.generated.js` → bundle esbuild → `dist/index.html` y `dist/artifact.html`. |
 | `tests/core.test.mjs` | Tests con `node:test`. |
 
-Comandos: `npm install` · `npm test` · `npm run build` (luego abre `dist/index.html` con doble clic).
+Comandos: `npm install` · `npm test` · `npm run build` (luego abre `dist/index.html` con doble clic, o `npm start` → http://localhost:3000 para IA y correo).
 
 ## Reglas NO negociables (si un cambio las rompe, no lo hagas)
 1. **Sin supuestos silenciosos.** Un vacío se muestra como "dato faltante" y genera alerta. No rellenes valores.
@@ -50,7 +55,8 @@ Comandos: `npm install` · `npm test` · `npm run build` (luego abre `dist/index
 ## Cómo trabajar
 - Planificación de turnos: no inferir contratos, habilitaciones o preferencias desde los CSV. Mantener el escenario demo separado, restringido al equipo de su jefatura y sin publicación de turnos oficiales. El orden de objetivos es lexicográfico; los pesos adaptativos solo seleccionan operadores ALNS.
 - Cambios de lógica → primero un test en `tests/` que falle, luego el código, luego `npm test`.
-- No agregues dependencias de runtime (el HTML final debe funcionar offline con doble clic). Dev deps OK.
+- No agregues dependencias de runtime al HTML (debe funcionar offline con doble clic). `nodemailer` y `@anthropic-ai/sdk` son solo del servidor y nunca se importan desde `src/main.js`. Dev deps OK.
+- Nada de claves, correos ni rutas fijas en el código: todo en `.env` (ignorado por git). La IA recibe solo el contexto de `contextoPara` y el correo solo IDs y conteos; el destinatario es siempre `ALERTA_PARA`.
 - No uses `alert()`, `confirm()` ni `prompt()`: usa `ui.confirm` (diálogo propio).
 - Escapa todo texto dinámico con `esc()` en `ui.js`.
 - Textos de la interfaz en español de Chile, claros, en voz activa. Sin jerga técnica para el colaborador.

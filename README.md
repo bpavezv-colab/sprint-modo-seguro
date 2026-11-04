@@ -3,8 +3,69 @@
 MVP para la Prueba 2 del Talent Tech Hack 2026 (Personas y organizaciones). Checklist de ingreso con acceso seguro por rol sobre los 4 CSV sintéticos del caso.
 
 ## Correr
-- **Sin instalar nada:** abre `dist/index.html` con doble clic.
+- **Sin instalar nada:** abre `dist/index.html` con doble clic. Funciona todo, salvo la IA y el correo (la página lo indica arriba).
+- **Con IA y correo:** `npm install` → `npm run build` → `npm start` y abre **http://localhost:3000**. Ver "Cómo correr en otro computador".
 - **Desarrollo:** `npm install` → `npm test` → `npm run build`.
+
+## Cómo correr en otro computador
+
+1. Instala **Node 22 o superior** (`node -v` debe decir v22 o más; `npm start` usa `--env-file-if-exists`, que no existe en versiones anteriores).
+2. Clona el repo y entra a la carpeta:
+   ```bash
+   git clone https://github.com/bpavezv-colab/sprint-modo-seguro.git
+   cd sprint-modo-seguro
+   git checkout ia-y-correo
+   ```
+3. `npm install` (instala `nodemailer` y `@anthropic-ai/sdk`, que usa solo el servidor).
+4. Crea **tu propio** `.env` copiando la plantilla: `cp .env.example .env` (Windows: `copy .env.example .env`). Complétalo con tus datos (tabla de abajo). Si lo dejas vacío, o no lo creas, la app funciona completa en modo simulado.
+5. `npm run build` → genera `dist/index.html`.
+6. `npm start` → abre **http://localhost:3000**. Siempre por esa dirección: con doble clic en `dist/index.html` no funcionan la IA ni el correo, y la página lo dice.
+
+Al iniciar, la consola muestra qué está activo:
+```
+Sprint en http://localhost:3000
+IA: activa (claude-haiku-5-5)        ← o "IA: sin clave (reglas)"
+Correo: real a casilla@ejemplo.com   ← o "Correo: simulado (falta .env)"
+```
+La página muestra lo mismo en la franja superior (la casilla aparece enmascarada).
+
+### Variables de `.env` (nombres exactos)
+| Variable | Qué es | Dónde se obtiene | Si falta |
+|---|---|---|---|
+| `ANTHROPIC_API_KEY` | Clave de la API de Claude | console.anthropic.com → API Keys. La cuenta necesita **saldo disponible** | El asistente responde con reglas y el reparto muestra el cálculo simple |
+| `IA_MODELO` | Modelo de Claude | — | `claude-haiku-5-5` |
+| `SMTP_USER` | Cuenta de Gmail que **envía** las alertas | Una cuenta Gmail del equipo | Correo simulado |
+| `SMTP_PASS` | **Contraseña de aplicación** de esa cuenta (no la contraseña normal) | Requiere verificación en 2 pasos activa. Cuenta de Google → Seguridad → Contraseñas de aplicaciones | Correo simulado |
+| `ALERTA_PARA` | Casilla **única** de demostración que recibe todas las alertas | La define el equipo | Correo simulado |
+| `PORT` | Puerto local | — | `3000` |
+
+Reglas: nada de claves, correos ni rutas fijas en el código; todo va en `.env`, que está en `.gitignore`. En el repo solo está `.env.example`. Ninguna clave llega al navegador ni a `dist/` (lo verifica `tests/servidor.test.mjs`). Nunca compartas el `.env` por chat ni lo subas.
+
+Problemas comunes: "El puerto 3000 está ocupado" → cambia `PORT` o cierra la otra app. "No se pudo enviar el correo" → revisa que `SMTP_PASS` sea una contraseña de aplicación. La IA responde "viene de las reglas" → la clave es inválida, no hay saldo o no hay internet; la app sigue funcionando.
+
+## IA y correo: qué está construido y qué no
+
+| Estado | Qué |
+|---|---|
+| **Construido** (funciona siempre, sin `.env`) | Toda la app por rol; servidor local `server.mjs` (solo escucha en 127.0.0.1); asistente por reglas (`src/asistente.js`); cálculo de "Sugerir reparto" en código (`src/reparto.js`) con aplicación confirmada y registrada en la bitácora; botón "Avisar por correo" en Personas → Casos críticos; franja de estado que indica el modo |
+| **Integración opcional** (se activa con `.env`) | Asistente con la API de Claude (`POST /api/chat`); la IA redacta la sugerencia de reparto (`POST /api/sugerencia`); envío real por Gmail a `ALERTA_PARA` (`POST /api/alerta`) |
+| **Simulado** (sin `.env` o con doble clic) | El asistente responde con reglas; el correo no se envía (queda "simulado" en la bitácora); el reparto muestra el cálculo simple. La página lo dice arriba |
+| **Pendiente** (fuera del MVP) | Autenticación real (hoy la cuenta es una simulación: el servidor confía en el ID de la sesión de demo); datos en una base del servidor (hoy los cambios hechos en la página viven en memoria del navegador, por eso la IA responde sobre los datos oficiales del CSV); destinatarios por persona o jefatura; historial de conversaciones |
+
+### Cómo funciona cada integración
+- **Correo (`/api/alerta`):** solo Personas/Administrador. El servidor recalcula los atrasos con los datos oficiales y arma el correo con **solo IDs y conteos** (persona, hitos atrasados por tipo, IDs de hitos, sin responsable). Sin nombres, canal de contacto ni texto libre. El destinatario es siempre `ALERTA_PARA`; la página no puede elegirlo.
+- **Asistente (`/api/chat`):** la página envía solo su ID de cuenta, la fecha de corte y la pregunta. El servidor arma el contexto con el **mismo motor de permisos** (`src/contexto_ia.js`): el colaborador recibe solo lo suyo, la jefatura solo su equipo, TI solo Equipo/Acceso por código, Personas cifras agregadas e IDs. Sin canal de contacto ni dispositivo. Si no hay clave o la IA falla, responde con reglas. La bitácora registra que hubo una consulta y su fuente, nunca el contenido.
+- **Sugerir reparto (jefatura):** asigna compañero/a de apoyo a cada ficha pendiente que no lo tiene. Primero un **cálculo en código**: carga = hitos de ingreso abiertos + 2 por cada persona que ya acompaña; se elige a quien tiene menos carga, prefiriendo a quien ya ingresó y evitando parejas recíprocas. La IA **solo redacta** la explicación con IDs y números. El servidor valida que ambas personas sean del equipo de esa jefatura y que nadie se acompañe a sí mismo. **Aplicar** exige confirmación y queda en la bitácora (`aplicar_sugerencia` y un `editar_ficha` por persona). Sin clave, se muestra el cálculo simple.
+- **Protecciones del servidor:** solo acepta `localhost`/`127.0.0.1` como Host y Origin (evita que otra página lo use), exige JSON, limita el tamaño de los mensajes y la cantidad de solicitudes por minuto, y no copia mensajes de error del proveedor en la consola.
+
+### Probar
+1. Sin `.env`: `npm run build && npm start` → la franja dice "IA sin clave · reglas" y "Correo simulado".
+   - Entra como **COL-002** → botón **Asistente** → "¿Qué me falta?": responde con reglas.
+   - Entra como **PER-001** → Casos críticos → **Avisar por correo** en COL-002 → confirma: "Correo simulado". Revísalo en Bitácora.
+   - Entra como **JEF-002** → **Sugerir reparto** → revisa el cálculo → **Aplicar sugerencia** → confirma. La ficha de cada persona queda con su compañero/a y la bitácora lo registra.
+2. Con `.env` completo: reinicia `npm start` y repite. El asistente marca "IA", el reparto dice "Redactado por IA a partir del cálculo" y el correo llega a `ALERTA_PARA` con asunto `[Sprint] Alerta COL-002: 4 hitos atrasados`.
+3. Doble clic en `dist/index.html`: la franja avisa que así no funcionan la IA ni el correo; el resto sigue igual.
+4. `npm test`: `tests/servidor.test.mjs` prueba los tres endpoints con clientes falsos (sin red ni claves), el filtrado del contexto, la validación del equipo y que no haya claves en el código ni en `dist/`.
 
 ## Qué hace cada vista
 | Rol | Ve | Puede hacer |
@@ -25,7 +86,7 @@ Esta versión es una demo offline para los datos **100 % sintéticos** del kit. 
 - La pantalla de selección no muestra nombres ni canales de contacto. El ingreso con código es una simulación: no envía mensajes, no valida una identidad real y no reemplaza la autenticación corporativa.
 - Las cargas y el build rechazan columnas ajenas a los esquemas del kit; los vacíos siguen siendo `null` y generan las alertas existentes. La validación de columnas **no demuestra que un archivo sea sintético**: solo deben usarse los archivos de prueba, nunca datos reales.
 - Las exportaciones requieren Personas/Administrador y quedan registradas. Los hitos se filtran por alcance; la bitácora completa y la carga de archivos requieren alcance global. Copiar un CSV al portapapeles es una salida explícita del usuario y puede crear una copia fuera de la demo.
-- El HTML no carga fuentes, servicios ni analítica externos. Su política de contenido bloquea conexiones de red, recursos externos y envíos de formularios.
+- El HTML no carga fuentes, servicios ni analítica externos. Su política de contenido bloquea recursos externos y envíos de formularios, y solo permite conectarse con su propio origen (`connect-src 'self'`): el servidor local de `npm start`. Con doble clic no hay a dónde conectarse.
 
 **Límite de seguridad:** todos los datos sintéticos se incluyen en el HTML para funcionar con doble clic. Quien tenga el archivo puede inspeccionarlos o cambiar de cuenta de demo. Ocultar campos por rol y usar IDs no cifra ni anonimiza los datos. Antes de usar datos reales se necesita un servicio con autenticación real, autorización en el servidor y entrega de datos limitada a cada usuario. Ese servicio queda fuera de esta arquitectura sin backend.
 

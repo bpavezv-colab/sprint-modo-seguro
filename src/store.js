@@ -9,13 +9,14 @@ import { crearPlanificador } from './optimization/planning.js';
 const limpiar = (v, max = 200) => { const t = String(v ?? '').trim().slice(0, max); return t === '' ? null : t; };
 const CAMPOS_FICHA_EDITABLES = ['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'];
 
-export function crearStore(base, { now = () => new Date().toISOString(), config = CONFIG } = {}) {
+// hoy: fecha de corte inicial (el servidor la usa para calcular igual que la página; por defecto HOY_DEFAULT).
+export function crearStore(base, { now = () => new Date().toISOString(), config = CONFIG, hoy = HOY_DEFAULT } = {}) {
   let turnos;
   if (!validarCampos(base, { permitirVacios: true })) throw new Error('Los datos deben contener únicamente los campos del kit sintético.');
   const original = structuredClone(base);
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
-    hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null, sessionVersion: 0,
+    hoy: isISO(hoy) ? hoy : HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null, sessionVersion: 0,
     config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, nuevosIngresos: [], avisosVistos: {}, inducciones: {}, // Ficha de Ingreso (solo en memoria)
     almacenamientoLimpio: limpiarPersistenciaAnterior(),
   };
@@ -387,6 +388,27 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     indicadores() {
       if (!s.auth.esPersonas(s.user)) return null;
       return s.reglas.indicadores(s.data.colaboradores.filter(c => s.auth.enAlcance(s.user, c.colaborador_id)), s.fichas, api.alertasFicha());
+    },
+    // ================= IA y correo (servidor local) =================
+    // Solo se registra el resultado, nunca el contenido de la pregunta ni la respuesta.
+    registrarCorreo(colId, resultado) {
+      if (!s.auth.esPersonas(s.user) || !s.auth.enAlcance(s.user, colId)) return denegar('alerta_correo', colId, 'Sin permiso para avisar sobre esta persona');
+      log('alerta_correo', colId, `Alerta por correo: ${resultado}`, resultado === 'error' ? 'error' : 'ok'); return { ok: true };
+    },
+    registrarConsulta(tipo, fuente) {
+      if (!s.user) return { ok: false };
+      log(tipo === 'sugerencia' ? 'sugerencia_reparto' : 'consulta_asistente', '—', `Respuesta por ${fuente === 'ia' ? 'IA' : tipo === 'sugerencia' ? 'cálculo simple' : 'reglas'}; no se guarda el contenido`); return { ok: true };
+    },
+    // Aplica una sugerencia de compañeros de apoyo: cada cambio pasa por guardarFicha (valida que sea del equipo).
+    aplicarReparto(propuestas, { confirmado = false } = {}) {
+      const u = s.user;
+      if (!u || u.rol !== 'Jefatura' || !s.auth.cuentaValida(u)) return denegar('aplicar_sugerencia', '—', 'Solo la jefatura aplica el reparto de su equipo');
+      if (!confirmado) return { ok: false, motivo: 'Confirma antes de aplicar la sugerencia.' };
+      const lista = Array.isArray(propuestas) ? propuestas.slice(0, 50) : [];
+      const res = lista.map(p => ({ p, r: api.guardarFicha(p?.colaborador_id, { companero_id: p?.companero_id }) }));
+      const aplicadas = res.filter(x => x.r.ok).length;
+      log('aplicar_sugerencia', '—', `Reparto de compañeros de apoyo: ${aplicadas} aplicadas, ${res.length - aplicadas} rechazadas`, aplicadas ? 'ok' : 'denegado');
+      return aplicadas ? { ok: true, aplicadas, rechazadas: res.length - aplicadas } : { ok: false, motivo: res[0]?.r.motivo || 'No hay cambios para aplicar.' };
     },
     registrarError() { log('error', '—', 'Error inesperado; no se registra el mensaje ni su contenido', 'error'); },
     exportar(tipo) {

@@ -287,3 +287,24 @@ fieldset.choice legend { padding: 0 0 .5rem; }
 
 
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* integraciones opcionales: estado del servidor, asistente y reparto (src/integraciones.js) */
+.modo { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; border-bottom: 1px solid var(--line); padding-block: .7rem;
+  padding-left: max(var(--gut), env(safe-area-inset-left, 0px)); padding-right: max(var(--gut), env(safe-area-inset-right, 0px)); text-transform: none; letter-spacing: 0; font-size: .8rem; }
+.modo-sim { background: var(--warn-bg); }
+.modo code { font-size: .95em; color: inherit; }
+.chat-fab { position: fixed; z-index: 21; right: calc(1.5rem + env(safe-area-inset-right, 0px)); bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px)); }
+body:has(.chat-fab) main, body:has(.chat) main { padding-bottom: 8rem; }
+body:has(.chat-fab) .cta, body:has(.chat) .cta { bottom: calc(5.25rem + env(safe-area-inset-bottom, 0px)); }
+.chat { position: fixed; z-index: 25; right: calc(1.5rem + env(safe-area-inset-right, 0px)); bottom: calc(1.5rem + env(safe-area-inset-bottom, 0px));
+  width: min(26rem, calc(100vw - 2rem)); max-height: min(36rem, calc(100vh - 6rem)); display: flex; flex-direction: column; gap: .75rem;
+  background: var(--surface); border: 1px solid var(--ink); padding: 1rem 1.1rem; box-shadow: 0 12px 40px rgba(0, 0, 0, .18); }
+.chat-head .close { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 0; }
+.chat-log { overflow-y: auto; display: flex; flex-direction: column; gap: .6rem; min-height: 4rem; }
+.chat-log .tags { display: flex; flex-wrap: wrap; gap: .4rem; }
+.msg { max-width: 92%; padding: .55rem .75rem; border: 1px solid var(--line); font-size: .9rem; display: grid; gap: .2rem; }
+.msg-yo { align-self: flex-end; background: var(--sky); color: var(--sky-ink); border-color: var(--ink); }
+.msg-bot { align-self: flex-start; background: var(--bg); }
+.chat-form { display: flex; gap: .75rem; align-items: end; }
+.chat-form .field { flex: 1; }
+@media (max-width: 560px) { .chat { left: 1rem; right: 1rem; width: auto; bottom: 1rem; } .chat-fab { right: 1rem; bottom: 1rem; } }

@@ -6,6 +6,7 @@ import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
 import { ESTADOS_INDUCCION, MOTIVOS_REPROGRAMAR, TONO_INDUCCION, CONFIG_INDUCCION } from './induccion.js';
 import { vistaTurnos, vistaExcepcionesTurnos, submitTurnos, clickTurnos, confirmarTurnos, changeTurnos, reiniciarTurnosUI } from './optimization/ui.js';
+import { estadoInicial, detectarServidor, barraModo, panelChat, botonCorreo, seccionReparto, clickIntegraciones, confirmarIntegraciones, submitIntegraciones } from './integraciones.js';
 const TONO_AVISO = { nuevo_ingreso: 'ok', proximo_ingreso: 'warn', sin_tareas: 'bad', ficha_sin_enviar: 'warn', induccion_jefatura: 'bad' };
 const chipInd = v => `<span class="chip chip-${TONO_INDUCCION[v.estado] || 'neutral'}">${esc(v.texto)}</span>`;
 const horario = v => (v.fecha ? `${fmt(v.fecha)} · ${esc(v.inicio)}–${esc(v.fin)}` : '—');
@@ -36,9 +37,11 @@ const ui = {
   indSesion: null,      // { fecha, inicio, fin } propuesta de sesión de Personas (editable)
   indRegistrando: null, // colaborador con formulario de asistencia abierto
   indReprogramar: false,
+  ia: estadoInicial(),  // servidor local opcional: asistente, correo y reparto (src/integraciones.js)
 };
 let store; let root;
 const contextoTurnos = () => ({ store, ui, render, toast: toastMsg });
+const contextoIA = () => ({ store, ui, render, toast: toastMsg, root });
 
 // ---------- utilidades de presentación ----------
 const nombreDe = id => {
@@ -167,8 +170,8 @@ function render() {
   if (typeof v === 'string') v = { nav: [], body: v };
   const cta = u && u.rol === 'Colaborador' && s.auth.cuentaValida(u) ? '<a class="btn btn-primary cta" href="#ayuda">Necesito ayuda</a>' : '';
   root.innerHTML = topbar()
-    + `<div class="layout ${v.nav.length ? '' : 'no-side'}">${v.nav.length ? sidebar(v) : ''}<main id="main">${mnav(v)}${avisos()}${v.body}</main></div>`
-    + cta + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
+    + `<div class="layout ${v.nav.length ? '' : 'no-side'}">${v.nav.length ? sidebar(v) : ''}<main id="main">${mnav(v)}${barraModo(ui, esc)}${avisos()}${v.body}</main></div>`
+    + cta + panelChat(store, ui, esc) + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
   espiar();
 }
 
@@ -429,6 +432,7 @@ function vJefatura(u) {
         <span class="row">${chipFicha(v.est, v.estadoVisible)}<button class="btn ${['incompleta', 'lista'].includes(v.est) ? 'btn-primary' : 'btn-ghost'} btn-sm" data-act="ficha-abrir" data-arg="${esc(v.c.colaborador_id)}">${ui.fichaAbierta === v.c.colaborador_id ? 'Cerrar' : ['incompleta', 'lista'].includes(v.est) ? 'Completar ficha' : 'Ver ficha'}</button></span></div>
         ${ui.fichaAbierta === v.c.colaborador_id ? `<div class="sub-panel">${formFicha(u, v.c.colaborador_id)}</div>` : ''}</li>`).join('')}</ul>
     </section>
+    ${seccionReparto(store, ui, esc)}
     <section class="blk" id="acciones"><p class="caption">Tus acciones</p>
       ${mias.length ? `<ul class="rows">${mias.map(({ h, ev }) => `<li class="hrow"><span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])} · ${esc(nombreDe(h.colaborador_id))}</b><span class="dim">Plazo ${fmt(ev.limite)}${ev.flags.includes('plazo_corrido') ? ` · registrado para ${fmt(ev.limiteRegistrado)}` : ''}</span></span>
         <span class="row">${chip(ev)}<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar cumplido</button></span></li>`).join('')}</ul>`
@@ -455,6 +459,7 @@ function vJefatura(u) {
     { label: 'Avisos', href: 'avisos', right: pendientes.length },
     ...(auth.puedePlanificarTurnos(u) ? [{ label: 'Planificación de turnos', href: 'turnos' }] : []),
     { label: 'Fichas de ingreso', href: 'fichas', right: porEnviar },
+    { label: 'Sugerir reparto', href: 'reparto' },
     { label: 'Tus acciones', href: 'acciones', right: mias.length },
     { label: 'Próximos ingresos', href: 'ingresos', right: proximos.length },
     { label: 'Personas de tu equipo', href: 'equipo', right: equipo.length },
@@ -726,13 +731,14 @@ function tCasos(u) {
     .filter(x => x.av.vencidos || x.av.porVerificar || !x.c.jefatura_id)
     .sort((a, b) => (!b.c.jefatura_id) - (!a.c.jefatura_id) || b.av.vencidosAltos - a.av.vencidosAltos || b.av.vencidos - a.av.vencidos);
   return `<section class="blk"><p class="caption">${lista.length} personas con atrasos, hitos por verificar o sin jefatura</p>
+  <p class="hint">"Avisar por correo" envía a la casilla única de demostración (configurada en el servidor) solo el ID y los conteos de atrasos. Sin servidor, se simula.</p>
   <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Área · sede</th><th>Jefatura</th><th>Canal</th><th>Avance</th><th>Atrasos</th><th></th></tr></thead><tbody>
   ${lista.map(({ c, av }) => `<tr><td>${dot(av.semaforo)} <b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td>
     <td>${esc(c.area)}<br><small class="dim">${esc(c.sede)}</small></td>
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
     <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small class="dim">(${av.vencidosAltos} críticos)</small>` : ''}${av.porVerificar ? `<br><small class="dim">${av.porVerificar} por verificar</small>` : ''}</td>
-    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button></td></tr>
+    <td><span class="row"><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button>${av.vencidos ? botonCorreo(c.colaborador_id, ui, esc) : ''}</span></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`).join('')}
   </tbody></table></div></section>`;
 }
@@ -800,6 +806,7 @@ async function onSubmit(e) {
   e.preventDefault();
   const fd = new FormData(f); const kind = f.dataset.form; const s = store.state;
   if (kind.startsWith('turnos-')) return submitTurnos(kind, fd, contextoTurnos());
+  if (kind.startsWith('ia-')) return submitIntegraciones(f, contextoIA());
   if (kind === 'col-id') {
     const id = String(fd.get('id') || '').trim().toUpperCase();
     ui.loginStep = { id }; ui.loginError = ''; return render();
@@ -872,12 +879,13 @@ async function onSubmit(e) {
   }
 }
 
-function resetUi() { reiniciarTurnosUI(ui); Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null, indRegistrando: null, indReprogramar: false, indFiltro: 'todas' }); }
+function resetUi() { reiniciarTurnosUI(ui); ui.ia = { ...estadoInicial(), estado: ui.ia.estado }; Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null, indRegistrando: null, indReprogramar: false, indFiltro: 'todas' }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act; const arg = b.dataset.arg; const s = store.state;
   if (act.startsWith('turnos-')) return clickTurnos(act, arg, contextoTurnos());
+  if (act.startsWith('ia-')) return clickIntegraciones(act, arg, contextoIA());
   const h = arg ? s.data.hitos.find(x => x.hito_id === arg) : null;
   if (['completar', 'tomar', 'reasignar-open'].includes(act) && !h) { toastMsg('Ese hito ya no existe. La vista se actualizó.'); return; }
   switch (act) {
@@ -931,6 +939,7 @@ function onClick(e) {
     case 'confirm-ok': {
       const c = ui.confirm; ui.confirm = null; if (!c) return;
       if (c.act.startsWith('turnos-')) return confirmarTurnos(c, contextoTurnos());
+      if (c.act.startsWith('ia-')) return confirmarIntegraciones(c, contextoIA());
       if (c.act === 'completar') { const r = store.completar(c.arg); return toastMsg(r.ok ? 'Hito marcado como cumplido.' : r.motivo); }
       if (c.act === 'tomar') { const r = store.reasignar(c.arg, s.user.usuario_id, `Caso tomado por ${s.user.usuario_id}`, { confirmado: true }); return toastMsg(r.ok ? 'Caso asignado a ti.' : r.motivo); }
       if (c.act === 'reasignar') { const r = store.reasignar(c.arg, c.nuevo, c.motivo, { confirmado: true }); if (r.ok) ui.reasignando = null; return toastMsg(r.ok ? 'Responsable reasignado y registrado en la bitácora.' : r.motivo); }
@@ -977,5 +986,6 @@ export function mount(el, st) {
   globalThis.window?.addEventListener('unhandledrejection', e => fallo('promesa', e.reason instanceof Error ? e.reason : new Error(String(e.reason))));
   document.addEventListener('keydown', e => { if (e.key === 'Escape' && ui.confirm) { ui.confirm = null; render(); } });
   render();
+  detectarServidor(contextoIA()).catch(err => fallo('servidor', err));
 }
 export { HITOS_TECNICOS };

@@ -1,14 +1,15 @@
 {
   "name": "sprint",
   "version": "1.0.0",
-  "description": "",
+  "description": "Sprint · Onboarding Modo Seguro",
   "main": "index.js",
   "directories": {
     "test": "tests"
   },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
-    "build": "node scripts/build.mjs"
+    "build": "node scripts/build.mjs",
+    "start": "node --env-file-if-exists=.env server.mjs"
   },
   "keywords": [],
   "author": "",
@@ -16,5 +17,12 @@
   "devDependencies": {
     "esbuild": "^0.24.0"
   },
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.4.0",
+    "nodemailer": "^10.3.1"
+  },
+  "engines": {
+    "node": ">=22.9"
+  }
 }

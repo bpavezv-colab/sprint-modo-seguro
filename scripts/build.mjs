@@ -23,8 +23,8 @@ writeFileSync(new URL('../src/data.generated.js', import.meta.url), `// Archivo 
 const res = await build({ entryPoints: [fileURLToPath(new URL('../src/main.js', import.meta.url))], bundle: true, format: 'iife', minify: false, write: false, target: 'es2020' });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = r('src/styles.css');
-// Sin fuentes, analítica ni conexiones externas. El HTML funciona offline.
-const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
+// Sin fuentes, analítica ni conexiones externas. connect-src 'self': la página solo habla con su propio servidor local (npm start); con doble clic funciona offline.
+const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
 const head = `${csp}\n<title>Sprint Onboarding Seguro</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n<style>${css}</style>`;
 const bodyHtml = `<div id="app"></div>\n<script>${js}</script>`;
 
