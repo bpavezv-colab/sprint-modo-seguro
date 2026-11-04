@@ -247,4 +247,14 @@ fieldset.choice legend { padding: 0 0 .5rem; }
 .ficha-form { max-width: 40rem; }
 @media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
 
+/* ---------- Avisos de la jefatura ---------- */
+.tn-avisos { color: var(--ink-60); text-decoration: none; display: inline-flex; gap: .5rem; align-items: center; }
+.tn-avisos.on { color: var(--ink); background: var(--sky); }
+.tn-avisos b { font-weight: 500; }
+.aviso { justify-content: flex-start; }
+.aviso > .chip { flex: none; min-width: 10.5rem; text-align: center; }
+.aviso > .row { margin-left: auto; }
+.aviso.visto { opacity: .6; }
+@media (max-width: 560px) { .aviso > .chip { min-width: 0; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

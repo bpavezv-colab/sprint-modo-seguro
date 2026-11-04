@@ -2,7 +2,7 @@
 import { indexData, validar, HOY_DEFAULT, isISO, BLOQUEANTES } from './rules.js';
 import { crearAuth } from './permissions.js';
 import { limpiarPersistenciaAnterior, validarCampos, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
-import { ReglasOnboarding, CONFIG, MOTIVOS, MOTIVO_A_REPORTE, ESTADOS_FICHA, POST_ENVIO } from './reglas_onboarding.js';
+import { ReglasOnboarding, CONFIG, MOTIVOS, MOTIVO_A_REPORTE, ESTADOS_FICHA, POST_ENVIO, AVISOS_JEFATURA } from './reglas_onboarding.js';
 
 const limpiar = (v, max = 200) => { const t = String(v ?? '').trim().slice(0, max); return t === '' ? null : t; };
 const CAMPOS_FICHA_EDITABLES = ['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'];
@@ -13,7 +13,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
     hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null,
-    config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, // Ficha de Ingreso (solo en memoria)
+    config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, nuevosIngresos: [], avisosVistos: {}, // Ficha de Ingreso (solo en memoria)
     almacenamientoLimpio: limpiarPersistenciaAnterior(),
   };
   function rebuild() {
@@ -24,7 +24,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
     const nombre = id => s.auth.users.get(id)?.nombre_ficticio || id;
     s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
-    s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas)
+    s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos)
       .map(a => ({ ...a, estado: s.alertaEstados[a.id]?.estado || 'abierta', gestion: s.alertaEstados[a.id] || null }));
   }
   // Fecha simulada de la demo + hora real: así "antes del día 1" se evalúa contra la fecha de corte.
@@ -118,9 +118,14 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
         const r = denegar('carga_archivos', '—', `Carga rechazada: ${errores.length} errores bloqueantes. Los datos actuales no cambiaron.`);
         return { ...r, errores };
       }
+      const antes = new Set(s.base.colaboradores.map(c => c.colaborador_id));
+      const nuevos = candidato.colaboradores.filter(c => !antes.has(c.colaborador_id)).map(c => c.colaborador_id);
+      s.nuevosIngresos.push(...nuevos.map(id => ({ colaborador_id: id, registrado_at: reloj(), por: s.user.usuario_id })));
       s.base = candidato; s.overrides = {}; rebuild();
       if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
-      log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true, sesionCerrada: !s.user };
+      log('carga_archivos', '—', `Carga del kit sintético validada; datos solo en memoria${nuevos.length ? `; ${nuevos.length} ${nuevos.length === 1 ? 'ingreso nuevo' : 'ingresos nuevos'}` : ''}`);
+      for (const id of nuevos) log('nuevo_ingreso', id, 'Se notificaría a la jefatura asignada (simulado). No se envió nada.', 'ok', { entidad: 'colaborador' });
+      return { ok: true, sesionCerrada: !s.user, nuevos: nuevos.length };
     },
 
     // ================= Ficha de Ingreso =================
@@ -240,8 +245,32 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       log('marcar_pendiente', hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, 'ok', { entidad: 'hito', campo: 'fecha_comprometida', valor_anterior: antes, valor_nuevo: fecha });
       return { ok: true };
     },
+    // Jefatura: avisos de su equipo (nuevos ingresos, próximos ingresos, personas sin tareas, fichas sin enviar).
+    avisos() {
+      const u = s.user;
+      if (!u || u.rol !== 'Jefatura' || !s.auth.cuentaValida(u)) return [];
+      const peso = { Urgente: 4, Alta: 3, Media: 2, Baja: 1 };
+      return s.alertasFicha
+        .filter(a => AVISOS_JEFATURA.includes(a.tipo) && a.responsable.id === u.usuario_id && s.auth.enAlcance(u, a.colaborador_id))
+        .map(a => ({ ...a, visto: !!s.avisosVistos[`${u.usuario_id}|${a.id}`] }))
+        .sort((a, b) => a.visto - b.visto || peso[b.prioridad] - peso[a.prioridad] || String(a.plazo).localeCompare(String(b.plazo)));
+    },
+    marcarAvisoVisto(alertaId) {
+      const u = s.user;
+      const a = api.avisos().find(x => x.id === alertaId);
+      if (!a) return denegar('aviso_visto', alertaId, 'El aviso no existe o no es de tu equipo');
+      s.avisosVistos[`${u.usuario_id}|${alertaId}`] = reloj();
+      log('aviso_visto', alertaId, a.titulo, 'ok', { entidad: 'aviso', campo: 'visto', valor_anterior: false, valor_nuevo: true });
+      return { ok: true };
+    },
     // Personas: bandeja de alertas accionables.
-    alertasFicha() { return s.auth.esPersonas(s.user) ? s.alertasFicha.filter(a => s.auth.enAlcance(s.user, a.colaborador_id)) : []; },
+    // Los avisos operativos de la jefatura (sin tareas, próximos y nuevos ingresos) no inundan la bandeja de Personas: se ven en Indicadores.
+    alertasFicha() { return s.auth.esPersonas(s.user) ? s.alertasFicha.filter(a => !['sin_tareas', 'proximo_ingreso', 'nuevo_ingreso'].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : []; },
+    avisosDeEquipos() {
+      if (!s.auth.esPersonas(s.user)) return null;
+      const t = tipo => s.alertasFicha.filter(a => a.tipo === tipo && s.auth.enAlcance(s.user, a.colaborador_id)).length;
+      return { sinTareas: t('sin_tareas'), proximos: t('proximo_ingreso'), nuevos: t('nuevo_ingreso') };
+    },
     gestionarAlerta(alertaId, estado) {
       if (!['contactado', 'escalada'].includes(estado)) return denegar('gestionar_alerta', alertaId, 'Acción no válida');
       if (!s.auth.puedeGestionarAlertas(s.user)) return denegar('gestionar_alerta', alertaId, 'Sin permiso para gestionar alertas');
@@ -273,7 +302,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     },
     reiniciar() {
       if (!s.auth.puedeCargarArchivos(s.user)) return denegar('reiniciar', '—', 'Sin permiso');
-      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {};
+      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {}; s.nuevosIngresos = []; s.avisosVistos = {};
       s.almacenamientoLimpio = limpiarPersistenciaAnterior(); rebuild(); log('reiniciar', '—', 'Datos originales restaurados; reportes y movimientos anteriores eliminados'); s.user = null;
       return { ok: true };
     },
@@ -287,7 +316,8 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       catch {
         log('error', '—', 'No se pudo completar la acción; no se registra su contenido', 'error');
         if (nombre === 'verColaborador') return null;
-        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias'].includes(nombre)) return [];
+        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias', 'avisos'].includes(nombre)) return [];
+        if (nombre === 'avisosDeEquipos') return null;
         if (['vistaFicha', 'indicadores'].includes(nombre)) return null;
         return { ok: false, motivo: 'No se pudo completar la acción. Revisa los datos e intenta nuevamente.' };
       }

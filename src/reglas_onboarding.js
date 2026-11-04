@@ -17,6 +17,10 @@ export const CONFIG = {
   diasContactarDiscrepancia: 1,  // plazo para que Personas contacte a quien reportó algo
   diasAvisoFichaSinEnviar: 7,    // se alerta a la jefatura si el ingreso está a 7 días o menos
   diasEnvioAntesIngreso: 2,      // la ficha debe estar enviada 2 días antes del ingreso
+  diasVentanaTareas: 90,         // se avisa "sin tareas asignadas" a quienes están en sus primeros 90 días o por ingresar
+  diasAsignarTareas: 1,          // plazo para que la jefatura asigne tareas a quien ya ingresó
+  diasAvisoIngreso: 14,          // se avisa a la jefatura de un ingreso que llega en 14 días o menos
+  diasAtenderNuevo: 1,           // plazo para revisar un ingreso recién registrado por RR.HH.
   camposBloqueantes: { fecha_ingreso: 'fecha de ingreso', jefatura_id: 'jefatura', tipo_turno: 'turno' },
   camposRevisar: { canal_contacto: 'canal de contacto', estado_onboarding: 'estado de onboarding' },
   hitosTecnicos: ['Equipo', 'Acceso'],
@@ -63,7 +67,13 @@ export const TIPOS_ALERTA = {
   ficha_sin_enviar: 'Ficha sin enviar',
   sin_respuesta: 'Sin respuesta',
   reconfirmacion: 'Reconfirmación',
+  sin_tareas: 'Sin tareas asignadas',
+  proximo_ingreso: 'Próximo ingreso',
+  nuevo_ingreso: 'Nuevo ingreso registrado por RR.HH.',
 };
+// Avisos que van a la bandeja de la jefatura (además de la bandeja de Personas).
+export const AVISOS_JEFATURA = ['nuevo_ingreso', 'proximo_ingreso', 'sin_tareas', 'ficha_sin_enviar'];
+export const tareasFaltantes = f => [1, 2, 3].filter(i => !f || !String(f[`tarea_${i}`] ?? '').trim()).length;
 
 const NIVEL_NORM = { Alta: 'Alta', Alto: 'Alta', Media: 'Media', Medio: 'Media', Baja: 'Baja', Bajo: 'Baja', Urgente: 'Urgente' };
 export const normNivel = v => NIVEL_NORM[v] || null;
@@ -158,7 +168,8 @@ export class ReglasOnboarding {
     return { ...a, id: `${a.tipo}:${a.clave}` };
   }
 
-  alertas(colabs, hitos, fichas) {
+  // nuevos: ingresos detectados en una carga de RR.HH. [{ colaborador_id, registrado_at }]
+  alertas(colabs, hitos, fichas, nuevos = []) {
     const out = [];
     const add = a => { const v = this.crearAlerta(a); if (v) out.push(v); };
     const plazoDato = addDays(this.hoy, this.cfg.diasResolverDato);
@@ -183,7 +194,27 @@ export class ReglasOnboarding {
         add({ tipo: 'reconfirmacion', clave: id, colaborador_id: id, titulo: 'La ficha cambió y debe reconfirmarse', responsable: PERSONAS,
           accion_requerida: 'Avisar a la persona del cambio y pedir que reconfirme su ficha.', plazo: plazoDato, prioridad: this.subirSiCerca('Alta', c) });
       }
-      if ((est === 'incompleta' || est === 'lista') && c.jefatura_id && d !== null && d >= 0 && d <= this.cfg.diasAvisoFichaSinEnviar) {
+      const jefe = c.jefatura_id ? { tipo: 'Jefatura', id: c.jefatura_id, origen: 'colaborador', etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` } : null;
+      const sinTareas = tareasFaltantes(f);
+      const enVentana = d !== null && d >= -this.cfg.diasVentanaTareas;
+      // Sin tareas: la persona no sabe qué hará. Se avisa a su jefatura (y Personas lo ve en su bandeja).
+      if (jefe && !POST_ENVIO.includes(est) && sinTareas && enVentana) {
+        const yaIngreso = d < 0;
+        add({ tipo: 'sin_tareas', clave: id, colaborador_id: id,
+          titulo: sinTareas === 3 ? 'Sin tareas asignadas' : `Faltan ${sinTareas} de 3 tareas`, responsable: jefe,
+          accion_requerida: yaIngreso
+            ? 'Asignar 3 tareas reales en la ficha: la persona ya ingresó y necesita saber qué hacer para aportar al equipo.'
+            : 'Asignar 3 tareas reales en la ficha antes de su primer día.',
+          plazo: yaIngreso || d <= this.cfg.diasEnvioAntesIngreso ? addDays(this.hoy, this.cfg.diasAsignarTareas) : addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso),
+          prioridad: yaIngreso ? 'Alta' : this.subirSiCerca('Media', c) });
+      }
+      // Próximo ingreso: llega alguien al equipo en los próximos días.
+      if (jefe && d !== null && d >= 0 && d <= this.cfg.diasAvisoIngreso) {
+        add({ tipo: 'proximo_ingreso', clave: id, colaborador_id: id, titulo: d === 0 ? 'Ingresa hoy' : `Ingresa en ${d} ${d === 1 ? 'día' : 'días'}`, responsable: jefe,
+          accion_requerida: 'Preparar la llegada: completar y enviar la ficha de ingreso.',
+          plazo: d > this.cfg.diasEnvioAntesIngreso ? addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso) : this.hoy, prioridad: this.subirSiCerca('Media', c) });
+      }
+      if ((est === 'incompleta' || est === 'lista') && !sinTareas && c.jefatura_id && d !== null && d >= 0 && d <= this.cfg.diasAvisoFichaSinEnviar) {
         add({ tipo: 'ficha_sin_enviar', clave: id, colaborador_id: id, titulo: 'Ficha de ingreso sin enviar',
           responsable: { tipo: 'Jefatura', id: c.jefatura_id, origen: 'colaborador', etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` },
           accion_requerida: 'Completar y enviar la ficha de ingreso.', plazo: addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso), prioridad: this.subirSiCerca('Media', c) });
@@ -192,6 +223,16 @@ export class ReglasOnboarding {
         add({ tipo: 'sin_respuesta', clave: id, colaborador_id: id, titulo: 'Ficha enviada sin respuesta', responsable: PERSONAS,
           accion_requerida: 'Contactar a la persona para que confirme su ficha.', plazo: c.fecha_ingreso, prioridad: this.subirSiCerca('Media', c) });
       }
+    }
+    // Nuevo ingreso registrado por RR.HH. (carga de archivo): aviso a la jefatura asignada.
+    const enLista = new Map(colabs.map(c => [c.colaborador_id, c]));
+    for (const n of nuevos) {
+      const c = enLista.get(n.colaborador_id); if (!c) continue;
+      const jefe = c.jefatura_id ? { tipo: 'Jefatura', id: c.jefatura_id, origen: 'colaborador', etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` } : PERSONAS;
+      add({ tipo: 'nuevo_ingreso', clave: c.colaborador_id, colaborador_id: c.colaborador_id,
+        titulo: `RR.HH. registró un ingreso${isISO(c.fecha_ingreso) ? ` para el ${c.fecha_ingreso.split('-').reverse().join('-')}` : ''}`, responsable: jefe,
+        accion_requerida: c.jefatura_id ? 'Revisar el nuevo ingreso y preparar su ficha con 3 tareas.' : 'Asignar una jefatura al nuevo ingreso.',
+        plazo: addDays(String(n.registrado_at || this.hoy).slice(0, 10), this.cfg.diasAtenderNuevo), prioridad: this.subirSiCerca('Media', c) });
     }
     for (const h of hitos) {
       const r = this.responsable(h); const a = this.atrasado(h); const fl = this.fechaLimite(h);

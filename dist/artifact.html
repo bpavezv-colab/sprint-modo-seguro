@@ -250,6 +250,16 @@ fieldset.choice legend { padding: 0 0 .5rem; }
 .ficha-form { max-width: 40rem; }
 @media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
 
+/* ---------- Avisos de la jefatura ---------- */
+.tn-avisos { color: var(--ink-60); text-decoration: none; display: inline-flex; gap: .5rem; align-items: center; }
+.tn-avisos.on { color: var(--ink); background: var(--sky); }
+.tn-avisos b { font-weight: 500; }
+.aviso { justify-content: flex-start; }
+.aviso > .chip { flex: none; min-width: 10.5rem; text-align: center; }
+.aviso > .row { margin-left: auto; }
+.aviso.visto { opacity: .6; }
+@media (max-width: 560px) { .aviso > .chip { min-width: 0; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 <div id="app"></div>
@@ -830,6 +840,14 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     // se alerta a la jefatura si el ingreso está a 7 días o menos
     diasEnvioAntesIngreso: 2,
     // la ficha debe estar enviada 2 días antes del ingreso
+    diasVentanaTareas: 90,
+    // se avisa "sin tareas asignadas" a quienes están en sus primeros 90 días o por ingresar
+    diasAsignarTareas: 1,
+    // plazo para que la jefatura asigne tareas a quien ya ingresó
+    diasAvisoIngreso: 14,
+    // se avisa a la jefatura de un ingreso que llega en 14 días o menos
+    diasAtenderNuevo: 1,
+    // plazo para revisar un ingreso recién registrado por RR.HH.
     camposBloqueantes: { fecha_ingreso: "fecha de ingreso", jefatura_id: "jefatura", tipo_turno: "turno" },
     camposRevisar: { canal_contacto: "canal de contacto", estado_onboarding: "estado de onboarding" },
     hitosTecnicos: ["Equipo", "Acceso"],
@@ -874,8 +892,13 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     discrepancia: "Algo no coincide",
     ficha_sin_enviar: "Ficha sin enviar",
     sin_respuesta: "Sin respuesta",
-    reconfirmacion: "Reconfirmaci\xF3n"
+    reconfirmacion: "Reconfirmaci\xF3n",
+    sin_tareas: "Sin tareas asignadas",
+    proximo_ingreso: "Pr\xF3ximo ingreso",
+    nuevo_ingreso: "Nuevo ingreso registrado por RR.HH."
   };
+  var AVISOS_JEFATURA = ["nuevo_ingreso", "proximo_ingreso", "sin_tareas", "ficha_sin_enviar"];
+  var tareasFaltantes = (f) => [1, 2, 3].filter((i) => !f || !String(f[`tarea_${i}`] ?? "").trim()).length;
   var NIVEL_NORM = { Alta: "Alta", Alto: "Alta", Media: "Media", Medio: "Media", Baja: "Baja", Bajo: "Baja", Urgente: "Urgente" };
   var normNivel = (v) => NIVEL_NORM[v] || null;
   var PERSONAS = { tipo: "Personas", id: null, origen: "regla", etiqueta: "Personas" };
@@ -974,7 +997,8 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       if (!a.responsable || !a.responsable.etiqueta || !a.accion_requerida || !a.plazo || !a.prioridad) return null;
       return { ...a, id: `${a.tipo}:${a.clave}` };
     }
-    alertas(colabs, hitos, fichas) {
+    // nuevos: ingresos detectados en una carga de RR.HH. [{ colaborador_id, registrado_at }]
+    alertas(colabs, hitos, fichas, nuevos = []) {
       const out = [];
       const add = (a) => {
         const v = this.crearAlerta(a);
@@ -1038,7 +1062,35 @@ fieldset.choice legend { padding: 0 0 .5rem; }
             prioridad: this.subirSiCerca("Alta", c)
           });
         }
-        if ((est === "incompleta" || est === "lista") && c.jefatura_id && d !== null && d >= 0 && d <= this.cfg.diasAvisoFichaSinEnviar) {
+        const jefe = c.jefatura_id ? { tipo: "Jefatura", id: c.jefatura_id, origen: "colaborador", etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` } : null;
+        const sinTareas = tareasFaltantes(f);
+        const enVentana = d !== null && d >= -this.cfg.diasVentanaTareas;
+        if (jefe && !POST_ENVIO.includes(est) && sinTareas && enVentana) {
+          const yaIngreso = d < 0;
+          add({
+            tipo: "sin_tareas",
+            clave: id,
+            colaborador_id: id,
+            titulo: sinTareas === 3 ? "Sin tareas asignadas" : `Faltan ${sinTareas} de 3 tareas`,
+            responsable: jefe,
+            accion_requerida: yaIngreso ? "Asignar 3 tareas reales en la ficha: la persona ya ingres\xF3 y necesita saber qu\xE9 hacer para aportar al equipo." : "Asignar 3 tareas reales en la ficha antes de su primer d\xEDa.",
+            plazo: yaIngreso || d <= this.cfg.diasEnvioAntesIngreso ? addDays(this.hoy, this.cfg.diasAsignarTareas) : addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso),
+            prioridad: yaIngreso ? "Alta" : this.subirSiCerca("Media", c)
+          });
+        }
+        if (jefe && d !== null && d >= 0 && d <= this.cfg.diasAvisoIngreso) {
+          add({
+            tipo: "proximo_ingreso",
+            clave: id,
+            colaborador_id: id,
+            titulo: d === 0 ? "Ingresa hoy" : `Ingresa en ${d} ${d === 1 ? "d\xEDa" : "d\xEDas"}`,
+            responsable: jefe,
+            accion_requerida: "Preparar la llegada: completar y enviar la ficha de ingreso.",
+            plazo: d > this.cfg.diasEnvioAntesIngreso ? addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso) : this.hoy,
+            prioridad: this.subirSiCerca("Media", c)
+          });
+        }
+        if ((est === "incompleta" || est === "lista") && !sinTareas && c.jefatura_id && d !== null && d >= 0 && d <= this.cfg.diasAvisoFichaSinEnviar) {
           add({
             tipo: "ficha_sin_enviar",
             clave: id,
@@ -1062,6 +1114,22 @@ fieldset.choice legend { padding: 0 0 .5rem; }
             prioridad: this.subirSiCerca("Media", c)
           });
         }
+      }
+      const enLista = new Map(colabs.map((c) => [c.colaborador_id, c]));
+      for (const n of nuevos) {
+        const c = enLista.get(n.colaborador_id);
+        if (!c) continue;
+        const jefe = c.jefatura_id ? { tipo: "Jefatura", id: c.jefatura_id, origen: "colaborador", etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` } : PERSONAS;
+        add({
+          tipo: "nuevo_ingreso",
+          clave: c.colaborador_id,
+          colaborador_id: c.colaborador_id,
+          titulo: `RR.HH. registr\xF3 un ingreso${isISO(c.fecha_ingreso) ? ` para el ${c.fecha_ingreso.split("-").reverse().join("-")}` : ""}`,
+          responsable: jefe,
+          accion_requerida: c.jefatura_id ? "Revisar el nuevo ingreso y preparar su ficha con 3 tareas." : "Asignar una jefatura al nuevo ingreso.",
+          plazo: addDays(String(n.registrado_at || this.hoy).slice(0, 10), this.cfg.diasAtenderNuevo),
+          prioridad: this.subirSiCerca("Media", c)
+        });
       }
       for (const h of hitos) {
         const r = this.responsable(h);
@@ -1154,6 +1222,8 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       fichas: {},
       alertasFicha: [],
       alertaEstados: {},
+      nuevosIngresos: [],
+      avisosVistos: {},
       // Ficha de Ingreso (solo en memoria)
       almacenamientoLimpio: limpiarPersistenciaAnterior()
     };
@@ -1167,7 +1237,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
       const nombre = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
       s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
-      s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas).map((a) => ({ ...a, estado: s.alertaEstados[a.id]?.estado || "abierta", gestion: s.alertaEstados[a.id] || null }));
+      s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos).map((a) => ({ ...a, estado: s.alertaEstados[a.id]?.estado || "abierta", gestion: s.alertaEstados[a.id] || null }));
     }
     const reloj = () => `${s.hoy}T${(/* @__PURE__ */ new Date()).toTimeString().slice(0, 8)}`;
     const nombreDe2 = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
@@ -1301,12 +1371,16 @@ fieldset.choice legend { padding: 0 0 .5rem; }
           const r = denegar("carga_archivos", "\u2014", `Carga rechazada: ${errores.length} errores bloqueantes. Los datos actuales no cambiaron.`);
           return { ...r, errores };
         }
+        const antes = new Set(s.base.colaboradores.map((c) => c.colaborador_id));
+        const nuevos = candidato.colaboradores.filter((c) => !antes.has(c.colaborador_id)).map((c) => c.colaborador_id);
+        s.nuevosIngresos.push(...nuevos.map((id) => ({ colaborador_id: id, registrado_at: reloj(), por: s.user.usuario_id })));
         s.base = candidato;
         s.overrides = {};
         rebuild();
         if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
-        log("carga_archivos", "\u2014", "Carga del kit sint\xE9tico validada; datos solo en memoria");
-        return { ok: true, sesionCerrada: !s.user };
+        log("carga_archivos", "\u2014", `Carga del kit sint\xE9tico validada; datos solo en memoria${nuevos.length ? `; ${nuevos.length} ${nuevos.length === 1 ? "ingreso nuevo" : "ingresos nuevos"}` : ""}`);
+        for (const id of nuevos) log("nuevo_ingreso", id, "Se notificar\xEDa a la jefatura asignada (simulado). No se envi\xF3 nada.", "ok", { entidad: "colaborador" });
+        return { ok: true, sesionCerrada: !s.user, nuevos: nuevos.length };
       },
       // ================= Ficha de Ingreso =================
       // Control de acceso por pantalla (equivale al filtro del controlador): 403 si está fuera de alcance.
@@ -1490,9 +1564,30 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         log("marcar_pendiente", hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, "ok", { entidad: "hito", campo: "fecha_comprometida", valor_anterior: antes, valor_nuevo: fecha });
         return { ok: true };
       },
+      // Jefatura: avisos de su equipo (nuevos ingresos, próximos ingresos, personas sin tareas, fichas sin enviar).
+      avisos() {
+        const u = s.user;
+        if (!u || u.rol !== "Jefatura" || !s.auth.cuentaValida(u)) return [];
+        const peso = { Urgente: 4, Alta: 3, Media: 2, Baja: 1 };
+        return s.alertasFicha.filter((a) => AVISOS_JEFATURA.includes(a.tipo) && a.responsable.id === u.usuario_id && s.auth.enAlcance(u, a.colaborador_id)).map((a) => ({ ...a, visto: !!s.avisosVistos[`${u.usuario_id}|${a.id}`] })).sort((a, b) => a.visto - b.visto || peso[b.prioridad] - peso[a.prioridad] || String(a.plazo).localeCompare(String(b.plazo)));
+      },
+      marcarAvisoVisto(alertaId) {
+        const u = s.user;
+        const a = api.avisos().find((x) => x.id === alertaId);
+        if (!a) return denegar("aviso_visto", alertaId, "El aviso no existe o no es de tu equipo");
+        s.avisosVistos[`${u.usuario_id}|${alertaId}`] = reloj();
+        log("aviso_visto", alertaId, a.titulo, "ok", { entidad: "aviso", campo: "visto", valor_anterior: false, valor_nuevo: true });
+        return { ok: true };
+      },
       // Personas: bandeja de alertas accionables.
+      // Los avisos operativos de la jefatura (sin tareas, próximos y nuevos ingresos) no inundan la bandeja de Personas: se ven en Indicadores.
       alertasFicha() {
-        return s.auth.esPersonas(s.user) ? s.alertasFicha.filter((a) => s.auth.enAlcance(s.user, a.colaborador_id)) : [];
+        return s.auth.esPersonas(s.user) ? s.alertasFicha.filter((a) => !["sin_tareas", "proximo_ingreso", "nuevo_ingreso"].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : [];
+      },
+      avisosDeEquipos() {
+        if (!s.auth.esPersonas(s.user)) return null;
+        const t = (tipo) => s.alertasFicha.filter((a) => a.tipo === tipo && s.auth.enAlcance(s.user, a.colaborador_id)).length;
+        return { sinTareas: t("sin_tareas"), proximos: t("proximo_ingreso"), nuevos: t("nuevo_ingreso") };
       },
       gestionarAlerta(alertaId, estado) {
         if (!["contactado", "escalada"].includes(estado)) return denegar("gestionar_alerta", alertaId, "Acci\xF3n no v\xE1lida");
@@ -1538,6 +1633,8 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         s.hoy = HOY_DEFAULT;
         s.fichas = {};
         s.alertaEstados = {};
+        s.nuevosIngresos = [];
+        s.avisosVistos = {};
         s.almacenamientoLimpio = limpiarPersistenciaAnterior();
         rebuild();
         log("reiniciar", "\u2014", "Datos originales restaurados; reportes y movimientos anteriores eliminados");
@@ -1554,7 +1651,8 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         } catch {
           log("error", "\u2014", "No se pudo completar la acci\xF3n; no se registra su contenido", "error");
           if (nombre === "verColaborador") return null;
-          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias"].includes(nombre)) return [];
+          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias", "avisos"].includes(nombre)) return [];
+          if (nombre === "avisosDeEquipos") return null;
           if (["vistaFicha", "indicadores"].includes(nombre)) return null;
           return { ok: false, motivo: "No se pudo completar la acci\xF3n. Revisa los datos e intenta nuevamente." };
         }
@@ -1564,6 +1662,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   }
 
   // src/ui.js
+  var TONO_AVISO = { nuevo_ingreso: "ok", proximo_ingreso: "warn", sin_tareas: "bad", ficha_sin_enviar: "warn" };
   var esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var ui = {
     loginStep: null,
@@ -1672,6 +1771,10 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     <span class="logo" aria-label="Sprint"><span class="logo-mark" aria-hidden="true"></span><span class="logo-txt">Sprint</span><span class="logo-sub caption">Onboarding \xB7 Modo Seguro</span></span>
     <nav class="topnav caption" aria-label="Sesi\xF3n">
       <span class="tn-cut">Corte ${fmt(s.hoy)}</span>
+      ${u && u.rol === "Jefatura" ? (() => {
+      const n = store.avisos().filter((a) => !a.visto).length;
+      return `<a class="tn-avisos ${n ? "on" : ""}" href="#avisos" aria-label="${n} avisos sin revisar">Avisos <b class="num">${n}</b></a>`;
+    })() : ""}
       ${u ? `<span class="tn-who">${esc(u.rol)} \xB7 ${esc(u.usuario_id)}</span><button data-act="logout">Cambiar usuario</button>` : '<span class="tn-who">Datos sint\xE9ticos \xB7 solo en memoria</span>'}
     </nav>
   </header>`;
@@ -1922,14 +2025,26 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const metr = auth.alcanceMetricas(u) === "equipo" ? metricasPorTipo(items) : null;
     const fichas = equipo.map((c) => store.vistaFicha(c.colaborador_id)).filter(Boolean);
     const porEnviar = fichas.filter((v) => ["incompleta", "lista"].includes(v.est)).length;
+    const avisos2 = store.avisos();
+    const pendientes = avisos2.filter((a) => !a.visto);
+    const sinTareas = avisos2.filter((a) => a.tipo === "sin_tareas").length;
+    const nuevos = [...new Set(avisos2.filter((a) => a.tipo === "nuevo_ingreso" || a.tipo === "proximo_ingreso").map((a) => a.colaborador_id))];
     const body = `<section class="blk hero" id="inicio">
       ${tags([u.area, `Equipo de ${equipo.length}`, "Jefatura"])}
-      <h1>${porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? "ficha de ingreso por enviar" : "fichas de ingreso por enviar"}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"}` : ""}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"} con tu equipo de ingreso.` : "Tu equipo de ingreso est\xE1 al d\xEDa contigo."}</h1>
+      <h1>${nuevos.length ? `${nuevos.length === 1 ? "Llega una persona nueva" : `Llegan ${nuevos.length} personas nuevas`} a tu equipo${sinTareas ? ` y ${sinTareas} ${sinTareas === 1 ? "persona no tiene" : "personas no tienen"} tareas asignadas` : ""}.` : sinTareas ? `${sinTareas === 1 ? "Una persona de tu equipo no tiene" : `${sinTareas} personas de tu equipo no tienen`} tareas asignadas.` : porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? "ficha de ingreso por enviar" : "fichas de ingreso por enviar"}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"}` : ""}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"} con tu equipo de ingreso.` : "Tu equipo de ingreso est\xE1 al d\xEDa contigo."}</h1>
       <div class="detail">
         <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
           ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? "" : "notice-bad"}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} est\xE1 en tu equipo.` : `${esc(ui.busqueda.id)} est\xE1 fuera de tu alcance. El intento qued\xF3 registrado en la bit\xE1cora.`}</p>` : ""}</form>
-        ${auth.puedeVerMetricas(u) ? stats([["Personas en tu equipo", String(equipo.length)], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats([["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
+        ${auth.puedeVerMetricas(u) ? stats([["Personas en tu equipo", String(equipo.length)], ["Sin tareas asignadas", String(sinTareas), sinTareas ? "bad" : ""], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats([["Sin tareas asignadas", String(sinTareas), sinTareas ? "bad" : ""], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
       </div>
+    </section>
+    <section class="blk" id="avisos"><div class="row-between"><p class="caption">Avisos</p><span class="caption dim">${pendientes.length} sin revisar</span></div>
+      ${avisos2.length ? `<ul class="rows">${avisos2.map((a) => `<li class="hrow aviso ${a.visto ? "visto" : ""}">
+        <span class="chip chip-${TONO_AVISO[a.tipo] || "neutral"}">${esc(TIPOS_ALERTA[a.tipo] || a.tipo)}</span>
+        <span class="rb-main"><b>${esc(a.titulo)} \xB7 ${esc(nombreDe(a.colaborador_id))}</b><span class="dim">${esc(a.accion_requerida)} Plazo <span class="nw">${fmt(a.plazo)}</span>.</span></span>
+        <span class="row">${["sin_tareas", "nuevo_ingreso", "proximo_ingreso", "ficha_sin_enviar"].includes(a.tipo) ? `<button class="btn btn-primary btn-sm" data-act="aviso-ficha" data-arg="${esc(a.colaborador_id)}">${a.tipo === "sin_tareas" ? "Asignar tareas" : "Preparar ficha"}</button>` : ""}
+          ${a.visto ? '<span class="caption dim">Visto</span>' : `<button class="btn btn-ghost btn-sm" data-act="aviso-visto" data-arg="${esc(a.id)}">Marcar visto</button>`}</span></li>`).join("")}</ul>` : '<p class="empty">Sin avisos. Cuando RR.HH. registre un ingreso en tu equipo o alguien quede sin tareas, aparecer\xE1 aqu\xED.</p>'}
+      <p class="hint">Asignar tareas claras desde el primer d\xEDa ayuda a que la persona sepa qu\xE9 hacer y aporte al equipo. Estos avisos no se usan para evaluar a nadie.</p>
     </section>
     <section class="blk" id="fichas"><p class="caption">Fichas de ingreso</p>
       <p class="lead">Completa 3 tareas reales, una persona de apoyo de tu equipo y la reuni\xF3n. Al enviarla, la persona la confirma o avisa si algo no coincide.</p>
@@ -1962,6 +2077,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ""}`;
     const nav = [
       { label: "Resumen", href: "inicio" },
+      { label: "Avisos", href: "avisos", right: pendientes.length },
       { label: "Fichas de ingreso", href: "fichas", right: porEnviar },
       { label: "Tus acciones", href: "acciones", right: mias.length },
       { label: "Pr\xF3ximos ingresos", href: "ingresos", right: proximos.length },
@@ -2158,6 +2274,11 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         ${k.enviadas ? "" : '<p class="hint">A\xFAn no hay fichas enviadas. El indicador aparece cuando una jefatura env\xEDa la primera.</p>'}</div>
       ${stats([["Ingresos en tu alcance", String(k.ingresos)], ["Fichas enviadas", String(k.enviadas)], ["Fichas confirmadas", String(k.confirmadas), k.confirmadas ? "ok" : ""], ["Discrepancias reportadas", String(disc), disc ? "warn" : ""]])}
     </div></section>
+  ${(() => {
+      const e = store.avisosDeEquipos();
+      return e ? `<section class="blk"><p class="caption">Avisos enviados a jefaturas</p>${stats([["Personas sin tareas asignadas", String(e.sinTareas), e.sinTareas ? "bad" : ""], ["Pr\xF3ximos ingresos (14 d\xEDas)", String(e.proximos)], ["Nuevos ingresos registrados por RR.HH.", String(e.nuevos)]])}
+    <p class="hint">Cada jefatura ve el detalle de su equipo en su bandeja de avisos.</p></section>` : "";
+    })()}
   <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
   <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
     ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), "bad"])) : '<p class="empty">Sin hitos atrasados.</p>'}
@@ -2391,6 +2512,10 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         resetUi();
         return toastMsg("Archivos cargados solo en memoria. Tu cuenta ya no existe: ingresa de nuevo.");
       }
+      if (r.nuevos) {
+        ui.tab = "indicadores";
+        return toastMsg(`Archivos cargados. ${r.nuevos === 1 ? "Se detect\xF3 1 ingreso nuevo" : `Se detectaron ${r.nuevos} ingresos nuevos`}: su jefatura ya tiene el aviso.`);
+      }
       ui.tab = "calidad";
       return toastMsg("Archivos sint\xE9ticos cargados solo en memoria. Revisa las alertas de calidad.");
     }
@@ -2443,6 +2568,24 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       case "ficha-filtro":
         ui.fichaFiltro = arg;
         return render();
+      case "aviso-visto": {
+        const r = store.marcarAvisoVisto(arg);
+        return r.ok ? render() : toastMsg(r.motivo);
+      }
+      case "aviso-ficha": {
+        const r = store.entrar("/ficha", arg);
+        if (!r.ok) {
+          ui.denegado = arg;
+          return render();
+        }
+        ui.fichaAbierta = arg;
+        ui.fichaErrores = null;
+        ui.detalle = null;
+        render();
+        const el = typeof root.querySelector === "function" && root.querySelector("#fichas");
+        if (el && el.scrollIntoView) el.scrollIntoView({ behavior: "smooth" });
+        return void 0;
+      }
       case "alerta-filtro":
         ui.alertaFiltro = arg;
         ui.reasignando = null;
