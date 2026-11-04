@@ -178,5 +178,6 @@ export const MATRIZ_EFECTIVA = [
   { cap: 'Reasignar responsable', Colaborador: 'No', Jefatura: 'No', TI: 'Entre cuentas TI, solo hitos técnicos', Personas: 'Sí, con motivo' },
   { cap: 'Ver métricas', Colaborador: 'No', Jefatura: 'Agregadas de su equipo', TI: 'Agregadas técnicas', Personas: 'Agregadas globales' },
   { cap: 'Ver reportes sensibles', Colaborador: 'Crea los suyos', Jefatura: 'No', TI: 'No', Personas: 'Sí' },
+  { cap: 'Asistencia a la inducción', Colaborador: 'Ve su citación, confirma o pide otro horario', Jefatura: 'Solo el estado (sin horas)', TI: 'No', Personas: 'Cita y registra entrada y salida' },
   { cap: 'Editar fecha límite', Colaborador: 'No', Jefatura: 'No', TI: 'No', Personas: 'No (no se ocultan atrasos)' },
 ];

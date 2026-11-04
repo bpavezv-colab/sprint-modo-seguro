@@ -3,6 +3,7 @@ import { indexData, validar, HOY_DEFAULT, isISO, BLOQUEANTES } from './rules.js'
 import { crearAuth } from './permissions.js';
 import { limpiarPersistenciaAnterior, validarCampos, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { ReglasOnboarding, CONFIG, MOTIVOS, MOTIVO_A_REPORTE, ESTADOS_FICHA, POST_ENVIO, AVISOS_JEFATURA } from './reglas_onboarding.js';
+import { estadoInduccion, alertasInduccion, indicadorInduccion, ESTADOS_INDUCCION, MOTIVOS_REPROGRAMAR, esHora, aMin } from './induccion.js';
 import { crearPlanificador } from './optimization/planning.js';
 
 const limpiar = (v, max = 200) => { const t = String(v ?? '').trim().slice(0, max); return t === '' ? null : t; };
@@ -15,7 +16,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
     hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null, sessionVersion: 0,
-    config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, nuevosIngresos: [], avisosVistos: {}, // Ficha de Ingreso (solo en memoria)
+    config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, nuevosIngresos: [], avisosVistos: {}, inducciones: {}, // Ficha de Ingreso (solo en memoria)
     almacenamientoLimpio: limpiarPersistenciaAnterior(),
   };
   function rebuild() {
@@ -26,7 +27,8 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
     const nombre = id => s.auth.users.get(id)?.nombre_ficticio || id;
     s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
-    s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos)
+    s.alertasFicha = [...s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas, s.nuevosIngresos),
+      ...alertasInduccion({ colabs: s.data.colaboradores, inducciones: s.inducciones, hoy: s.hoy, nombreDe: nombre })]
       .map(a => ({ ...a, estado: s.alertaEstados[a.id]?.estado || 'abierta', gestion: s.alertaEstados[a.id] || null }));
   }
   // Fecha simulada de la demo + hora real: así "antes del día 1" se evalúa contra la fecha de corte.
@@ -265,9 +267,89 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       log('aviso_visto', alertaId, a.titulo, 'ok', { entidad: 'aviso', campo: 'visto', valor_anterior: false, valor_nuevo: true });
       return { ok: true };
     },
+    // ================= Asistencia a la inducción =================
+    // Jefatura ve solo el estado; la hora de entrada/salida y el motivo de reprogramación, solo la persona y Personas.
+    vistaInduccion(colId) {
+      const u = s.user; if (!u || !s.auth.cuentaValida(u) || !s.idx.colab.has(colId)) return null;
+      const propio = u.rol === 'Colaborador' && u.usuario_id === colId && s.auth.enAlcance(u, colId);
+      const personas = s.auth.esPersonas(u) && s.auth.enAlcance(u, colId);
+      const jefatura = u.rol === 'Jefatura' && s.auth.enAlcance(u, colId);
+      if (!propio && !personas && !jefatura) return null;
+      const r = s.inducciones[colId] || null; const e = estadoInduccion(r, s.hoy); const det = propio || personas;
+      return { colaborador_id: colId, estado: e.estado, texto: ESTADOS_INDUCCION[e.estado], fecha: r?.fecha ?? null, inicio: r?.inicio ?? null, fin: r?.fin ?? null,
+        confirmada: !!r?.confirmada, entrada: det ? r?.entrada ?? null : undefined, salida: det ? r?.salida ?? null : undefined,
+        motivo: det ? r?.reprogramacion ?? null : undefined, atraso: det ? e.atraso : undefined, salidaAntes: det ? e.salidaAntes : undefined,
+        minutos: det ? e.minutos : undefined, duracion: det ? e.duracion : undefined, previas: det ? r?.sesiones_previas || 0 : undefined };
+    },
+    induccionesEquipo() {
+      const u = s.user; if (!u || !(s.auth.esPersonas(u) || u.rol === 'Jefatura')) return [];
+      return [...s.auth.scope(u)].map(id => api.vistaInduccion(id)).filter(Boolean);
+    },
+    citarInduccion(colId, fecha, inicio, fin) {
+      const u = s.user;
+      if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar('citar_induccion', colId, 'Solo Personas cita a la inducción, dentro de su alcance');
+      if (!isISO(fecha)) return { ok: false, motivo: 'La fecha de la sesión no es válida.' };
+      if (fecha < s.hoy) return { ok: false, motivo: 'La sesión no puede ser anterior a la fecha de corte.' };
+      if (!esHora(inicio) || !esHora(fin) || aMin(fin) <= aMin(inicio)) return { ok: false, motivo: 'Indica hora de inicio y de término válidas; el término debe ser después del inicio.' };
+      const antes = s.inducciones[colId] || null;
+      s.inducciones[colId] = { colaborador_id: colId, fecha, inicio, fin, confirmada: false, reprogramacion: null, entrada: null, salida: null, no_asistio: false,
+        citada_por: u.usuario_id, citada_at: reloj(), sesiones_previas: antes ? (antes.sesiones_previas || 0) + 1 : 0 };
+      log(antes ? 'reprogramar_induccion' : 'citar_induccion', colId, `Sesión ${fecha} ${inicio}–${fin}`, 'ok', { entidad: 'induccion', campo: 'fecha', valor_anterior: antes?.fecha ?? null, valor_nuevo: fecha });
+      log('notificacion_simulada', colId, 'Se notificaría la citación a la persona por su canal registrado. No se envió nada.');
+      rebuild(); return { ok: true };
+    },
+    citarVarios(ids, fecha, inicio, fin) {
+      const res = (ids || []).map(id => ({ id, r: api.citarInduccion(id, fecha, inicio, fin) }));
+      const ok = res.filter(x => x.r.ok).length;
+      return ok ? { ok: true, citadas: ok, errores: res.filter(x => !x.r.ok).length } : (res[0]?.r || { ok: false, motivo: 'No hay personas para citar.' });
+    },
+    registrarAsistencia(colId, entrada, salida) {
+      const u = s.user; const r = s.inducciones[colId];
+      if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar('registrar_asistencia', colId, 'Solo Personas registra la asistencia a la inducción');
+      if (!r) return { ok: false, motivo: 'La persona no tiene una sesión citada.' };
+      if (r.fecha > s.hoy) return { ok: false, motivo: 'Solo puedes registrar asistencia de sesiones de hoy o anteriores.' };
+      if (!esHora(entrada)) return { ok: false, motivo: 'Indica la hora de entrada (HH:MM).' };
+      const sal = salida ? String(salida) : null;
+      if (sal !== null && (!esHora(sal) || aMin(sal) <= aMin(entrada))) return { ok: false, motivo: 'La hora de salida debe ser posterior a la de entrada.' };
+      const antes = `${r.entrada || '—'}–${r.salida || '—'}`;
+      Object.assign(r, { entrada, salida: sal, no_asistio: false, registrada_por: u.usuario_id, registrada_at: reloj() });
+      log('registrar_asistencia', colId, 'Entrada y salida de la inducción', 'ok', { entidad: 'induccion', campo: 'entrada_salida', valor_anterior: antes, valor_nuevo: `${entrada}–${sal || '—'}` });
+      rebuild(); return { ok: true, estado: estadoInduccion(r, s.hoy).estado };
+    },
+    marcarInasistencia(colId) {
+      const u = s.user; const r = s.inducciones[colId];
+      if (!s.auth.esPersonas(u) || !s.auth.enAlcance(u, colId)) return denegar('marcar_inasistencia', colId, 'Solo Personas registra la asistencia a la inducción');
+      if (!r) return { ok: false, motivo: 'La persona no tiene una sesión citada.' };
+      if (r.fecha > s.hoy) return { ok: false, motivo: 'La sesión todavía no ocurre.' };
+      Object.assign(r, { no_asistio: true, entrada: null, salida: null, registrada_por: u.usuario_id, registrada_at: reloj() });
+      log('marcar_inasistencia', colId, `Sesión ${r.fecha}`, 'ok', { entidad: 'induccion', campo: 'estado', valor_anterior: null, valor_nuevo: 'no_asistio' });
+      rebuild(); return { ok: true };
+    },
+    confirmarInduccion() {
+      const u = s.user; const id = u?.usuario_id; const r = s.inducciones[id];
+      if (!u || u.rol !== 'Colaborador' || !s.auth.enAlcance(u, id)) return denegar('confirmar_induccion', id || '—', 'Solo la persona confirma su propia inducción');
+      if (!r || r.fecha < s.hoy || r.entrada || r.no_asistio) return { ok: false, motivo: 'No tienes una sesión de inducción por confirmar.' };
+      Object.assign(r, { confirmada: true, reprogramacion: null });
+      log('confirmar_induccion', id, `Sesión ${r.fecha}`, 'ok', { entidad: 'induccion', campo: 'confirmada', valor_anterior: false, valor_nuevo: true });
+      rebuild(); return { ok: true };
+    },
+    pedirReprogramacion(motivo) {
+      const u = s.user; const id = u?.usuario_id; const r = s.inducciones[id];
+      if (!u || u.rol !== 'Colaborador' || !s.auth.enAlcance(u, id)) return denegar('pedir_reprogramacion', id || '—', 'Solo la persona pide cambiar su propia sesión');
+      if (!MOTIVOS_REPROGRAMAR[motivo]) return { ok: false, motivo: 'Elige por qué necesitas otro horario.' };
+      if (!r || r.fecha < s.hoy || r.entrada || r.no_asistio) return { ok: false, motivo: 'No tienes una sesión de inducción que se pueda cambiar.' };
+      Object.assign(r, { reprogramacion: motivo, confirmada: false });
+      log('pedir_reprogramacion', id, 'Motivo visible solo para la persona y Personas', 'ok', { entidad: 'induccion', campo: 'reprogramacion', valor_anterior: null, valor_nuevo: 'solicitada' });
+      log('notificacion_simulada', id, 'Se notificaría a Personas por correo. No se envió nada.');
+      rebuild(); return { ok: true };
+    },
+    indicadorInduccion() {
+      if (!s.auth.esPersonas(s.user)) return null;
+      return indicadorInduccion({ colabs: s.data.colaboradores.filter(c => s.auth.enAlcance(s.user, c.colaborador_id)), inducciones: s.inducciones, hoy: s.hoy });
+    },
     // Personas: bandeja de alertas accionables.
     // Los avisos operativos de la jefatura (sin tareas, próximos y nuevos ingresos) no inundan la bandeja de Personas: se ven en Indicadores.
-    alertasFicha() { return s.auth.esPersonas(s.user) ? s.alertasFicha.filter(a => !['sin_tareas', 'proximo_ingreso', 'nuevo_ingreso'].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : []; },
+    alertasFicha() { return s.auth.esPersonas(s.user) ? s.alertasFicha.filter(a => !['sin_tareas', 'proximo_ingreso', 'nuevo_ingreso', 'induccion_jefatura'].includes(a.tipo) && s.auth.enAlcance(s.user, a.colaborador_id)) : []; },
     avisosDeEquipos() {
       if (!s.auth.esPersonas(s.user)) return null;
       const t = tipo => s.alertasFicha.filter(a => a.tipo === tipo && s.auth.enAlcance(s.user, a.colaborador_id)).length;
@@ -304,7 +386,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     },
     reiniciar() {
       if (!s.auth.puedeCargarArchivos(s.user)) return denegar('reiniciar', '—', 'Sin permiso');
-      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {}; s.nuevosIngresos = []; s.avisosVistos = {}; turnos.limpiar();
+      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {}; s.nuevosIngresos = []; s.avisosVistos = {}; s.inducciones = {}; turnos.limpiar();
       s.almacenamientoLimpio = limpiarPersistenciaAnterior(); rebuild(); log('reiniciar', '—', 'Datos originales restaurados; reportes y movimientos anteriores eliminados'); s.user = null;
       return { ok: true };
     },
@@ -319,8 +401,9 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       catch {
         log('error', '—', 'No se pudo completar la acción; no se registra su contenido', 'error');
         if (nombre === 'verColaborador') return null;
-        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias', 'avisos', 'excepcionesTurnos'].includes(nombre)) return [];
-        if (['vistaFicha', 'indicadores', 'avisosDeEquipos', 'planTurnos'].includes(nombre)) return null;
+        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias', 'avisos', 'induccionesEquipo', 'excepcionesTurnos'].includes(nombre)) return [];
+        if (nombre === 'avisosDeEquipos') return null;
+        if (['vistaFicha', 'indicadores', 'vistaInduccion', 'indicadorInduccion', 'planTurnos'].includes(nombre)) return null;
         return { ok: false, motivo: 'No se pudo completar la acción. Revisa los datos e intenta nuevamente.' };
       }
     };

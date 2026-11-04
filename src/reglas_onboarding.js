@@ -70,9 +70,14 @@ export const TIPOS_ALERTA = {
   sin_tareas: 'Sin tareas asignadas',
   proximo_ingreso: 'Próximo ingreso',
   nuevo_ingreso: 'Nuevo ingreso registrado por RR.HH.',
+  induccion_sin_citar: 'Inducción sin citar',
+  induccion_por_registrar: 'Asistencia por registrar',
+  induccion_reprogramar: 'Reprogramar inducción',
+  induccion_no_asistio: 'Inasistencia a inducción',
+  induccion_jefatura: 'Inducción pendiente',
 };
 // Avisos que van a la bandeja de la jefatura (además de la bandeja de Personas).
-export const AVISOS_JEFATURA = ['nuevo_ingreso', 'proximo_ingreso', 'sin_tareas', 'ficha_sin_enviar'];
+export const AVISOS_JEFATURA = ['nuevo_ingreso', 'proximo_ingreso', 'sin_tareas', 'ficha_sin_enviar', 'induccion_jefatura'];
 export const tareasFaltantes = f => [1, 2, 3].filter(i => !f || !String(f[`tarea_${i}`] ?? '').trim()).length;
 
 const NIVEL_NORM = { Alta: 'Alta', Alto: 'Alta', Media: 'Media', Medio: 'Media', Baja: 'Baja', Bajo: 'Baja', Urgente: 'Urgente' };

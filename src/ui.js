@@ -4,8 +4,11 @@ import { MATRIZ_EFECTIVA, HITOS_TECNICOS } from './permissions.js';
 import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
+import { ESTADOS_INDUCCION, MOTIVOS_REPROGRAMAR, TONO_INDUCCION, CONFIG_INDUCCION } from './induccion.js';
 import { vistaTurnos, vistaExcepcionesTurnos, submitTurnos, clickTurnos, confirmarTurnos, changeTurnos, reiniciarTurnosUI } from './optimization/ui.js';
-const TONO_AVISO = { nuevo_ingreso: 'ok', proximo_ingreso: 'warn', sin_tareas: 'bad', ficha_sin_enviar: 'warn' };
+const TONO_AVISO = { nuevo_ingreso: 'ok', proximo_ingreso: 'warn', sin_tareas: 'bad', ficha_sin_enviar: 'warn', induccion_jefatura: 'bad' };
+const chipInd = v => `<span class="chip chip-${TONO_INDUCCION[v.estado] || 'neutral'}">${esc(v.texto)}</span>`;
+const horario = v => (v.fecha ? `${fmt(v.fecha)} · ${esc(v.inicio)}–${esc(v.fin)}` : '—');
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -29,6 +32,10 @@ const ui = {
   denegado: null,       // pantalla 403
   fichaFiltro: 'accion',
   alertaFiltro: 'abierta',
+  indFiltro: 'todas',
+  indSesion: null,      // { fecha, inicio, fin } propuesta de sesión de Personas (editable)
+  indRegistrando: null, // colaborador con formulario de asistencia abierto
+  indReprogramar: false,
 };
 let store; let root;
 const contextoTurnos = () => ({ store, ui, render, toast: toastMsg });
@@ -276,6 +283,7 @@ function vColaborador(u) {
       </div>
     </section>
     ${fichaColaborador(u, vf)}
+    ${induccionColaborador(u)}
     ${GRUPOS.map(([g, tipos], i) => `<section class="blk" id="g${i}"><p class="caption">${pad2(i + 1)} · ${g}</p>
       <ul class="rows">${grupo(tipos).map(({ h, ev }) => `<li class="hrow hrow-${ev.estadoReal === 'Cumplido' ? 'ok' : ev.estadoReal === 'Vencido' ? 'bad' : ev.estadoReal === 'Por verificar' ? 'warn' : 'neutral'}">
         <span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><span class="dim">Lo gestiona ${esc(h.responsable_tipo === 'Jefatura' ? 'tu jefatura' : funcion[h.responsable_tipo])} · plazo <span class="nw">${fmt(ev.limite)}</span></span>
@@ -302,11 +310,39 @@ function vColaborador(u) {
   const nav = [
     { label: 'Resumen', href: 'inicio' },
     ...(vf ? [{ label: 'Tu ficha de ingreso', href: 'ficha', right: porResponder ? '1' : undefined }] : []),
+    { label: 'Tu inducción', href: 'induccion' },
     ...GRUPOS.map(([g, tipos], i) => { const l = grupo(tipos); return { label: g, href: `g${i}`, n: pad2(i + 1), sub: true, right: `${l.filter(x => x.ev.estadoReal === 'Cumplido').length}/${l.length}` }; }),
     { label: 'A quién pedir ayuda', href: 'contactos' },
     ...(fichaRecibida ? [] : [{ label: '¿Algo no coincide?', href: 'ayuda' }]),
   ];
   return { nav, body };
+}
+
+function induccionColaborador(u) {
+  const v = store.vistaInduccion(u.usuario_id); if (!v) return '';
+  const hoy = store.state.hoy;
+  const abierta = ['citada', 'confirmada', 'reprogramacion'].includes(v.estado) && v.fecha >= hoy;
+  const registro = ['completa', 'parcial'].includes(v.estado);
+  return `<section class="blk" id="induccion"><div class="row-between"><p class="caption">Tu inducción general</p>${chipInd(v)}</div>
+    ${v.estado === 'sin_citar' ? '<p class="lead">Personas te citará a la inducción general. Aquí verás la fecha y el horario.</p>' : `<div class="detail">
+      <div class="stack">
+        ${abierta ? `<p class="lead">${v.estado === 'reprogramacion' ? 'Pediste otro horario. Personas te ofrecerá una nueva sesión.' : v.confirmada ? 'Confirmaste que asistirás. Llega a la hora de inicio y quédate hasta el término.' : 'Confirma que asistirás o avísanos si necesitas otro horario.'}</p>` : ''}
+        ${v.estado === 'no_asistio' ? '<p class="lead">No quedó registrada tu asistencia. Personas te contactará para darte una nueva sesión.</p>' : ''}
+        ${v.estado === 'parcial' ? '<p class="lead">Asististe a una parte de la sesión. Personas coordinará la parte pendiente.</p>' : ''}
+        ${v.estado === 'completa' ? '<p class="lead">Completaste la inducción general.</p>' : ''}
+        ${abierta && v.estado !== 'reprogramacion' ? `<div class="row">${v.confirmada ? '' : '<button class="btn btn-primary" data-act="ind-confirmar">Confirmo que asistiré</button>'}<button class="btn btn-ghost" data-act="ind-reprog-abrir">Necesito otro horario</button></div>` : ''}
+        ${abierta && ui.indReprogramar ? `<form data-form="ind-reprogramar" class="form"><fieldset class="choice"><legend class="caption">¿Por qué necesitas otro horario?*</legend>
+          ${Object.entries(MOTIVOS_REPROGRAMAR).map(([k, t]) => `<label class="radio"><input type="radio" name="motivo" value="${esc(k)}"> ${esc(t)}</label>`).join('')}</fieldset>
+          <p class="hint">Solo eliges el motivo. Lo ve Personas, no tu jefatura.</p>
+          <div class="row"><button class="btn btn-primary" type="submit">Pedir otro horario</button><button class="btn btn-ghost" type="button" data-act="ind-reprog-cerrar">Cancelar</button></div></form>` : ''}
+      </div>
+      ${stats([
+        ['Fecha y horario', horario(v)],
+        ['Lugar', SIN_DATO('Personas lo informa en la citación')],
+        ...(registro ? [['Tu entrada', esc(v.entrada)], ['Tu salida', esc(v.salida)]] : []),
+      ])}
+    </div>`}
+    <p class="hint">Si la sesión choca con tu turno, pide otro horario: Personas coordina con tu jefatura para que puedas asistir.</p></section>`;
 }
 
 function fichaColaborador(u, v) {
@@ -402,13 +438,13 @@ function vJefatura(u) {
       ${recientes.length ? `<p class="caption">Ingresaron en los últimos 30 días</p>${listaIngresos(recientes)}` : ''}
     </section>
     <section class="blk" id="equipo"><p class="caption">Personas de tu equipo</p>
-      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
-      ${equipo.map(c => { const av = avanceColaborador(c.colaborador_id, idx, hoy); return `<tr>
+      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th>Inducción</th><th></th></tr></thead><tbody>
+      ${equipo.map(c => { const av = avanceColaborador(c.colaborador_id, idx, hoy); const vi = store.vistaInduccion(c.colaborador_id); return `<tr>
         <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
         <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
-        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
+        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td><td>${vi ? `${chipInd(vi)}${vi.fecha ? `<br><small class="dim nw">${horario(vi)}</small>` : ''}` : '—'}</td>
         <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Ver hitos'}</button></td></tr>
-        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`; }).join('')}
+        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="8">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
       <p class="hint">No ves canales de contacto ni los reportes que las personas envían a Personas.</p>
     </section>
@@ -531,7 +567,7 @@ function tiPendiente(u, h) {
 }
 
 // ---------- Personas / Administrador ----------
-const TABS = [['fichas', 'Fichas de ingreso', 'Quién está listo para su primer día.'], ['alertas', 'Alertas', 'Qué hay que resolver, quién y para cuándo.'], ['indicadores', 'Indicadores', 'Si la ficha está cambiando el ingreso.'],
+const TABS = [['fichas', 'Fichas de ingreso', 'Quién está listo para su primer día.'], ['alertas', 'Alertas', 'Qué hay que resolver, quién y para cuándo.'], ['induccion', 'Inducción', 'Quién asistió a la inducción, cuándo entró y cuándo salió.'], ['indicadores', 'Indicadores', 'Si la ficha está cambiando el ingreso.'],
   ['resumen', 'Resumen', 'Proceso de ingreso completo.'], ['casos', 'Casos críticos', 'Personas que necesitan una acción hoy.'], ['calidad', 'Calidad de datos', 'Lo que los archivos no dicen bien.'],
   ['reportes', 'Reportes', 'Lo que dicen los colaboradores.'], ['permisos', 'Permisos', 'Quién puede ver y hacer qué.'], ['bitacora', 'Bitácora', 'Cada cambio y cada acceso, con su autor.'], ['datos', 'Datos', 'Fecha de corte y carga de archivos.']];
 function vPersonas(u) {
@@ -544,7 +580,7 @@ function vPersonas(u) {
   const reglasAltas = new Set(alertasVisibles(u).filter(a => a.sev === 'alta').map(a => a.regla)).size;
   const [, nombreTab, titulo] = TABS.find(t => t[0] === ui.tab);
   const i = TABS.findIndex(t => t[0] === ui.tab);
-  const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+  const contenido = { fichas: tFichas, alertas: tAlertas, induccion: tInduccion, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
   const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas', `${pad2(i + 1)} · ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}${vistaExcepcionesTurnos(store, esc, fmt)}`;
   const nav = disponibles.map(([k, t], j) => ({ label: t, act: 'tab', arg: k, n: pad2(j + 1), active: ui.tab === k,
     right: k === 'reportes' ? (rep || undefined) : k === 'calidad' ? reglasAltas : k === 'alertas' ? (store.alertasFicha().filter(a => a.estado === 'abierta').length || undefined) : undefined }));
@@ -587,6 +623,56 @@ function tAlertas(u) {
     ${h && ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="8" class="empty">Sin alertas en este filtro.</td></tr>'}
   </tbody></table></div>${lista.length > 150 ? `<p class="hint">Se muestran 150 de ${lista.length}.</p>` : ''}</section>`;
 }
+function tInduccion() {
+  const s = store.state; const hoy = s.hoy;
+  const ses = ui.indSesion || (ui.indSesion = { fecha: hoy, inicio: '09:00', fin: '13:00' });
+  const todas = store.induccionesEquipo();
+  const k = store.indicadorInduccion();
+  const F = {
+    todas: ['Todas', todas],
+    sin_citar: ['Sin citación', todas.filter(v => v.estado === 'sin_citar')],
+    citadas: ['Citadas', todas.filter(v => ['citada', 'confirmada', 'reprogramacion'].includes(v.estado))],
+    por_registrar: ['Por registrar', todas.filter(v => v.estado === 'por_registrar' || (v.fecha === hoy && ['citada', 'confirmada'].includes(v.estado)))],
+    problemas: ['No asistió o parcial', todas.filter(v => ['no_asistio', 'parcial'].includes(v.estado))],
+  };
+  const lista = F[ui.indFiltro][1];
+  const sinCitarFiltro = lista.filter(v => v.estado === 'sin_citar' || v.estado === 'reprogramacion');
+  const fila = v => {
+    const puedeReg = v.fecha && v.fecha <= hoy && !['sin_citar'].includes(v.estado);
+    const acc = [];
+    if (['sin_citar', 'reprogramacion', 'no_asistio', 'parcial'].includes(v.estado)) acc.push(`<button class="btn btn-primary btn-sm" data-act="ind-citar" data-arg="${esc(v.colaborador_id)}">${v.estado === 'sin_citar' ? 'Citar' : 'Reprogramar'}</button>`);
+    if (puedeReg) acc.push(`<button class="btn btn-ghost btn-sm" data-act="ind-registrar" data-arg="${esc(v.colaborador_id)}">${ui.indRegistrando === v.colaborador_id ? 'Cerrar' : 'Registrar asistencia'}</button>`);
+    return `<tr><td><b>${esc(nombreDe(v.colaborador_id))}</b><br><code>${esc(v.colaborador_id)}</code></td>
+      <td class="num">${fmt(s.idx.colab.get(v.colaborador_id)?.fecha_ingreso)}</td><td>${chipInd(v)}${v.motivo ? `<br><small class="dim">${esc(MOTIVOS_REPROGRAMAR[v.motivo])}</small>` : ''}</td>
+      <td class="num">${horario(v)}${v.previas ? `<br><small class="dim">${v.previas} ${v.previas === 1 ? 'sesión anterior' : 'sesiones anteriores'}</small>` : ''}</td>
+      <td class="num">${v.entrada ? `${esc(v.entrada)}–${esc(v.salida || '…')}` : '—'}${v.atraso > CONFIG_INDUCCION.toleranciaMin ? `<br><small class="tone-bad">${v.atraso} min tarde</small>` : ''}${v.salidaAntes > CONFIG_INDUCCION.toleranciaMin ? `<br><small class="tone-bad">salió ${v.salidaAntes} min antes</small>` : ''}</td>
+      <td><div class="row">${acc.join('')}</div></td></tr>
+      ${ui.indRegistrando === v.colaborador_id ? `<tr class="sub"><td colspan="6"><form data-form="ind-registrar" data-arg="${esc(v.colaborador_id)}" class="form form-inline">
+        <div class="field"><label for="ie-${esc(v.colaborador_id)}">Hora de entrada*</label><input type="time" id="ie-${esc(v.colaborador_id)}" name="entrada" value="${esc(v.entrada || '')}" required></div>
+        <div class="field"><label for="is-${esc(v.colaborador_id)}">Hora de salida</label><input type="time" id="is-${esc(v.colaborador_id)}" name="salida" value="${esc(v.salida || '')}"></div>
+        <div class="row"><button class="btn btn-primary btn-sm" type="submit">Guardar asistencia</button><button class="btn btn-ghost btn-sm" type="button" data-act="ind-no-asistio" data-arg="${esc(v.colaborador_id)}">No asistió</button></div>
+        <p class="hint">Sesión ${horario(v)}. Tolerancia de ${CONFIG_INDUCCION.toleranciaMin} min para llegar o salir.</p></form></td></tr>` : ''}`;
+  };
+  return `<section class="blk"><div class="detail">
+      <div class="stack"><p class="big-num num ${k && k.pctAsistencia !== null && k.pctAsistencia < k.lineaBase ? 'tone-bad' : ''}">${k && k.pctAsistencia !== null ? `${k.pctAsistencia}%` : '—'}</p>
+        <p class="lead">${k && k.registradas ? `asistencia a la inducción en las sesiones registradas (${k.registradas}). Línea base del dossier: ${k.lineaBase}%.` : `Aún no hay sesiones registradas. Línea base del dossier: ${CONFIG_INDUCCION.lineaBase}% de asistencia.`}</p>
+        <p class="hint">Asistir no basta: también se mide si la persona estuvo la sesión completa (entrada y salida).</p></div>
+      ${k ? stats([['Citadas', String(k.citadas)], ['Asistieron completa', String(k.completas), k.completas ? 'ok' : ''], ['Asistieron parcial', String(k.parciales), k.parciales ? 'warn' : ''], ['No asistieron', String(k.noAsistio), k.noAsistio ? 'bad' : ''], ['Falta registrar', String(k.porRegistrar), k.porRegistrar ? 'warn' : ''], ['Pidieron otro horario', String(k.reprogramacion), k.reprogramacion ? 'warn' : '']]) : ''}
+    </div></section>
+  <section class="blk"><p class="caption">Sesión para citar</p>
+    <div class="form form-inline">
+      <div class="field"><label for="ind-fecha">Fecha*</label><input type="date" id="ind-fecha" data-change="ind-sesion" name="fecha" value="${esc(ses.fecha)}" min="${esc(hoy)}"></div>
+      <div class="field"><label for="ind-inicio">Inicio*</label><input type="time" id="ind-inicio" data-change="ind-sesion" name="inicio" value="${esc(ses.inicio)}"></div>
+      <div class="field"><label for="ind-fin">Término*</label><input type="time" id="ind-fin" data-change="ind-sesion" name="fin" value="${esc(ses.fin)}"></div>
+      ${sinCitarFiltro.length ? `<div><button class="btn btn-primary btn-sm" data-act="ind-citar-todos">Citar a ${sinCitarFiltro.length} ${sinCitarFiltro.length === 1 ? 'persona' : 'personas'} de esta lista</button></div>` : ''}
+    </div>
+    <p class="hint">Define la sesión una vez y cita a cada persona con "Citar". Se notificaría a cada persona por su canal registrado (simulado). Si choca con su turno, la persona puede pedir otro horario.</p>
+    ${filtros('ind-filtro', Object.entries(F).map(([key, [t, l]]) => [key, t, l.length]), ui.indFiltro)}
+    <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Estado</th><th>Sesión</th><th>Entrada–salida</th><th></th></tr></thead><tbody>
+    ${lista.map(fila).join('') || '<tr><td colspan="6" class="empty">Sin personas en este filtro.</td></tr>'}</tbody></table></div>
+    <p class="hint">La hora de entrada y salida la ven solo la persona y Personas. La jefatura ve el estado. No es un control de asistencia laboral.</p></section>`;
+}
+
 function tIndicadores() {
   const k = store.indicadores(); if (!k) return '';
   const disc = Object.values(k.porMotivo).reduce((a, b) => a + b, 0);
@@ -598,6 +684,7 @@ function tIndicadores() {
     </div></section>
   ${(() => { const e = store.avisosDeEquipos(); return e ? `<section class="blk"><p class="caption">Avisos enviados a jefaturas</p>${stats([['Personas sin tareas asignadas', String(e.sinTareas), e.sinTareas ? 'bad' : ''], ['Próximos ingresos (14 días)', String(e.proximos)], ['Nuevos ingresos registrados por RR.HH.', String(e.nuevos)]])}
     <p class="hint">Cada jefatura ve el detalle de su equipo en su bandeja de avisos.</p></section>` : ''; })()}
+  ${(() => { const i = store.indicadorInduccion(); return i ? `<section class="blk"><p class="caption">Inducción general</p>${stats([['Asistencia en sesiones registradas', i.pctAsistencia === null ? '—' : `${i.pctAsistencia}%`, i.pctAsistencia !== null && i.pctAsistencia < i.lineaBase ? 'bad' : ''], ['Asistieron la sesión completa', i.pctCompleta === null ? '—' : `${i.pctCompleta}%`], ['Línea base del dossier', `${i.lineaBase}%`], ['Sin citación', String(i.sinCitar)]])}</section>` : ''; })()}
   <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
   <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
     ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), 'bad'])) : '<p class="empty">Sin hitos atrasados.</p>'}
@@ -736,6 +823,16 @@ async function onSubmit(e) {
     ui.fichaErrores = null;
     return toastMsg(op === 'enviar' ? `Ficha enviada. ${r.aviso}` : `Borrador guardado: ${ESTADOS_FICHA[r.estado]}.`);
   }
+  if (kind === 'ind-registrar') {
+    const r = store.registrarAsistencia(f.dataset.arg, String(fd.get('entrada') || ''), String(fd.get('salida') || ''));
+    if (r.ok) ui.indRegistrando = null;
+    return toastMsg(r.ok ? `Asistencia guardada: ${ESTADOS_INDUCCION[r.estado].toLowerCase()}.` : r.motivo);
+  }
+  if (kind === 'ind-reprogramar') {
+    const r = store.pedirReprogramacion(String(fd.get('motivo') || ''));
+    if (r.ok) ui.indReprogramar = false;
+    return toastMsg(r.ok ? 'Pediste otro horario. Personas te ofrecerá una nueva sesión.' : r.motivo);
+  }
   if (kind === 'ti-pendiente') { const r = store.marcarPendiente(f.dataset.arg, String(fd.get('fecha') || '')); return toastMsg(r.ok ? 'Fecha comprometida guardada.' : r.motivo); }
   if (kind === 'reporte') { const r = store.reportar(String(fd.get('tipo'))); return toastMsg(r.ok ? 'Solicitud creada en esta demo para revisión de Personas. Se borra al recargar.' : r.motivo); }
   if (kind === 'buscar') {
@@ -773,7 +870,7 @@ async function onSubmit(e) {
   }
 }
 
-function resetUi() { reiniciarTurnosUI(ui); Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
+function resetUi() { reiniciarTurnosUI(ui); Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null, indRegistrando: null, indReprogramar: false, indFiltro: 'todas' }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -789,6 +886,20 @@ function onClick(e) {
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();
     case 'ti-filtro': ui.tiFiltro = arg; ui.reasignando = null; return render();
     case 'ficha-filtro': ui.fichaFiltro = arg; return render();
+    case 'ind-filtro': ui.indFiltro = arg; ui.indRegistrando = null; return render();
+    case 'ind-registrar': ui.indRegistrando = ui.indRegistrando === arg ? null : arg; return render();
+    case 'ind-citar': { const x = ui.indSesion || {}; const r = store.citarInduccion(arg, x.fecha, x.inicio, x.fin); return toastMsg(r.ok ? `Citación guardada para el ${fmt(x.fecha)} (${x.inicio}–${x.fin}).` : r.motivo); }
+    case 'ind-citar-todos': {
+      const x = ui.indSesion || {};
+      const ids = store.induccionesEquipo().filter(v => v.estado === 'sin_citar' || v.estado === 'reprogramacion')
+        .filter(v => ui.indFiltro === 'todas' || ui.indFiltro === 'sin_citar' || ui.indFiltro === 'citadas').map(v => v.colaborador_id);
+      const r = store.citarVarios(ids, x.fecha, x.inicio, x.fin);
+      return toastMsg(r.ok ? `${r.citadas} ${r.citadas === 1 ? 'persona citada' : 'personas citadas'} para el ${fmt(x.fecha)}.` : r.motivo);
+    }
+    case 'ind-no-asistio': { const r = store.marcarInasistencia(arg); if (r.ok) ui.indRegistrando = null; return toastMsg(r.ok ? 'Inasistencia registrada. Personas y la jefatura tienen el aviso.' : r.motivo); }
+    case 'ind-confirmar': { const r = store.confirmarInduccion(); return toastMsg(r.ok ? 'Confirmaste tu asistencia a la inducción.' : r.motivo); }
+    case 'ind-reprog-abrir': ui.indReprogramar = true; return render();
+    case 'ind-reprog-cerrar': ui.indReprogramar = false; return render();
     case 'aviso-visto': { const r = store.marcarAvisoVisto(arg); return r.ok ? render() : toastMsg(r.motivo); }
     case 'aviso-ficha': {
       const r = store.entrar('/ficha', arg); if (!r.ok) { ui.denegado = arg; return render(); }
@@ -840,6 +951,7 @@ function selExport() { const t = root.querySelector('#exp'); if (t) { t.focus();
 function onChange(e) {
   const el = e.target.closest('[data-change]'); if (!el) return;
   if (el.dataset.change.startsWith('turnos-')) return changeTurnos(el, contextoTurnos());
+  if (el.dataset.change === 'ind-sesion') { ui.indSesion = { ...(ui.indSesion || {}), [el.name]: el.value }; return; }
   if (el.dataset.change === 'rep-estado') { const r = store.cambiarEstadoReporte(el.dataset.arg, el.value); toastMsg(r.ok ? 'Estado actualizado.' : r.motivo); }
 }
 function onToggle(e) { const d = e.target; if (d.matches && d.matches('details[data-regla]')) ui.alertaAbierta = d.open ? d.dataset.regla : (ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta); }
