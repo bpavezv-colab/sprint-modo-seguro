@@ -1,0 +1,86 @@
+usuario_id,nombre_ficticio,rol,area,equipo_asignado,puede_ver_datos_personales,puede_editar_hitos,puede_asignar_responsables,puede_ver_metricas
+COL-001,Alex Rojas,Colaborador,Personas,COL-001,Sí,No,No,No
+COL-002,Camila Rojas,Colaborador,Operaciones,COL-002,Sí,No,No,No
+COL-003,Daniel Rojas,Colaborador,Tecnología,COL-003,Sí,No,No,No
+COL-004,Emilia Rojas,Colaborador,Comercial,COL-004,Sí,No,No,No
+COL-005,Felipe Rojas,Colaborador,Personas,COL-005,Sí,No,No,No
+COL-006,Gabriela Rojas,Colaborador,Operaciones,COL-006,Sí,No,No,No
+COL-007,Hugo Rojas,Colaborador,Tecnología,COL-007,Sí,No,No,No
+COL-008,Isidora Rojas,Colaborador,Comercial,COL-008,Sí,No,No,No
+COL-009,Javier Rojas,Colaborador,Personas,COL-009,Sí,No,No,No
+COL-010,Karina Rojas,Colaborador,Operaciones,COL-010,Sí,No,No,No
+COL-011,Lucas Rojas,Colaborador,Tecnología,COL-011,Sí,No,No,No
+COL-012,Martina Rojas,Colaborador,Comercial,COL-012,Sí,No,No,No
+COL-013,Alex Soto,Colaborador,Personas,COL-013,Sí,No,No,No
+COL-014,Camila Soto,Colaborador,Operaciones,COL-014,Sí,No,No,No
+COL-015,Daniel Soto,Colaborador,Tecnología,COL-015,Sí,No,No,No
+COL-016,Emilia Soto,Colaborador,Comercial,COL-016,Sí,No,No,No
+COL-017,Felipe Soto,Colaborador,Personas,COL-017,Sí,No,No,No
+COL-018,Gabriela Soto,Colaborador,Operaciones,COL-018,Sí,No,No,No
+COL-019,Hugo Soto,Colaborador,Tecnología,COL-019,Sí,No,No,No
+COL-020,Isidora Soto,Colaborador,Comercial,COL-020,Sí,No,No,No
+COL-021,Javier Soto,Colaborador,Personas,COL-021,Sí,No,No,No
+COL-022,Karina Soto,Colaborador,Operaciones,COL-022,Sí,No,No,No
+COL-023,Lucas Soto,Colaborador,Tecnología,COL-023,Sí,No,No,No
+COL-024,Martina Soto,Colaborador,Comercial,COL-024,Sí,No,No,No
+COL-025,Alex Vega,Colaborador,Personas,COL-025,Sí,No,No,No
+COL-026,Camila Vega,Colaborador,Operaciones,COL-026,Sí,No,No,No
+COL-027,Daniel Vega,Colaborador,Tecnología,COL-027,Sí,No,No,No
+COL-028,Emilia Vega,Colaborador,Comercial,COL-028,Sí,No,No,No
+COL-029,Felipe Vega,Colaborador,Personas,COL-029,Sí,No,No,No
+COL-030,Gabriela Vega,Colaborador,Operaciones,COL-030,Sí,No,No,No
+COL-031,Hugo Vega,Colaborador,Tecnología,COL-031,Sí,No,No,No
+COL-032,Isidora Vega,Colaborador,Comercial,COL-032,Sí,No,No,No
+COL-033,Javier Vega,Colaborador,Personas,COL-033,Sí,No,No,No
+COL-034,Karina Vega,Colaborador,Operaciones,COL-034,Sí,No,No,No
+COL-035,Lucas Vega,Colaborador,Tecnología,COL-035,Sí,No,No,No
+COL-036,Martina Vega,Colaborador,Comercial,COL-036,Sí,No,No,No
+COL-037,Alex Paredes,Colaborador,Personas,COL-037,Sí,No,No,No
+COL-038,Camila Paredes,Colaborador,Operaciones,COL-038,Sí,No,No,No
+COL-039,Daniel Paredes,Colaborador,Tecnología,COL-039,Sí,No,No,No
+COL-040,Emilia Paredes,Colaborador,Comercial,COL-040,Sí,No,No,No
+COL-041,Felipe Paredes,Colaborador,Personas,COL-041,Sí,No,No,No
+COL-042,Gabriela Paredes,Colaborador,Operaciones,COL-042,Sí,No,No,No
+COL-043,Hugo Paredes,Colaborador,Tecnología,COL-043,Sí,No,No,No
+COL-044,Isidora Paredes,Colaborador,Comercial,COL-044,Sí,No,No,No
+COL-045,Javier Paredes,Colaborador,Personas,COL-045,Sí,No,No,No
+COL-046,Karina Paredes,Colaborador,Operaciones,COL-046,Sí,No,No,No
+COL-047,Lucas Paredes,Colaborador,Tecnología,COL-047,Sí,No,No,No
+COL-048,Martina Paredes,Colaborador,Comercial,COL-048,Sí,No,No,No
+COL-049,Alex Molina,Colaborador,Personas,COL-049,Sí,No,No,No
+COL-050,Camila Molina,Colaborador,Operaciones,COL-050,Sí,No,No,No
+COL-051,Daniel Molina,Colaborador,Tecnología,COL-051,Sí,No,No,No
+COL-052,Emilia Molina,Colaborador,Comercial,COL-052,Sí,No,No,No
+COL-053,Felipe Molina,Colaborador,Personas,COL-053,Sí,No,No,No
+COL-054,Gabriela Molina,Colaborador,Operaciones,COL-054,Sí,No,No,No
+COL-055,Hugo Molina,Colaborador,Tecnología,COL-055,Sí,No,No,No
+COL-056,Isidora Molina,Colaborador,Comercial,COL-056,Sí,No,No,No
+COL-057,Javier Molina,Colaborador,Personas,COL-057,Sí,No,No,No
+COL-058,Karina Molina,Colaborador,Operaciones,COL-058,Sí,No,No,No
+COL-059,Lucas Molina,Colaborador,Tecnología,COL-059,Sí,No,No,No
+COL-060,Martina Molina,Colaborador,Comercial,COL-060,Sí,No,No,No
+COL-061,Bruno Nuevo,Colaborador,Operaciones,COL-061,Sí,No,No,No
+JEF-001,Emilia Jefatura 01,Jefatura,Personas,COL-001|COL-013|COL-025|COL-037|COL-049,Sí,Sí,No,Sí
+JEF-002,Felipe Jefatura 02,Jefatura,Operaciones,COL-002|COL-014|COL-026|COL-038|COL-050|COL-061,Sí,Sí,No,Sí
+JEF-003,Gabriela Jefatura 03,Jefatura,Tecnología,COL-003|COL-015|COL-027|COL-039|COL-051,Sí,Sí,No,Sí
+JEF-004,Hugo Jefatura 04,Jefatura,Comercial,COL-004|COL-016|COL-028|COL-040|COL-052,Sí,Sí,No,Sí
+JEF-005,Isidora Jefatura 05,Jefatura,Personas,COL-005|COL-017|COL-029|COL-041|COL-053,Sí,Sí,No,Sí
+JEF-006,Javier Jefatura 06,Jefatura,Operaciones,COL-006|COL-018|COL-030|COL-042|COL-054,Sí,Sí,No,Sí
+JEF-007,Karina Jefatura 07,Jefatura,Tecnología,COL-007|COL-031|COL-043|COL-055,Sí,Sí,No,Sí
+JEF-008,Lucas Jefatura 08,Jefatura,Comercial,COL-008|COL-020|COL-032|COL-044|COL-056,Sí,Sí,No,Sí
+JEF-009,Martina Jefatura 09,Jefatura,Personas,COL-009|COL-021|COL-033|COL-045|COL-057,Sí,Sí,No,Sí
+JEF-010,Alex Jefatura 10,Jefatura,Operaciones,COL-010|COL-022|COL-034|COL-046|COL-058,Sí,Sí,No,Sí
+JEF-011,Camila Jefatura 11,Jefatura,Tecnología,COL-011|COL-023|COL-035|COL-047|COL-059,Sí,Sí,No,Sí
+JEF-012,Daniel Jefatura 12,Jefatura,Comercial,COL-012|COL-024|COL-036|COL-048|COL-060,Sí,Sí,No,Sí
+PER-001,Hugo Personas 01,Personas,Personas,COL-001 a COL-061,Sí,Sí,Sí,Sí
+PER-002,Isidora Personas 02,Personas,Personas,COL-001 a COL-061,Sí,Sí,Sí,Sí
+PER-003,Javier Personas 03,Personas,Personas,COL-001 a COL-061,Sí,Sí,Sí,Sí
+PER-004,Karina Personas 04,Personas,Personas,COL-001 a COL-061,Sí,Sí,Sí,Sí
+TI-001,Karina Soporte TI 01,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+TI-002,Lucas Soporte TI 02,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+TI-003,Martina Soporte TI 03,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+TI-004,Alex Soporte TI 04,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+TI-005,Camila Soporte TI 05,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+TI-006,Daniel Soporte TI 06,TI,Tecnología,COL-001 a COL-061 (solo hitos Equipo y Acceso),No,Sí,Sí,Sí
+ADM-001,Renata Administración 01,Administrador,Administración,Todos los usuarios,Sí,Sí,Sí,Sí
+ADM-002,Tomás Administración 02,Administrador,Administración,Todos los usuarios,Sí,Sí,Sí,Sí

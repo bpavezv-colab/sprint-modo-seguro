@@ -61,6 +61,14 @@ La suite incluye pruebas de reglas, excepciones y privacidad (`tests/core.test.m
 
 Ver `AGENTS.md` (reglas para Codex) y `CODEX_TASKS.md` (tareas listas para pegar).
 
+## Avisos a la jefatura
+- **Sin tareas asignadas:** cada persona del equipo (en sus primeros 90 días o por ingresar) sin las 3 tareas de su ficha genera un aviso a su jefatura, con plazo y prioridad. Desaparece al asignar las tareas.
+- **Próximo ingreso:** alguien del equipo ingresa en 14 días o menos.
+- **Nuevo ingreso registrado por RR.HH.:** cuando Personas carga un archivo de RR.HH. con una persona nueva, su jefatura recibe el aviso.
+- La jefatura ve el contador en la barra superior y la bandeja "Avisos"; Personas ve el total en Indicadores. Parámetros en `CONFIG` (`src/reglas_onboarding.js`).
+
+**Demo de nuevo ingreso:** entra como `PER-001` → Datos → carga los 3 archivos de `tests/fixtures/nuevo_ingreso/` (kit de prueba sintético con COL-061 en el equipo de JEF-002; se regenera con `node scripts/fixture_nuevo_ingreso.mjs`). Luego entra como `JEF-002`.
+
 ## Planificación Inteligente de Turnos
 
 Extensión de demostración para jefaturas, separada del onboarding oficial. La implementación vive en `src/optimization/` y funciona dentro del mismo HTML offline, sin backend ni dependencias de runtime nuevas.

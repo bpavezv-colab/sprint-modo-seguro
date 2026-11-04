@@ -5,6 +5,7 @@ import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
 import { vistaTurnos, vistaExcepcionesTurnos, submitTurnos, clickTurnos, confirmarTurnos, changeTurnos, reiniciarTurnosUI } from './optimization/ui.js';
+const TONO_AVISO = { nuevo_ingreso: 'ok', proximo_ingreso: 'warn', sin_tareas: 'bad', ficha_sin_enviar: 'warn' };
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -105,6 +106,7 @@ function topbar() {
     <span class="logo" aria-label="Sprint"><span class="logo-mark" aria-hidden="true"></span><span class="logo-txt">Sprint</span><span class="logo-sub caption">Onboarding · Modo Seguro</span></span>
     <nav class="topnav caption" aria-label="Sesión">
       <span class="tn-cut">Corte ${fmt(s.hoy)}</span>
+      ${u && u.rol === 'Jefatura' ? (() => { const n = store.avisos().filter(a => !a.visto).length; return `<a class="tn-avisos ${n ? 'on' : ''}" href="#avisos" aria-label="${n} avisos sin revisar">Avisos <b class="num">${n}</b></a>`; })() : ''}
       ${u ? `<span class="tn-who">${esc(u.rol)} · ${esc(u.usuario_id)}</span><button data-act="logout">Cambiar usuario</button>` : '<span class="tn-who">Datos sintéticos · solo en memoria</span>'}
     </nav>
   </header>`;
@@ -196,14 +198,11 @@ const DEMO = [
   ['PER-001', 'Equipo de Personas', 'Supervisión del proceso de ingreso'],
 ];
 function vLogin() {
-  const s = store.state;
-  const internos = ['Jefatura', 'Personas', 'TI', 'Administrador'].map(rol =>
-    `<optgroup label="${rol}">${s.data.usuarios.filter(x => x.rol === rol).map(x => `<option value="${esc(x.usuario_id)}">${esc(x.usuario_id)}</option>`).join('')}</optgroup>`).join('');
   let paso;
   if (!ui.loginStep) {
     paso = `<form data-form="col-id" class="form">
-      <div class="field"><label for="col-id">Tu código de colaborador*</label><input id="col-id" name="id" placeholder="COL-002" autocomplete="off" required></div>
-      <p class="hint">No necesitas correo corporativo.</p>
+      <div class="field"><label for="col-id">Tu código de persona*</label><input id="col-id" name="id" placeholder="Ej. COL-002, JEF-002, TI-004 o PER-001" autocomplete="off" autocapitalize="characters" required></div>
+      <p class="hint">No necesitas correo corporativo. En producción el código de verificación llegaría por tu canal registrado o se usaría el inicio de sesión corporativo.</p>
       <div><button class="btn btn-primary" type="submit">Continuar</button></div></form>`;
   } else {
     paso = `<form data-form="col-code" class="form">
@@ -221,18 +220,22 @@ function vLogin() {
     <section class="blk" id="ingreso">
       <p class="caption">Ingresar</p>
       <div class="detail">
-        <div><h2 class="h-md">Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
-        <div><h2 class="h-md">Equipo interno</h2>
-          <form data-form="staff" class="form">
-            <div class="field"><label for="staff-id">Cuenta*</label><select id="staff-id" name="id">${internos}</select></div>
-            <p class="hint">Selector de cuentas sintéticas. El inicio de sesión corporativo está pendiente.</p>
-            <div><button class="btn btn-primary" type="submit">Ingresar</button></div>
-          </form></div>
+        <div class="stack"><h2 class="h-lg">Una sola entrada para todo Nexo.</h2>
+          <p class="lead">Colaboradores, jefaturas, Soporte TI y Personas entran igual, con su código de persona. Según tu rol, Sprint te muestra tu checklist de ingreso o tu bandeja de trabajo.</p>
+          ${stats([
+            ['COL-###', 'Colaborador/a · tu checklist y tu ficha'],
+            ['JEF-###', 'Jefatura · fichas y acciones de tu equipo'],
+            ['TI-###', 'Soporte TI · equipos y accesos'],
+            ['PER-### · ADM-###', 'Personas · proceso completo'],
+          ])}
+        </div>
+        <div class="stack">${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
       </div>
     </section>
     <section class="blk" id="demo">
       <p class="caption">Recorrido de demo</p>
       <h2 class="h-lg">Cinco cuentas, un mismo proceso.</h2>
+      <p class="hint">Atajos para la presentación: entran directo, sin el código de verificación.</p>
       <ul class="rows">${DEMO.map(([id, n, d], i) => `<li><button class="row-btn" data-act="quick" data-arg="${esc(id)}">
         <span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(n)}</b><span class="dim">${esc(d)}</span></span><code>${esc(id)}</code><span class="plus-ico" aria-hidden="true"></span></button></li>`).join('')}</ul>
     </section>`;
@@ -359,14 +362,29 @@ function vJefatura(u) {
   const metr = auth.alcanceMetricas(u) === 'equipo' ? metricasPorTipo(items) : null;
   const fichas = equipo.map(c => store.vistaFicha(c.colaborador_id)).filter(Boolean);
   const porEnviar = fichas.filter(v => ['incompleta', 'lista'].includes(v.est)).length;
+  const avisos = store.avisos();
+  const pendientes = avisos.filter(a => !a.visto);
+  const sinTareas = avisos.filter(a => a.tipo === 'sin_tareas').length;
+  const nuevos = [...new Set(avisos.filter(a => a.tipo === 'nuevo_ingreso' || a.tipo === 'proximo_ingreso').map(a => a.colaborador_id))];
   const body = `<section class="blk hero" id="inicio">
       ${tags([u.area, `Equipo de ${equipo.length}`, 'Jefatura'])}
-      <h1>${porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? 'ficha de ingreso por enviar' : 'fichas de ingreso por enviar'}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'}` : ''}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'} con tu equipo de ingreso.` : 'Tu equipo de ingreso está al día contigo.'}</h1>
+      <h1>${nuevos.length ? `${nuevos.length === 1 ? 'Llega una persona nueva' : `Llegan ${nuevos.length} personas nuevas`} a tu equipo${sinTareas ? ` y ${sinTareas} ${sinTareas === 1 ? 'persona no tiene' : 'personas no tienen'} tareas asignadas` : ''}.`
+        : sinTareas ? `${sinTareas === 1 ? 'Una persona de tu equipo no tiene' : `${sinTareas} personas de tu equipo no tienen`} tareas asignadas.`
+        : porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? 'ficha de ingreso por enviar' : 'fichas de ingreso por enviar'}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'}` : ''}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'} con tu equipo de ingreso.` : 'Tu equipo de ingreso está al día contigo.'}</h1>
       <div class="detail">
         <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
           ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? '' : 'notice-bad'}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} está en tu equipo.` : `${esc(ui.busqueda.id)} está fuera de tu alcance. El intento quedó registrado en la bitácora.`}</p>` : ''}</form>
-        ${auth.puedeVerMetricas(u) ? stats([['Personas en tu equipo', String(equipo.length)], ['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : ''], ['Hitos atrasados del equipo, de cualquier área', String(vencEquipo.length), vencEquipo.length ? 'bad' : '']]) : stats([['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : '']])}
+        ${auth.puedeVerMetricas(u) ? stats([['Personas en tu equipo', String(equipo.length)], ['Sin tareas asignadas', String(sinTareas), sinTareas ? 'bad' : ''], ['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : ''], ['Hitos atrasados del equipo, de cualquier área', String(vencEquipo.length), vencEquipo.length ? 'bad' : '']]) : stats([['Sin tareas asignadas', String(sinTareas), sinTareas ? 'bad' : ''], ['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : '']])}
       </div>
+    </section>
+    <section class="blk" id="avisos"><div class="row-between"><p class="caption">Avisos</p><span class="caption dim">${pendientes.length} sin revisar</span></div>
+      ${avisos.length ? `<ul class="rows">${avisos.map(a => `<li class="hrow aviso ${a.visto ? 'visto' : ''}">
+        <span class="chip chip-${TONO_AVISO[a.tipo] || 'neutral'}">${esc(TIPOS_ALERTA[a.tipo] || a.tipo)}</span>
+        <span class="rb-main"><b>${esc(a.titulo)} · ${esc(nombreDe(a.colaborador_id))}</b><span class="dim">${esc(a.accion_requerida)} Plazo <span class="nw">${fmt(a.plazo)}</span>.</span></span>
+        <span class="row">${['sin_tareas', 'nuevo_ingreso', 'proximo_ingreso', 'ficha_sin_enviar'].includes(a.tipo) ? `<button class="btn btn-primary btn-sm" data-act="aviso-ficha" data-arg="${esc(a.colaborador_id)}">${a.tipo === 'sin_tareas' ? 'Asignar tareas' : 'Preparar ficha'}</button>` : ''}
+          ${a.visto ? '<span class="caption dim">Visto</span>' : `<button class="btn btn-ghost btn-sm" data-act="aviso-visto" data-arg="${esc(a.id)}">Marcar visto</button>`}</span></li>`).join('')}</ul>`
+        : '<p class="empty">Sin avisos. Cuando RR.HH. registre un ingreso en tu equipo o alguien quede sin tareas, aparecerá aquí.</p>'}
+      <p class="hint">Asignar tareas claras desde el primer día ayuda a que la persona sepa qué hacer y aporte al equipo. Estos avisos no se usan para evaluar a nadie.</p>
     </section>
     <section class="blk" id="fichas"><p class="caption">Fichas de ingreso</p>
       <p class="lead">Completa 3 tareas reales, una persona de apoyo de tu equipo y la reunión. Al enviarla, la persona la confirma o avisa si algo no coincide.</p>
@@ -397,6 +415,7 @@ function vJefatura(u) {
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
   const nav = [
     { label: 'Resumen', href: 'inicio' },
+    { label: 'Avisos', href: 'avisos', right: pendientes.length },
     ...(auth.puedePlanificarTurnos(u) ? [{ label: 'Planificación de turnos', href: 'turnos' }] : []),
     { label: 'Fichas de ingreso', href: 'fichas', right: porEnviar },
     { label: 'Tus acciones', href: 'acciones', right: mias.length },
@@ -577,6 +596,8 @@ function tIndicadores() {
         ${k.enviadas ? '' : '<p class="hint">Aún no hay fichas enviadas. El indicador aparece cuando una jefatura envía la primera.</p>'}</div>
       ${stats([['Ingresos en tu alcance', String(k.ingresos)], ['Fichas enviadas', String(k.enviadas)], ['Fichas confirmadas', String(k.confirmadas), k.confirmadas ? 'ok' : ''], ['Discrepancias reportadas', String(disc), disc ? 'warn' : '']])}
     </div></section>
+  ${(() => { const e = store.avisosDeEquipos(); return e ? `<section class="blk"><p class="caption">Avisos enviados a jefaturas</p>${stats([['Personas sin tareas asignadas', String(e.sinTareas), e.sinTareas ? 'bad' : ''], ['Próximos ingresos (14 días)', String(e.proximos)], ['Nuevos ingresos registrados por RR.HH.', String(e.nuevos)]])}
+    <p class="hint">Cada jefatura ve el detalle de su equipo en su bandeja de avisos.</p></section>` : ''; })()}
   <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
   <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
     ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), 'bad'])) : '<p class="empty">Sin hitos atrasados.</p>'}
@@ -697,11 +718,11 @@ async function onSubmit(e) {
   }
   if (kind === 'col-code') {
     if (String(fd.get('code')).trim() !== '123456') { store.rechazarEntrada('ingreso'); ui.loginError = 'El código no es correcto. En la demo es 123456.'; return render(); }
-    const r = store.login(ui.loginStep?.id);
-    if (!r.ok || s.user.rol !== 'Colaborador') { store.logout(); ui.loginError = 'No encontramos una cuenta de colaborador autorizada.'; return render(); }
+    // Misma entrada para todos: el rol de la cuenta decide la vista (colaborador, jefatura, TI o Personas).
+    const r = store.login(ui.loginStep?.id, 'código de verificación');
+    if (!r.ok) { store.logout(); ui.loginError = 'No encontramos una cuenta autorizada con ese código. Revísalo o pide ayuda al equipo de Personas.'; return render(); }
     ui.loginStep = null; ui.loginError = ''; resetUi(); return render();
   }
-  if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
   if (kind === 'discrepancia') {
     const r = store.reportarDiscrepancia(String(fd.get('motivo') || ''));
     if (r.ok) { ui.resultado = 'con_discrepancia'; ui.discrepancia = false; return render(); }
@@ -747,6 +768,7 @@ async function onSubmit(e) {
     const r = store.cargarArchivos(nuevo);
     if (!r.ok) { ui.cargaErrores = (r.errores || []).slice(0, 30).map(a => `${a.titulo}: ${a.id} · ${a.detalle}`); return toastMsg(r.motivo); }
     if (r.sesionCerrada) { resetUi(); return toastMsg('Archivos cargados solo en memoria. Tu cuenta ya no existe: ingresa de nuevo.'); }
+    if (r.nuevos) { ui.tab = 'indicadores'; return toastMsg(`Archivos cargados. ${r.nuevos === 1 ? 'Se detectó 1 ingreso nuevo' : `Se detectaron ${r.nuevos} ingresos nuevos`}: su jefatura ya tiene el aviso.`); }
     ui.tab = 'calidad'; return toastMsg('Archivos sintéticos cargados solo en memoria. Revisa las alertas de calidad.');
   }
 }
@@ -767,6 +789,13 @@ function onClick(e) {
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();
     case 'ti-filtro': ui.tiFiltro = arg; ui.reasignando = null; return render();
     case 'ficha-filtro': ui.fichaFiltro = arg; return render();
+    case 'aviso-visto': { const r = store.marcarAvisoVisto(arg); return r.ok ? render() : toastMsg(r.motivo); }
+    case 'aviso-ficha': {
+      const r = store.entrar('/ficha', arg); if (!r.ok) { ui.denegado = arg; return render(); }
+      ui.fichaAbierta = arg; ui.fichaErrores = null; ui.detalle = null; render();
+      const el = typeof root.querySelector === 'function' && root.querySelector('#fichas'); if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth' });
+      return undefined;
+    }
     case 'alerta-filtro': ui.alertaFiltro = arg; ui.reasignando = null; return render();
     case 'volver': ui.denegado = null; return render();
     case 'probar-403': { const r = store.entrar('/ficha', arg); ui.denegado = r.ok ? null : arg; render(); return window.scrollTo(0, 0); }

@@ -15,7 +15,7 @@ Instrucciones para agentes de código (Codex u otros). Léelas completas antes d
 | `src/rules.js` | Plazos del catálogo, `evaluarHito` (estado real), `avanceColaborador`, `validar` (reglas del diccionario). |
 | `src/permissions.js` | Motor de permisos `crearAuth`: rol ∧ equipo_asignado ∧ permiso Sí/No ∧ tipo de responsabilidad. |
 | `src/store.js` | Estado, acciones (`completar`, `reasignar`, `reportar`…) y bitácora solo en memoria; sin persistencia de datos en el navegador. |
-| `src/ui.js` | Render por rol (strings HTML + delegación de eventos). **Toda** visualización pasa por `auth`. |
+| `src/ui.js` | Render por rol (strings HTML + delegación de eventos). **Toda** visualización pasa por `auth`. Ingreso único: todas las cuentas (COL/JEF/TI/PER/ADM) entran por el mismo formulario y el rol decide la vista. |
 | `src/styles.css` | Lenguaje visual: fondo gris frío, Helvetica, líneas finas, botones celestes con "+", barra lateral. Tokens en `:root` + modo oscuro. Usa siempre tokens. |
 | `src/optimization/` | Extensión autorizada de planificación: modelo, restricciones, objetivos, ALNS lexicográfico, controlador en memoria y UI de jefaturas. `demo.js` contiene únicamente supuestos sintéticos creados por el equipo, separados del kit oficial. |
 | `scripts/build.mjs` | CSV → `src/data.generated.js` → bundle esbuild → `dist/index.html` y `dist/artifact.html`. |
