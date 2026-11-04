@@ -107,14 +107,14 @@ test('Store: acciones dejan bitácora y respetan permisos', () => {
   assert.ok(acc.includes('acceso_denegado:denegado'));
   assert.equal(st.reasignar('HITO-033', 'TI-003', 'x').ok, false);
   st.login('PER-001');
-  assert.equal(st.reasignar('HITO-033', 'TI-003', 'Sin responsable desde la carga').ok, true);
+  assert.equal(st.reasignar('HITO-033', 'TI-003', 'Sin responsable desde la carga', { confirmado: true }).ok, true);
   assert.equal(st.state.data.hitos.find(h => h.hito_id === 'HITO-033').responsable_id, 'TI-003');
 });
 
 test('Store: reportes sensibles solo para Personas', () => {
   const st = crearStore(base, { persist: false });
   st.login('COL-002');
-  assert.equal(st.reportar('Mi turno cambió', 'me cambiaron el turno').ok, true);
+  assert.equal(st.reportar('Mi turno cambió o no lo conozco').ok, true);
   st.login('JEF-002');
   assert.equal(st.reportesVisibles().length, 0);
   st.login('PER-002');

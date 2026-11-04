@@ -4,6 +4,9 @@
 //   dist/artifact.html  mismo contenido sin <html>/<head>/<body> (para publicar como artifact)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+import { parseCSV } from '../src/csv.js';
+import { validarCampos } from '../src/privacy.js';
 
 const r = p => readFileSync(new URL(`../${p}`, import.meta.url), 'utf8');
 const raw = {
@@ -12,13 +15,17 @@ const raw = {
   usuarios: r('data/usuarios_roles.csv'),
   catalogo: r('data/catalogo_hitos.csv'),
 };
+if (!validarCampos(Object.fromEntries(Object.entries(raw).map(([k, csv]) => [k, parseCSV(csv)])))) {
+  throw new Error('Build rechazado: los CSV deben usar únicamente los campos del kit sintético.');
+}
 writeFileSync(new URL('../src/data.generated.js', import.meta.url), `// Archivo generado. No editar: cambia /data/*.csv y corre npm run build.\nexport default ${JSON.stringify(raw)};\n`);
 
-const res = await build({ entryPoints: [new URL('../src/main.js', import.meta.url).pathname], bundle: true, format: 'iife', minify: false, write: false, target: 'es2020' });
+const res = await build({ entryPoints: [fileURLToPath(new URL('../src/main.js', import.meta.url))], bundle: true, format: 'iife', minify: false, write: false, target: 'es2020' });
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = r('src/styles.css');
-const fonts = '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=JetBrains+Mono:wght@400;600&display=swap">';
-const head = `<title>Sprint Onboarding Seguro</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n${fonts}\n<style>${css}</style>`;
+// Sin fuentes, analítica ni conexiones externas. El HTML funciona offline.
+const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
+const head = `${csp}\n<title>Sprint Onboarding Seguro</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n<style>${css}</style>`;
 const bodyHtml = `<div id="app"></div>\n<script>${js}</script>`;
 
 mkdirSync(new URL('../dist/', import.meta.url), { recursive: true });

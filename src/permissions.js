@@ -4,6 +4,7 @@
 
 export const HITOS_TECNICOS = ['Equipo', 'Acceso'];
 const PREFIJO_ROL = { Personas: 'PER-', TI: 'TI-', Jefatura: 'JEF-' };
+const ROLES = ['Colaborador', 'Jefatura', 'Personas', 'TI', 'Administrador'];
 
 // "COL-001|COL-013", "COL-001 a COL-060", "COL-001 a COL-060 (solo hitos Equipo y Acceso)", "Todos los usuarios"
 export function parseEquipo(texto, todosLosColabs) {
@@ -28,11 +29,12 @@ export function crearAuth(data) {
   }
   const colab = new Map(data.colaboradores.map(c => [c.colaborador_id, c]));
   const users = new Map(data.usuarios.map(u => [u.usuario_id, u]));
-  const si = (u, f) => u && u[f] === 'Sí';
+  const conocido = u => !!u && ROLES.includes(u.rol) && users.get(u.usuario_id) === u;
+  const si = (u, f) => conocido(u) && u[f] === 'Sí';
 
   const auth = {
     users,
-    scope(u) { return scopes.get(u.usuario_id) || new Set(); },
+    scope(u) { return new Set(conocido(u) ? scopes.get(u.usuario_id) : []); },
     enAlcance(u, colId) { return auth.scope(u).has(colId); },
 
     puedeVerColaborador(u, colId) { return !!u && auth.enAlcance(u, colId); },
@@ -46,8 +48,8 @@ export function crearAuth(data) {
       const PA = u.rol === 'Personas' || u.rol === 'Administrador';
       switch (campo) {
         case 'colaborador_id': case 'area': return true;
-        case 'nombre': return si(u, 'puede_ver_datos_personales'); // TI = No
-        case 'canal_contacto': return propio || PA; // nunca TI ni otras jefaturas (ni la propia)
+        case 'nombre': return u.rol !== 'TI' && si(u, 'puede_ver_datos_personales');
+        case 'canal_contacto': return (propio || PA) && si(u, 'puede_ver_datos_personales'); // nunca TI ni jefaturas
         case 'jefatura_id': return propio || jefAsignada || PA;
         case 'fecha_ingreso': return propio || jefAsignada || PA || u.rol === 'TI';
         case 'sede': case 'modalidad': case 'tipo_turno': case 'correo_corporativo_activo':
@@ -70,6 +72,7 @@ export function crearAuth(data) {
       if (!auth.puedeVerHito(u, h) || !si(u, 'puede_editar_hitos')) return { ok: false, motivo: 'Sin permiso de edición' };
       if (h.estado === 'Cumplido' && h.fecha_cumplimiento && (!hoy || h.fecha_cumplimiento <= hoy)) return { ok: false, motivo: 'Ya está cumplido' };
       if (u.rol === 'Jefatura') {
+        if (!['Reunión', 'Plan'].includes(h.tipo_hito)) return { ok: false, motivo: 'Solo Reunión y Plan' };
         if (h.responsable_tipo !== 'Jefatura') return { ok: false, motivo: `Responsabilidad de ${h.responsable_tipo}` };
         if (h.responsable_id !== u.usuario_id) return { ok: false, motivo: 'Asignado a otra cuenta' };
         return { ok: true };
@@ -89,10 +92,11 @@ export function crearAuth(data) {
     // Reasignar responsable: explícito, con motivo y trazable.
     puedeReasignar(u, h, nuevoId) {
       if (!auth.puedeVerHito(u, h) || !si(u, 'puede_asignar_responsables')) return { ok: false, motivo: 'Sin permiso para asignar' };
+      if (!['TI', 'Personas', 'Administrador'].includes(u.rol)) return { ok: false, motivo: 'Rol sin permiso para asignar' };
       const nuevo = nuevoId ? users.get(nuevoId) : null;
       if (nuevoId && !nuevo) return { ok: false, motivo: 'El responsable no existe' };
       if (nuevo && !nuevo.usuario_id.startsWith(PREFIJO_ROL[h.responsable_tipo] || '?')) return { ok: false, motivo: `Debe ser una cuenta de ${h.responsable_tipo}` };
-      if (nuevo && h.responsable_tipo === 'Jefatura' && !auth.enAlcance(nuevo, h.colaborador_id)) return { ok: false, motivo: 'Esa jefatura no tiene a la persona en su equipo' };
+      if (nuevo && (nuevo.rol !== h.responsable_tipo || !auth.enAlcance(nuevo, h.colaborador_id))) return { ok: false, motivo: 'La cuenta no tiene el rol o alcance necesario' };
       if (u.rol === 'TI') {
         if (!HITOS_TECNICOS.includes(h.tipo_hito)) return { ok: false, motivo: 'TI solo reasigna hitos técnicos' };
         if (nuevo && nuevo.rol !== 'TI') return { ok: false, motivo: 'TI solo reasigna entre cuentas TI' };
@@ -105,17 +109,18 @@ export function crearAuth(data) {
       return [...users.values()].filter(x => auth.puedeReasignar(u, h, x.usuario_id).ok && x.usuario_id !== h.responsable_id);
     },
 
-    puedeVerMetricas(u) { return u.rol !== 'Colaborador' && si(u, 'puede_ver_metricas'); },
+    puedeVerMetricas(u) { return conocido(u) && u.rol !== 'Colaborador' && si(u, 'puede_ver_metricas'); },
     alcanceMetricas(u) {
       if (!auth.puedeVerMetricas(u)) return 'ninguno';
       if (u.rol === 'TI') return 'tecnico';
       if (u.rol === 'Jefatura') return 'equipo';
       return 'global';
     },
-    puedeVerReportes(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; }, // comentarios sensibles
-    puedeReportar(u, colId) { return u.rol === 'Colaborador' && u.usuario_id === colId; },
-    puedeVerCalidad(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; },
-    puedeCargarArchivos(u) { return u.rol === 'Personas' || u.rol === 'Administrador'; },
+    puedeVerReportes(u, colId) { return conocido(u) && ['Personas', 'Administrador'].includes(u.rol) && si(u, 'puede_ver_datos_personales') && (colId === undefined || auth.enAlcance(u, colId)); },
+    puedeReportar(u, colId) { return conocido(u) && u.rol === 'Colaborador' && u.usuario_id === colId && auth.enAlcance(u, colId); },
+    puedeVerCalidad(u) { return conocido(u) && ['Personas', 'Administrador'].includes(u.rol); },
+    puedeCargarArchivos(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
+    puedeVerBitacora(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
   };
   return auth;
 }
