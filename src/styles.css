@@ -230,4 +230,21 @@ table.inner th, table.inner td { padding-left: .5rem; }
   .row-btn { gap: 1rem; }
   .row-btn code { display: none; }
 }
+/* ---------- Ficha de Ingreso ---------- */
+.filters { display: flex; gap: 1.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.filters button { background: none; border: 0; border-bottom: 2px solid transparent; padding: .6rem 0; margin-bottom: -1px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ink-40); cursor: pointer; transition: color .3s; }
+.filters button:hover, .filters button.on { color: var(--ink); }
+.filters button.on { border-bottom-color: var(--ink); }
+.sub-panel { background: var(--surface); padding: 1.5rem; margin-bottom: 1rem; }
+.tareas .hrow { justify-content: flex-start; gap: 1.25rem; }
+.tareas .idx { color: var(--ink-40); min-width: 1.5rem; }
+fieldset.choice { border: 0; border-bottom: 1px solid var(--ink); padding: 0 0 .5rem; margin: 0; display: grid; gap: .25rem; }
+fieldset.choice legend { padding: 0 0 .5rem; }
+.radio { display: flex; gap: .75rem; align-items: center; min-height: 44px; cursor: pointer; }
+.radio input { width: 1.1rem; height: 1.1rem; accent-color: var(--ink); }
+.ti-fecha { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; }
+.ti-fecha .field { min-width: 9rem; }
+.ficha-form { max-width: 40rem; }
+@media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

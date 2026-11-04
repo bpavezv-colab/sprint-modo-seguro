@@ -233,6 +233,23 @@ table.inner th, table.inner td { padding-left: .5rem; }
   .row-btn { gap: 1rem; }
   .row-btn code { display: none; }
 }
+/* ---------- Ficha de Ingreso ---------- */
+.filters { display: flex; gap: 1.5rem; flex-wrap: wrap; border-bottom: 1px solid var(--line); }
+.filters button { background: none; border: 0; border-bottom: 2px solid transparent; padding: .6rem 0; margin-bottom: -1px; font: inherit; letter-spacing: inherit; text-transform: inherit; color: var(--ink-40); cursor: pointer; transition: color .3s; }
+.filters button:hover, .filters button.on { color: var(--ink); }
+.filters button.on { border-bottom-color: var(--ink); }
+.sub-panel { background: var(--surface); padding: 1.5rem; margin-bottom: 1rem; }
+.tareas .hrow { justify-content: flex-start; gap: 1.25rem; }
+.tareas .idx { color: var(--ink-40); min-width: 1.5rem; }
+fieldset.choice { border: 0; border-bottom: 1px solid var(--ink); padding: 0 0 .5rem; margin: 0; display: grid; gap: .25rem; }
+fieldset.choice legend { padding: 0 0 .5rem; }
+.radio { display: flex; gap: .75rem; align-items: center; min-height: 44px; cursor: pointer; }
+.radio input { width: 1.1rem; height: 1.1rem; accent-color: var(--ink); }
+.ti-fecha { display: flex; gap: .5rem; align-items: flex-end; flex-wrap: wrap; }
+.ti-fecha .field { min-width: 9rem; }
+.ficha-form { max-width: 40rem; }
+@media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 <div id="app"></div>
@@ -654,7 +671,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
         }
         if (u.rol === "TI") {
           if (!HITOS_TECNICOS.includes(h.tipo_hito) || h.responsable_tipo !== "TI") return { ok: false, motivo: "Fuera de hitos t\xE9cnicos" };
-          if (h.responsable_id !== u.usuario_id) return { ok: false, motivo: h.responsable_id ? "Asignado a otra cuenta TI" : "Sin responsable: primero tomar el caso" };
+          if (h.responsable_id && h.responsable_id !== u.usuario_id) return { ok: false, motivo: `Asignado a ${h.responsable_id}` };
           return { ok: true };
         }
         if (u.rol === "Personas") {
@@ -705,6 +722,47 @@ table.inner th, table.inner td { padding-left: .5rem; }
       },
       puedeVerBitacora(u) {
         return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length;
+      },
+      // ---------- Ficha de Ingreso ----------
+      esPersonas(u) {
+        return conocido(u) && (u.rol === "Personas" || u.rol === "Administrador");
+      },
+      puedeVerFicha(u, colId) {
+        if (!conocido(u) || u.rol === "TI" || !colab.has(colId)) return false;
+        return auth.enAlcance(u, colId);
+      },
+      puedeEditarFicha(u, colId) {
+        if (!conocido(u) || u.rol !== "Jefatura") return { ok: false, motivo: "Solo la jefatura completa la ficha" };
+        if (!auth.enAlcance(u, colId)) return { ok: false, motivo: "La persona no est\xE1 en tu equipo asignado" };
+        return { ok: true };
+      },
+      companerosValidos(u, colId) {
+        return conocido(u) && u.rol === "Jefatura" ? [...auth.scope(u)].filter((id) => id !== colId) : [];
+      },
+      puedeResponderFicha(u, colId) {
+        return conocido(u) && u.rol === "Colaborador" && u.usuario_id === colId && auth.enAlcance(u, colId) ? { ok: true } : { ok: false, motivo: "Solo la persona puede responder su propia ficha" };
+      },
+      // El motivo de "Algo no coincide" solo lo ven su autor y Personas en su alcance.
+      puedeVerMotivo(u, colId) {
+        return auth.esPersonas(u) && auth.enAlcance(u, colId) || conocido(u) && u.rol === "Colaborador" && u.usuario_id === colId;
+      },
+      puedeGestionarAlertas(u) {
+        return auth.esPersonas(u) && si(u, "puede_asignar_responsables");
+      },
+      // TI marca listo o pendiente solo hitos técnicos suyos o sin cuenta asignada (asignados por regla a TI).
+      puedeGestionarTecnico(u, h) {
+        if (!conocido(u) || u.rol !== "TI" || !si(u, "puede_editar_hitos")) return { ok: false, motivo: "Solo TI gestiona equipo y accesos" };
+        if (!HITOS_TECNICOS.includes(h.tipo_hito) || !auth.puedeVerHito(u, h)) return { ok: false, motivo: "Fuera de hitos t\xE9cnicos" };
+        if (h.responsable_id && h.responsable_id !== u.usuario_id) return { ok: false, motivo: `Asignado a ${h.responsable_id}` };
+        return { ok: true };
+      },
+      // Control de acceso por ruta (equivale al filtro del controlador). 403 = fuera de alcance.
+      puedeEntrar(u, ruta, param) {
+        if (!conocido(u)) return { ok: false, status: 401, motivo: "Sin sesi\xF3n" };
+        const R = { "/mi-ficha": ["Colaborador"], "/equipo": ["Jefatura"], "/ti": ["TI"], "/personas": ["Personas", "Administrador"] };
+        if (ruta === "/ficha") return auth.puedeVerFicha(u, param) ? { ok: true } : { ok: false, status: 403, motivo: `${u.rol} sin alcance sobre la ficha` };
+        if (R[ruta]) return R[ruta].includes(u.rol) ? { ok: true } : { ok: false, status: 403, motivo: `La ruta ${ruta} no es para el rol ${u.rol}` };
+        return { ok: false, status: 404, motivo: "P\xE1gina no encontrada" };
       }
     };
     return auth;
@@ -753,8 +811,331 @@ table.inner th, table.inner td { padding-left: .5rem; }
     }
   }
 
+  // src/reglas_onboarding.js
+  var CONFIG = {
+    // De dónde sale la fecha límite de un hito: 'hito' (fecha del hito y, si falta, ingreso + plazo del catálogo)
+    // o 'catalogo' (regla del catálogo primero). El brief pide 'hito'.
+    fuentePlazo: "hito",
+    // Traducción del texto de plazo_ficticio del catálogo a días desde la fecha de ingreso.
+    plazos: { "Antes del d\xEDa 1": -1, "D\xEDa 1": 0, "Primera semana": 7 },
+    estadoCompletado: "Cumplido",
+    niveles: ["Baja", "Media", "Alta", "Urgente"],
+    diasSubePrioridad: 2,
+    // sube un nivel si faltan 2 días o menos para el ingreso
+    diasResolverDato: 1,
+    // plazo para corregir un dato faltante
+    diasContactarDiscrepancia: 1,
+    // plazo para que Personas contacte a quien reportó algo
+    diasAvisoFichaSinEnviar: 7,
+    // se alerta a la jefatura si el ingreso está a 7 días o menos
+    diasEnvioAntesIngreso: 2,
+    // la ficha debe estar enviada 2 días antes del ingreso
+    camposBloqueantes: { fecha_ingreso: "fecha de ingreso", jefatura_id: "jefatura", tipo_turno: "turno" },
+    camposRevisar: { canal_contacto: "canal de contacto", estado_onboarding: "estado de onboarding" },
+    hitosTecnicos: ["Equipo", "Acceso"],
+    sedePiloto: null,
+    // el kit no define la sede piloto: null = todas (supuesto declarado en DATOS.md)
+    accionHito: {
+      Contrato: "Gestionar la firma del contrato",
+      Equipo: "Entregar el equipo de trabajo",
+      Acceso: "Habilitar cuentas y accesos",
+      "Reuni\xF3n": "Agendar y realizar la reuni\xF3n con la persona",
+      Plan: "Entregar el plan de primera semana"
+    }
+  };
+  var MOTIVOS = { tareas: "Tareas o cargo", turno: "Turno", equipo: "Equipo o accesos", otro: "Otro" };
+  var MOTIVO_A_REPORTE = {
+    tareas: "Mis tareas no coinciden con lo ofrecido",
+    turno: "Mi turno cambi\xF3 o no lo conozco",
+    equipo: "No tengo equipo o accesos",
+    otro: "Otro"
+  };
+  var ESTADOS_FICHA = {
+    incompleta: "Incompleta",
+    lista: "Lista para enviar",
+    enviada: "Enviada",
+    confirmada: "Confirmada",
+    con_discrepancia: "Con discrepancia",
+    requiere_reconfirmacion: "Requiere reconfirmaci\xF3n"
+  };
+  var POST_ENVIO = ["enviada", "confirmada", "con_discrepancia", "requiere_reconfirmacion"];
+  var CAMPOS_FICHA = [
+    ["tarea_1", "Falta la tarea 1"],
+    ["tarea_2", "Falta la tarea 2"],
+    ["tarea_3", "Falta la tarea 3"],
+    ["companero_id", "Falta el compa\xF1ero o compa\xF1era de apoyo"],
+    ["reunion_at", "Falta la fecha y hora de la reuni\xF3n con jefatura"]
+  ];
+  var TIPOS_ALERTA = {
+    sin_dato: "Sin dato",
+    hito_atrasado: "Hito atrasado",
+    sin_plazo: "Sin plazo",
+    sin_responsable: "Sin responsable",
+    discrepancia: "Algo no coincide",
+    ficha_sin_enviar: "Ficha sin enviar",
+    sin_respuesta: "Sin respuesta",
+    reconfirmacion: "Reconfirmaci\xF3n"
+  };
+  var NIVEL_NORM = { Alta: "Alta", Alto: "Alta", Media: "Media", Medio: "Media", Baja: "Baja", Bajo: "Baja", Urgente: "Urgente" };
+  var normNivel = (v) => NIVEL_NORM[v] || null;
+  var PERSONAS = { tipo: "Personas", id: null, origen: "regla", etiqueta: "Personas" };
+  var ReglasOnboarding = class {
+    constructor({ idx, hoy, config = CONFIG, nombreDe: nombreDe2 = (id) => id }) {
+      this.idx = idx;
+      this.hoy = hoy;
+      this.cfg = config;
+      this.nombreDe = nombreDe2;
+    }
+    diasParaIngreso(c) {
+      return c && isISO(c.fecha_ingreso) ? diffDays(c.fecha_ingreso, this.hoy) : null;
+    }
+    // ---------- hitos ----------
+    fechaLimite(h) {
+      const c = this.idx.colab.get(h.colaborador_id);
+      const k = this.idx.catalogo.get(h.tipo_hito);
+      const delHito = isISO(h.fecha_limite) ? h.fecha_limite : null;
+      const off = k ? this.cfg.plazos[k.plazo_ficticio] : void 0;
+      const porCatalogo = c && isISO(c.fecha_ingreso) && off !== void 0 ? addDays(c.fecha_ingreso, off) : null;
+      const orden = this.cfg.fuentePlazo === "catalogo" ? [[porCatalogo, "catalogo"], [delHito, "hito"]] : [[delHito, "hito"], [porCatalogo, "catalogo"]];
+      const [fecha, origen] = orden.find(([f]) => f) || [null, null];
+      return { fecha, origen, delHito, porCatalogo };
+    }
+    completado(h) {
+      return h.estado === this.cfg.estadoCompletado;
+    }
+    // true = atrasado, false = en plazo o completado, null = no se puede calcular (falta fecha)
+    atrasado(h) {
+      if (this.completado(h)) return false;
+      const { fecha } = this.fechaLimite(h);
+      return fecha ? fecha < this.hoy : null;
+    }
+    estadoHito(h) {
+      if (this.completado(h)) return isISO(h.fecha_cumplimiento) && h.fecha_cumplimiento <= this.hoy ? "Listo" : "Por verificar";
+      const a = this.atrasado(h);
+      if (a === null) return "Sin fecha";
+      return a ? "Atrasado" : "Pendiente";
+    }
+    fechaComprometida(h) {
+      return isISO(h.fecha_comprometida) ? h.fecha_comprometida : this.fechaLimite(h).fecha;
+    }
+    responsable(h) {
+      if (h.responsable_id) return { tipo: h.responsable_tipo, id: h.responsable_id, origen: "hito", etiqueta: `${this.nombreDe(h.responsable_id)} (${h.responsable_id})` };
+      const k = this.idx.catalogo.get(h.tipo_hito);
+      if (k && k.responsable_inicial) return { tipo: k.responsable_inicial, id: null, origen: "regla", etiqueta: `${k.responsable_inicial} \xB7 asignado por regla` };
+      return { tipo: "Personas", id: null, origen: "sin_responsable", etiqueta: "Personas \xB7 sin responsable" };
+    }
+    nivelBase(h) {
+      const k = this.idx.catalogo.get(h.tipo_hito);
+      return normNivel(k && k.criticidad) || normNivel(h.nivel_criticidad);
+    }
+    subirSiCerca(nivel, c) {
+      const n = this.cfg.niveles;
+      let i = n.indexOf(nivel);
+      if (i < 0) return null;
+      const d = this.diasParaIngreso(c);
+      if (d !== null && d <= this.cfg.diasSubePrioridad) i = Math.min(i + 1, n.length - 1);
+      return n[i];
+    }
+    prioridadHito(h) {
+      return this.subirSiCerca(this.nivelBase(h), this.idx.colab.get(h.colaborador_id));
+    }
+    esCritico(h) {
+      return this.nivelBase(h) === "Alta";
+    }
+    // ---------- ficha ----------
+    faltantes(f) {
+      return CAMPOS_FICHA.filter(([k]) => !f || !String(f[k] ?? "").trim()).map(([, m]) => m);
+    }
+    estadoFicha(f) {
+      if (f && POST_ENVIO.includes(f.estado)) return f.estado;
+      return this.faltantes(f).length ? "incompleta" : "lista";
+    }
+    semaforo(c, f) {
+      const hs = this.idx.hitosPorColab.get(c.colaborador_id) || [];
+      const est = this.estadoFicha(f);
+      const rojo = [];
+      if (est === "con_discrepancia") rojo.push("Discrepancia reportada");
+      if (est === "requiere_reconfirmacion") rojo.push("Requiere reconfirmaci\xF3n");
+      const crit = hs.filter((h) => this.atrasado(h) === true && this.esCritico(h));
+      if (crit.length) rojo.push(`${crit.length} ${crit.length === 1 ? "hito cr\xEDtico atrasado" : "hitos cr\xEDticos atrasados"}`);
+      if (hs.some((h) => this.atrasado(h) === null)) rojo.push("Falta fecha para calcular un plazo");
+      for (const [k, label] of Object.entries(this.cfg.camposBloqueantes)) if (c[k] == null) rojo.push(`Sin dato: ${label}`);
+      if (rojo.length) return { color: "rojo", texto: "Requiere acci\xF3n", motivos: rojo };
+      const atr = hs.filter((h) => this.atrasado(h) === true);
+      if (est === "confirmada" && !atr.length) return { color: "verde", texto: "Al d\xEDa", motivos: ["Ficha confirmada y hitos al d\xEDa"] };
+      const am = [];
+      if (est !== "confirmada") am.push(`Ficha: ${ESTADOS_FICHA[est].toLowerCase()}`);
+      if (atr.length) am.push(`${atr.length} ${atr.length === 1 ? "hito atrasado no cr\xEDtico" : "hitos atrasados no cr\xEDticos"}`);
+      return { color: "amarillo", texto: "Pendiente", motivos: am };
+    }
+    // ---------- alertas ----------
+    // Toda alerta lleva responsable, acción requerida, plazo y prioridad. Si falta alguno, no se crea.
+    crearAlerta(a) {
+      if (!a.responsable || !a.responsable.etiqueta || !a.accion_requerida || !a.plazo || !a.prioridad) return null;
+      return { ...a, id: `${a.tipo}:${a.clave}` };
+    }
+    alertas(colabs, hitos, fichas) {
+      const out = [];
+      const add = (a) => {
+        const v = this.crearAlerta(a);
+        if (v) out.push(v);
+      };
+      const plazoDato = addDays(this.hoy, this.cfg.diasResolverDato);
+      for (const c of colabs) {
+        const id = c.colaborador_id;
+        const f = fichas[id];
+        const est = this.estadoFicha(f);
+        const d = this.diasParaIngreso(c);
+        for (const [k, label] of Object.entries(this.cfg.camposBloqueantes)) {
+          if (c[k] != null) continue;
+          add({
+            tipo: "sin_dato",
+            clave: `${id}:${k}`,
+            colaborador_id: id,
+            campo: k,
+            titulo: `Sin dato: ${label}`,
+            responsable: PERSONAS,
+            accion_requerida: `Completar ${label} en el registro de RR.HH. No se inventa el valor.`,
+            plazo: plazoDato,
+            prioridad: this.subirSiCerca("Alta", c)
+          });
+        }
+        for (const [k, label] of Object.entries(this.cfg.camposRevisar)) {
+          if (c[k] != null) continue;
+          add({
+            tipo: "sin_dato",
+            clave: `${id}:${k}`,
+            colaborador_id: id,
+            campo: k,
+            titulo: `Sin dato: ${label}`,
+            responsable: PERSONAS,
+            accion_requerida: `Validar ${label} con la persona y corregir el registro.`,
+            plazo: plazoDato,
+            prioridad: this.subirSiCerca("Media", c)
+          });
+        }
+        if (est === "con_discrepancia" && f) {
+          add({
+            tipo: "discrepancia",
+            clave: id,
+            colaborador_id: id,
+            titulo: `Algo no coincide: ${MOTIVOS[f.motivo] || "Sin dato"}`,
+            responsable: PERSONAS,
+            accion_requerida: "Contactar a la persona y revisar la discrepancia con la jefatura.",
+            plazo: addDays((f.respondida_at || this.hoy).slice(0, 10), this.cfg.diasContactarDiscrepancia),
+            prioridad: this.subirSiCerca("Alta", c)
+          });
+        }
+        if (est === "requiere_reconfirmacion" && f) {
+          add({
+            tipo: "reconfirmacion",
+            clave: id,
+            colaborador_id: id,
+            titulo: "La ficha cambi\xF3 y debe reconfirmarse",
+            responsable: PERSONAS,
+            accion_requerida: "Avisar a la persona del cambio y pedir que reconfirme su ficha.",
+            plazo: plazoDato,
+            prioridad: this.subirSiCerca("Alta", c)
+          });
+        }
+        if ((est === "incompleta" || est === "lista") && c.jefatura_id && d !== null && d >= 0 && d <= this.cfg.diasAvisoFichaSinEnviar) {
+          add({
+            tipo: "ficha_sin_enviar",
+            clave: id,
+            colaborador_id: id,
+            titulo: "Ficha de ingreso sin enviar",
+            responsable: { tipo: "Jefatura", id: c.jefatura_id, origen: "colaborador", etiqueta: `${this.nombreDe(c.jefatura_id)} (${c.jefatura_id})` },
+            accion_requerida: "Completar y enviar la ficha de ingreso.",
+            plazo: addDays(c.fecha_ingreso, -this.cfg.diasEnvioAntesIngreso),
+            prioridad: this.subirSiCerca("Media", c)
+          });
+        }
+        if (est === "enviada" && d !== null && d >= 0 && d <= this.cfg.diasSubePrioridad) {
+          add({
+            tipo: "sin_respuesta",
+            clave: id,
+            colaborador_id: id,
+            titulo: "Ficha enviada sin respuesta",
+            responsable: PERSONAS,
+            accion_requerida: "Contactar a la persona para que confirme su ficha.",
+            plazo: c.fecha_ingreso,
+            prioridad: this.subirSiCerca("Media", c)
+          });
+        }
+      }
+      for (const h of hitos) {
+        const r = this.responsable(h);
+        const a = this.atrasado(h);
+        const fl = this.fechaLimite(h);
+        const base = { clave: h.hito_id, colaborador_id: h.colaborador_id, hito_id: h.hito_id, tipo_hito: h.tipo_hito };
+        if (a === true) {
+          add({
+            ...base,
+            tipo: "hito_atrasado",
+            titulo: `${NOMBRE_HITO[h.tipo_hito] || h.tipo_hito}: atrasado`,
+            responsable: r,
+            accion_requerida: this.cfg.accionHito[h.tipo_hito] || `Completar ${h.tipo_hito}`,
+            plazo: fl.fecha,
+            prioridad: this.prioridadHito(h)
+          });
+        } else if (a === null) {
+          add({
+            ...base,
+            tipo: "sin_plazo",
+            titulo: "No se puede calcular plazo: falta fecha",
+            responsable: PERSONAS,
+            accion_requerida: "Registrar la fecha l\xEDmite del hito o la fecha de ingreso. No se inventa una fecha.",
+            plazo: plazoDato,
+            prioridad: this.prioridadHito(h)
+          });
+        }
+        if (!h.responsable_id && !this.completado(h) && a !== true) {
+          add({
+            ...base,
+            tipo: "sin_responsable",
+            clave: `${h.hito_id}:resp`,
+            titulo: `${NOMBRE_HITO[h.tipo_hito] || h.tipo_hito}: sin cuenta responsable`,
+            responsable: r,
+            accion_requerida: `Asignar una cuenta de ${r.tipo} a este hito.`,
+            plazo: fl.fecha || plazoDato,
+            prioridad: this.prioridadHito(h)
+          });
+        }
+      }
+      return out;
+    }
+    // ---------- indicadores ----------
+    indicadores(colabs, fichas, alertas) {
+      const ids = new Set(colabs.map((c) => c.colaborador_id));
+      const fs = Object.values(fichas).filter((f) => ids.has(f.colaborador_id));
+      const enviadas = fs.filter((f) => f.enviada_at);
+      const confirmadas = fs.filter((f) => f.estado === "confirmada");
+      const antesDia1 = confirmadas.filter((f) => {
+        const c = this.idx.colab.get(f.colaborador_id);
+        return c && isISO(c.fecha_ingreso) && f.respondida_at && f.respondida_at.slice(0, 10) < c.fecha_ingreso;
+      });
+      const porMotivo = Object.fromEntries(Object.keys(MOTIVOS).map((k) => [k, fs.filter((f) => f.motivo === k).length]));
+      const porResp = /* @__PURE__ */ new Map();
+      for (const a of alertas.filter((x) => x.tipo === "hito_atrasado")) porResp.set(a.responsable.etiqueta, (porResp.get(a.responsable.etiqueta) || 0) + 1);
+      return {
+        ingresos: colabs.length,
+        enviadas: enviadas.length,
+        confirmadas: confirmadas.length,
+        confirmadasAntesDia1: antesDia1.length,
+        pctAntesDia1: enviadas.length ? Math.round(antesDia1.length / enviadas.length * 100) : null,
+        porMotivo,
+        atrasadosPorResponsable: [...porResp.entries()].sort((a, b) => b[1] - a[1])
+      };
+    }
+  };
+
   // src/store.js
-  function crearStore(base, { now = () => (/* @__PURE__ */ new Date()).toISOString() } = {}) {
+  var limpiar = (v, max = 200) => {
+    const t = String(v ?? "").trim().slice(0, max);
+    return t === "" ? null : t;
+  };
+  var CAMPOS_FICHA_EDITABLES = ["tarea_1", "tarea_2", "tarea_3", "companero_id", "reunion_at"];
+  function crearStore(base, { now = () => (/* @__PURE__ */ new Date()).toISOString(), config = CONFIG } = {}) {
     if (!validarCampos(base, { permitirVacios: true })) throw new Error("Los datos deben contener \xFAnicamente los campos del kit sint\xE9tico.");
     const original = structuredClone(base);
     const s = {
@@ -768,6 +1149,12 @@ table.inner th, table.inner td { padding-left: .5rem; }
       bitacora: [],
       reportes: [],
       user: null,
+      config,
+      reglas: null,
+      fichas: {},
+      alertasFicha: [],
+      alertaEstados: {},
+      // Ficha de Ingreso (solo en memoria)
       almacenamientoLimpio: limpiarPersistenciaAnterior()
     };
     function rebuild() {
@@ -778,12 +1165,29 @@ table.inner th, table.inner td { padding-left: .5rem; }
       s.auth = crearAuth(s.data);
       s.alertas = validar(s.data, s.idx, s.hoy);
       s.user = usuarioId ? s.auth.users.get(usuarioId) || null : null;
+      const nombre = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
+      s.reglas = new ReglasOnboarding({ idx: s.idx, hoy: s.hoy, config: s.config, nombreDe: nombre });
+      s.alertasFicha = s.reglas.alertas(s.data.colaboradores, s.data.hitos, s.fichas).map((a) => ({ ...a, estado: s.alertaEstados[a.id]?.estado || "abierta", gestion: s.alertaEstados[a.id] || null }));
     }
+    const reloj = () => `${s.hoy}T${(/* @__PURE__ */ new Date()).toTimeString().slice(0, 8)}`;
+    const nombreDe2 = (id) => s.auth.users.get(id)?.nombre_ficticio || id;
     function objetivoSeguro(id) {
-      return s.idx.colab.has(id) || s.auth.users.has(id) || s.data.hitos.some((h) => h.hito_id === id) || s.reportes.some((r) => r.id === id) ? id : "\u2014";
+      return s.idx.colab.has(id) || s.auth.users.has(id) || s.data.hitos.some((h) => h.hito_id === id) || s.reportes.some((r) => r.id === id) || s.alertasFicha.some((a) => a.id === id) ? id : "\u2014";
     }
-    function log(accion, objetivo, detalle, resultado = "ok") {
-      s.bitacora.unshift({ ts: now(), usuario: s.user?.usuario_id || "\u2014", rol: s.user?.rol || "\u2014", accion, objetivo: objetivoSeguro(objetivo), detalle, resultado });
+    function log(accion, objetivo, detalle, resultado = "ok", cambio = {}) {
+      s.bitacora.unshift({
+        ts: now(),
+        usuario: s.user?.usuario_id || "\u2014",
+        rol: s.user?.rol || "\u2014",
+        accion,
+        objetivo: objetivoSeguro(objetivo),
+        detalle,
+        resultado,
+        entidad: cambio.entidad || null,
+        campo: cambio.campo || null,
+        valor_anterior: cambio.valor_anterior ?? null,
+        valor_nuevo: cambio.valor_nuevo ?? null
+      });
       if (s.bitacora.length > 2e3) s.bitacora.length = 2e3;
     }
     function denegar(accion, objetivo, motivo) {
@@ -904,6 +1308,216 @@ table.inner th, table.inner td { padding-left: .5rem; }
         log("carga_archivos", "\u2014", "Carga del kit sint\xE9tico validada; datos solo en memoria");
         return { ok: true, sesionCerrada: !s.user };
       },
+      // ================= Ficha de Ingreso =================
+      // Control de acceso por pantalla (equivale al filtro del controlador): 403 si está fuera de alcance.
+      entrar(ruta, param) {
+        const r = s.auth.puedeEntrar(s.user, ruta, param);
+        if (!r.ok && r.status === 403) log("acceso_denegado", param || "\u2014", r.motivo, "denegado", { entidad: ruta === "/ficha" ? "ficha" : "ruta" });
+        return r;
+      },
+      // Vista minimizada según quién la pide. undefined = no permitido (no se muestra); null = Sin dato.
+      vistaFicha(colId) {
+        const u = s.user;
+        if (!s.auth.puedeVerFicha(u, colId)) return null;
+        const c = s.idx.colab.get(colId);
+        const f = s.fichas[colId] || null;
+        const R = s.reglas;
+        const est = R.estadoFicha(f);
+        const campo = (k) => s.auth.puedeVerCampo(u, colId, k) ? c[k] : void 0;
+        let ficha = f ? { ...f } : null;
+        if (ficha && u.rol === "Colaborador" && !ficha.enviada_at) ficha = null;
+        if (ficha && !s.auth.puedeVerMotivo(u, colId)) {
+          delete ficha.motivo;
+          delete ficha.respuesta;
+        }
+        return {
+          c: {
+            colaborador_id: colId,
+            nombre: s.auth.puedeVerCampo(u, colId, "nombre") ? nombreDe2(colId) : void 0,
+            area: campo("area"),
+            fecha_ingreso: campo("fecha_ingreso"),
+            tipo_turno: campo("tipo_turno"),
+            jefatura_id: campo("jefatura_id"),
+            canal_contacto: campo("canal_contacto")
+          },
+          ficha,
+          est,
+          estadoVisible: u.rol === "Jefatura" && est === "con_discrepancia" ? "En revisi\xF3n por Personas" : ESTADOS_FICHA[est],
+          hitos: (s.idx.hitosPorColab.get(colId) || []).filter((h) => s.auth.puedeVerHito(u, h)).map((h) => ({
+            h,
+            estado: R.estadoHito(h),
+            fecha: R.fechaComprometida(h),
+            limite: R.fechaLimite(h),
+            resp: R.responsable(h),
+            prioridad: R.prioridadHito(h)
+          })),
+          semaforo: R.semaforo(c, f),
+          jefatura: c.jefatura_id ? nombreDe2(c.jefatura_id) : null,
+          companero: ficha && ficha.companero_id ? nombreDe2(ficha.companero_id) : null
+        };
+      },
+      ingresos() {
+        const u = s.user;
+        if (!u) return [];
+        return [...s.auth.scope(u)].map((id) => api.vistaFicha(id)).filter(Boolean);
+      },
+      companerosPara(colId) {
+        return s.auth.companerosValidos(s.user, colId).map((id) => ({ id, nombre: nombreDe2(id) }));
+      },
+      guardarFicha(colId, campos = {}) {
+        const u = s.user;
+        const p = s.auth.puedeEditarFicha(u, colId);
+        if (!p.ok) return denegar("editar_ficha", colId, p.motivo);
+        const f = s.fichas[colId] || {
+          colaborador_id: colId,
+          tarea_1: null,
+          tarea_2: null,
+          tarea_3: null,
+          companero_id: null,
+          reunion_at: null,
+          estado: null,
+          respuesta: null,
+          motivo: null,
+          enviada_at: null,
+          respondida_at: null,
+          creado_por_equipo: true
+        };
+        if (POST_ENVIO.includes(f.estado)) return { ok: false, motivo: "La ficha ya fue enviada. Si hay que corregirla, avisa a Personas." };
+        const limpio = {};
+        for (const k of CAMPOS_FICHA_EDITABLES) if (k in campos) limpio[k] = limpiar(campos[k], k.startsWith("tarea") ? 160 : 20);
+        if (limpio.companero_id && !s.auth.companerosValidos(u, colId).includes(limpio.companero_id)) return denegar("editar_ficha", colId, "El compa\xF1ero o compa\xF1era debe ser parte de tu equipo.");
+        if (limpio.reunion_at && !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(limpio.reunion_at)) return { ok: false, motivo: "La fecha y hora de la reuni\xF3n no es v\xE1lida." };
+        const nuevo = { ...f };
+        for (const [k, v] of Object.entries(limpio)) {
+          if ((f[k] ?? null) === v) continue;
+          log("editar_ficha", colId, `Campo ${k}`, "ok", { entidad: "ficha", campo: k, valor_anterior: f[k], valor_nuevo: v });
+          nuevo[k] = v;
+        }
+        const est = s.reglas.estadoFicha({ ...nuevo, estado: null });
+        if (est !== f.estado) log("cambio_estado", colId, `Ficha: ${f.estado || "nueva"} \u2192 ${est}`, "ok", { entidad: "ficha", campo: "estado", valor_anterior: f.estado, valor_nuevo: est });
+        nuevo.estado = est;
+        s.fichas[colId] = nuevo;
+        rebuild();
+        return { ok: true, estado: est };
+      },
+      enviarFicha(colId, campos = {}) {
+        const g = api.guardarFicha(colId, campos);
+        if (!g.ok) return g;
+        const f = s.fichas[colId];
+        const faltan = s.reglas.faltantes(f);
+        if (faltan.length) {
+          log("enviar_ficha", colId, faltan.join("; "), "rechazado", { entidad: "ficha" });
+          return { ok: false, faltan, motivo: `No se puede enviar: ${faltan.join(". ")}.` };
+        }
+        const c = s.idx.colab.get(colId);
+        const antes = f.estado;
+        Object.assign(f, { estado: "enviada", enviada_at: reloj(), turno_al_enviar: c.tipo_turno ?? null });
+        log("enviar_ficha", colId, "Ficha enviada a la persona", "ok", { entidad: "ficha", campo: "estado", valor_anterior: antes, valor_nuevo: "enviada" });
+        log("notificacion_simulada", colId, c.canal_contacto ? "Se notificar\xEDa a la persona por su canal registrado. No se envi\xF3 nada." : "Sin dato: canal de contacto. Personas debe avisar a la persona.");
+        rebuild();
+        return { ok: true, aviso: "Se notificar\xEDa a la persona por su canal registrado (simulado: no se env\xEDa nada)." };
+      },
+      responderFicha(colId, respuesta, motivo, via = "Ficha web") {
+        const u = s.user;
+        const p = s.auth.puedeResponderFicha(u, colId);
+        if (!p.ok) return denegar("responder_ficha", colId, p.motivo);
+        const f = s.fichas[colId];
+        if (!f || !["enviada", "requiere_reconfirmacion"].includes(f.estado)) return { ok: false, motivo: "Tu ficha todav\xEDa no est\xE1 enviada por tu jefatura." };
+        if (respuesta === "discrepancia" && !MOTIVOS[motivo]) return { ok: false, motivo: "Elige qu\xE9 no coincide para poder enviar el aviso." };
+        const antes = f.estado;
+        if (respuesta === "discrepancia") {
+          const r = api.reportar(MOTIVO_A_REPORTE[motivo]);
+          if (!r.ok) return r;
+          f.reporte_id = r.id;
+        }
+        Object.assign(f, { estado: respuesta === "confirmo" ? "confirmada" : "con_discrepancia", respuesta, motivo: respuesta === "discrepancia" ? motivo : null, respondida_at: reloj(), respondida_via: via });
+        log(
+          respuesta === "confirmo" ? "confirmar_ficha" : "reportar_discrepancia",
+          colId,
+          respuesta === "confirmo" ? `V\xEDa: ${via}` : "Motivo visible solo para la persona y Personas",
+          "ok",
+          { entidad: "ficha", campo: "estado", valor_anterior: antes, valor_nuevo: f.estado }
+        );
+        if (respuesta === "discrepancia") log("notificacion_simulada", colId, "Se notificar\xEDa a Personas por correo. No se envi\xF3 nada.");
+        rebuild();
+        return { ok: true, estado: f.estado };
+      },
+      confirmarFicha() {
+        return api.responderFicha(s.user?.usuario_id, "confirmo");
+      },
+      reportarDiscrepancia(motivo, texto = "") {
+        if (String(texto ?? "").trim() !== "") return denegar("responder_ficha", s.user?.usuario_id, "Esta demo no recopila texto libre: elige solo el motivo");
+        return api.responderFicha(s.user?.usuario_id, "discrepancia", motivo);
+      },
+      // TI: casos técnicos con datos mínimos (ID, área, fecha de ingreso), ordenados por prioridad y plazo.
+      casosTI() {
+        const u = s.user;
+        const R = s.reglas;
+        const N = s.config.niveles;
+        return s.data.hitos.filter((h) => s.auth.puedeVerHito(u, h) && s.config.hitosTecnicos.includes(h.tipo_hito) && !R.completado(h)).map((h) => {
+          const c = s.idx.colab.get(h.colaborador_id);
+          return {
+            h,
+            c: { colaborador_id: c.colaborador_id, area: c.area, fecha_ingreso: c.fecha_ingreso },
+            estado: R.estadoHito(h),
+            limite: R.fechaLimite(h),
+            fecha: R.fechaComprometida(h),
+            resp: R.responsable(h),
+            prioridad: R.prioridadHito(h),
+            permiso: s.auth.puedeGestionarTecnico(u, h)
+          };
+        }).sort((a, b) => N.indexOf(b.prioridad) - N.indexOf(a.prioridad) || String(a.limite.fecha || "9999").localeCompare(String(b.limite.fecha || "9999")));
+      },
+      marcarListo(hitoId) {
+        const h = hito(hitoId);
+        if (!h) return denegar("marcar_listo", hitoId, "Hito no existe");
+        const p = s.auth.puedeGestionarTecnico(s.user, h);
+        if (!p.ok) return denegar("marcar_listo", hitoId, p.motivo);
+        const antes = h.estado;
+        patch(hitoId, { estado: "Cumplido", fecha_cumplimiento: s.hoy, ultima_actualizacion: s.hoy });
+        log("marcar_listo", hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, "ok", { entidad: "hito", campo: "estado", valor_anterior: antes, valor_nuevo: "Cumplido" });
+        return { ok: true };
+      },
+      marcarPendiente(hitoId, fecha) {
+        const h = hito(hitoId);
+        if (!h) return denegar("marcar_pendiente", hitoId, "Hito no existe");
+        const p = s.auth.puedeGestionarTecnico(s.user, h);
+        if (!p.ok) return denegar("marcar_pendiente", hitoId, p.motivo);
+        if (!isISO(fecha)) return { ok: false, motivo: "La fecha comprometida es obligatoria." };
+        if (fecha < s.hoy) return { ok: false, motivo: "La fecha comprometida no puede ser anterior a la fecha de corte." };
+        const antes = h.fecha_comprometida || null;
+        patch(hitoId, { fecha_comprometida: fecha, ultima_actualizacion: s.hoy, ...h.estado === "Cumplido" ? { estado: "Pendiente", fecha_cumplimiento: null } : {} });
+        log("marcar_pendiente", hitoId, `${h.tipo_hito} de ${h.colaborador_id}`, "ok", { entidad: "hito", campo: "fecha_comprometida", valor_anterior: antes, valor_nuevo: fecha });
+        return { ok: true };
+      },
+      // Personas: bandeja de alertas accionables.
+      alertasFicha() {
+        return s.auth.esPersonas(s.user) ? s.alertasFicha.filter((a) => s.auth.enAlcance(s.user, a.colaborador_id)) : [];
+      },
+      gestionarAlerta(alertaId, estado) {
+        if (!["contactado", "escalada"].includes(estado)) return denegar("gestionar_alerta", alertaId, "Acci\xF3n no v\xE1lida");
+        if (!s.auth.puedeGestionarAlertas(s.user)) return denegar("gestionar_alerta", alertaId, "Sin permiso para gestionar alertas");
+        const a = s.alertasFicha.find((x) => x.id === alertaId);
+        if (!a) return { ok: false, motivo: "La alerta ya no est\xE1 activa." };
+        const antes = a.estado;
+        s.alertaEstados[alertaId] = { estado, por: s.user.usuario_id, actualizada_at: reloj() };
+        log(estado === "contactado" ? "marcar_contactado" : "escalar", alertaId, a.titulo, "ok", { entidad: "alerta", campo: "estado", valor_anterior: antes, valor_nuevo: estado });
+        let aviso = null;
+        if (estado === "escalada") {
+          aviso = `Se notificar\xEDa a ${a.responsable.etiqueta} por correo (simulado).`;
+          log("notificacion_simulada", alertaId, aviso);
+        }
+        rebuild();
+        return { ok: true, aviso };
+      },
+      discrepancias() {
+        if (!s.auth.esPersonas(s.user)) return [];
+        return Object.values(s.fichas).filter((f) => f.motivo && s.auth.enAlcance(s.user, f.colaborador_id));
+      },
+      indicadores() {
+        if (!s.auth.esPersonas(s.user)) return null;
+        return s.reglas.indicadores(s.data.colaboradores.filter((c) => s.auth.enAlcance(s.user, c.colaborador_id)), s.fichas, api.alertasFicha());
+      },
       registrarError() {
         log("error", "\u2014", "Error inesperado; no se registra el mensaje ni su contenido", "error");
       },
@@ -922,6 +1536,8 @@ table.inner th, table.inner td { padding-left: .5rem; }
         s.bitacora = [];
         s.reportes = [];
         s.hoy = HOY_DEFAULT;
+        s.fichas = {};
+        s.alertaEstados = {};
         s.almacenamientoLimpio = limpiarPersistenciaAnterior();
         rebuild();
         log("reiniciar", "\u2014", "Datos originales restaurados; reportes y movimientos anteriores eliminados");
@@ -938,7 +1554,8 @@ table.inner th, table.inner td { padding-left: .5rem; }
         } catch {
           log("error", "\u2014", "No se pudo completar la acci\xF3n; no se registra su contenido", "error");
           if (nombre === "verColaborador") return null;
-          if (["reportesVisibles", "misReportes"].includes(nombre)) return [];
+          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias"].includes(nombre)) return [];
+          if (["vistaFicha", "indicadores"].includes(nombre)) return null;
           return { ok: false, motivo: "No se pudo completar la acci\xF3n. Revisa los datos e intenta nuevamente." };
         }
       };
@@ -966,7 +1583,19 @@ table.inner th, table.inner td { padding-left: .5rem; }
     // { id, ok }
     exportTexto: null,
     alertaAbierta: null,
-    cargaErrores: null
+    cargaErrores: null,
+    fichaAbierta: null,
+    // jefatura: colaborador con formulario de ficha abierto
+    fichaErrores: null,
+    // lista de faltantes al enviar
+    discrepancia: false,
+    // colaborador: formulario "Algo no coincide" abierto
+    resultado: null,
+    // colaborador: 'confirmada' | 'con_discrepancia'
+    denegado: null,
+    // pantalla 403
+    fichaFiltro: "accion",
+    alertaFiltro: "abierta"
   };
   var store;
   var root;
@@ -1018,6 +1647,24 @@ table.inner th, table.inner td { padding-left: .5rem; }
   var pad2 = (n) => String(n).padStart(2, "0");
   var stats = (rows) => `<div class="stats">${rows.map(([l, v, tone]) => `<div><span>${esc(l)}</span><span class="num ${tone ? "tone-" + tone : ""}">${v}</span></div>`).join("")}</div>`;
   var tags = (list) => `<div class="tags caption">${list.filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</div>`;
+  var filtros = (grupo, opciones, actual) => `<div class="filters caption" role="group" aria-label="Filtro">${opciones.map(([k, t, n]) => `<button class="${actual === k ? "on" : ""}" data-act="${grupo}" data-arg="${esc(k)}" aria-pressed="${actual === k}">${esc(t)}${n !== void 0 ? ` <span class="num">${n}</span>` : ""}</button>`).join("")}</div>`;
+  var SIN_DATO = (txt = "") => `<span class="missing">Sin dato${txt ? ` \xB7 ${esc(txt)}` : ""}</span>`;
+  var fmtDT = (v) => {
+    if (!v) return "\u2014";
+    const [d, t] = String(v).split("T");
+    return `${fmt(d)} ${t ? t.slice(0, 5) : ""}`.trim();
+  };
+  var TONO_FICHA = { incompleta: "neutral", lista: "warn", enviada: "warn", confirmada: "ok", con_discrepancia: "bad", requiere_reconfirmacion: "bad" };
+  var chipFicha = (est, texto) => `<span class="chip chip-${TONO_FICHA[est] || "neutral"}">${esc(texto || ESTADOS_FICHA[est])}</span>`;
+  var TONO_PRIO = { Urgente: "bad", Alta: "bad", Media: "warn", Baja: "neutral" };
+  var chipPrio = (p) => `<span class="chip chip-${TONO_PRIO[p] || "neutral"}">${esc(p)}</span>`;
+  var SEM_COLOR = { rojo: "rojo", amarillo: "amarillo", verde: "verde" };
+  var semaforoFicha = (sm) => `${dot(SEM_COLOR[sm.color] || "gris")} <b>${esc(sm.texto)}</b><br><small class="dim">${esc(sm.motivos.join(" \xB7 "))}</small>`;
+  function v403() {
+    return `<section class="blk hero-sm" role="alert"><p class="caption">Error 403</p><h1>No tienes acceso a esta ficha.</h1>
+    <p class="lead">Tu cuenta solo puede ver la informaci\xF3n de su propio alcance. El intento qued\xF3 registrado en la bit\xE1cora.</p>
+    <div><button class="btn btn-primary" data-act="volver">Volver a mi inicio</button></div></section>`;
+  }
   function topbar() {
     const s = store.state;
     const u = s.user;
@@ -1065,6 +1712,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
     try {
       if (!u) v = vLogin();
       else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) v = vDenegado();
+      else if (ui.denegado) v = v403();
       else v = VISTAS[u.rol](u);
     } catch (err) {
       console.error(err);
@@ -1134,7 +1782,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
       ${tags(["Nexo Laboral Group", "Piloto de onboarding", "Datos sint\xE9ticos"])}
       <h1>Qu\xE9 falta para cada ingreso, qui\xE9n lo resuelve y para cu\xE1ndo.</h1>
       <p class="lead">Cada persona ve solo lo que necesita: el colaborador su checklist, la jefatura su equipo, TI los equipos y accesos, y Personas el proceso completo.</p>
-      <p class="notice">Simulaci\xF3n con cuentas sint\xE9ticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la p\xE1gina.</p>
+      <p class="notice"><b>Inicio de sesi\xF3n simulado.</b> Simulaci\xF3n con cuentas sint\xE9ticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la p\xE1gina.</p>
     </section>
     <section class="blk" id="ingreso">
       <p class="caption">Ingresar</p>
@@ -1169,12 +1817,16 @@ table.inner th, table.inner td { padding-left: .5rem; }
     const misRep = store.misReportes();
     const nombre = String(nombreDe(u.usuario_id)).split(" ")[0];
     const grupo = (tipos) => items.filter((x) => tipos.includes(x.h.tipo_hito));
+    const vf = store.vistaFicha(u.usuario_id);
+    const fichaRecibida = vf && ["enviada", "confirmada", "con_discrepancia", "requiere_reconfirmacion"].includes(vf.est);
+    const porResponder = vf && ["enviada", "requiere_reconfirmacion"].includes(vf.est);
     const body = `<section class="blk hero" id="inicio">
       ${tags([c.area, c.sede, c.modalidad])}
       <h1>Hola${nombre ? `, ${esc(nombre)}` : ""}. ${faltan ? `Te ${faltan === 1 ? "falta 1 paso" : `faltan ${faltan} pasos`} para completar tu ingreso.` : "Tu ingreso est\xE1 completo."}</h1>
       <div class="detail">
         <div class="stack">
           ${vencidos.length ? `<p class="lead">${vencidos.length} ${vencidos.length === 1 ? "paso est\xE1 atrasado" : "pasos est\xE1n atrasados"} y ninguno depende de ti. Los responsables los tienen en su bandeja.</p>` : '<p class="lead">Aqu\xED ves qu\xE9 debe ocurrir, qui\xE9n lo gestiona y para cu\xE1ndo.</p>'}
+          ${porResponder ? '<p class="notice"><b>Tu jefatura envi\xF3 tu ficha de ingreso.</b> Rev\xEDsala y conf\xEDrmala, o av\xEDsanos si algo no coincide.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>' : ""}
           ${c.correo_corporativo_activo === "No" ? '<p class="hint">A\xFAn no tienes correo corporativo. Puedes usar esta p\xE1gina desde tu tel\xE9fono igual.</p>' : ""}
         </div>
         ${stats([
@@ -1185,10 +1837,12 @@ table.inner th, table.inner td { padding-left: .5rem; }
     ])}
       </div>
     </section>
+    ${fichaColaborador(u, vf)}
     ${GRUPOS.map(([g, tipos], i) => `<section class="blk" id="g${i}"><p class="caption">${pad2(i + 1)} \xB7 ${g}</p>
       <ul class="rows">${grupo(tipos).map(({ h, ev }) => `<li class="hrow hrow-${ev.estadoReal === "Cumplido" ? "ok" : ev.estadoReal === "Vencido" ? "bad" : ev.estadoReal === "Por verificar" ? "warn" : "neutral"}">
         <span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><span class="dim">Lo gestiona ${esc(h.responsable_tipo === "Jefatura" ? "tu jefatura" : funcion[h.responsable_tipo])} \xB7 plazo <span class="nw">${fmt(ev.limite)}</span></span>
-        ${ev.estadoReal === "Por verificar" ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ""}</span>${chip(ev)}</li>`).join("")}</ul></section>`).join("")}
+        ${ev.estadoReal === "Por verificar" ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ""}
+        ${h.fecha_comprometida && ev.estadoReal !== "Cumplido" ? `<span class="dim">Soporte TI comprometi\xF3 el <span class="nw">${fmt(h.fecha_comprometida)}</span></span>` : ""}</span>${chip(ev)}</li>`).join("")}</ul></section>`).join("")}
     <section class="blk" id="contactos"><p class="caption">A qui\xE9n pedir ayuda</p>
       ${stats([
       ["Tu jefatura", jef ? esc(nombreDe(jef.usuario_id)) : '<span class="missing">Sin asignar. Personas ya tiene la alerta.</span>'],
@@ -1196,7 +1850,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
       ["Contrato y dudas generales", "Equipo de Personas"],
       ["Tu canal registrado", c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>']
     ])}</section>
-    <section class="blk" id="ayuda"><p class="caption">\xBFAlgo no coincide?</p>
+    ${fichaRecibida ? "" : `<section class="blk" id="ayuda"><p class="caption">\xBFAlgo no coincide?</p>
       <h2 class="h-lg">Av\xEDsanos si algo no es como te dijeron.</h2>
       <form data-form="reporte" class="form">
         <div class="field"><label for="rep-tipo">Qu\xE9 pas\xF3*</label>
@@ -1205,17 +1859,54 @@ table.inner th, table.inner td { padding-left: .5rem; }
         <div><button class="btn btn-primary" type="submit">Enviar a Personas</button></div>
       </form>
       ${misRep.length ? `<div class="stack"><p class="caption">Tus reportes</p>${stats(misRep.map((r) => [r.tipo, `<span class="chip chip-neutral">${esc(r.estado)}</span>`]))}</div>` : ""}
-    </section>`;
+    </section>`}
+    <section class="blk blk-tight"><p class="hint">Prueba de permisos: <button class="link" data-act="probar-403" data-arg="COL-014">intentar abrir la ficha de COL-014</button></p></section>`;
     const nav = [
       { label: "Resumen", href: "inicio" },
+      ...vf ? [{ label: "Tu ficha de ingreso", href: "ficha", right: porResponder ? "1" : void 0 }] : [],
       ...GRUPOS.map(([g, tipos], i) => {
         const l = grupo(tipos);
         return { label: g, href: `g${i}`, n: pad2(i + 1), sub: true, right: `${l.filter((x) => x.ev.estadoReal === "Cumplido").length}/${l.length}` };
       }),
       { label: "A qui\xE9n pedir ayuda", href: "contactos" },
-      { label: "\xBFAlgo no coincide?", href: "ayuda" }
+      ...fichaRecibida ? [] : [{ label: "\xBFAlgo no coincide?", href: "ayuda" }]
     ];
     return { nav, body };
+  }
+  function fichaColaborador(u, v) {
+    if (!v) return "";
+    const { c, ficha: f, est } = v;
+    const fijo = '<p class="hint">Lo revisa Personas, no tu jefatura. No se usa para evaluarte.</p>';
+    if (ui.resultado) {
+      const ok = ui.resultado === "confirmada";
+      return `<section class="blk" id="ficha" role="status"><p class="caption">Tu respuesta qued\xF3 registrada</p>
+      <h2 class="h-lg">${ok ? "Confirmaste tu ficha." : "Recibimos tu aviso."}</h2>
+      <p class="lead"><b>Pr\xF3ximo paso:</b> ${ok ? `reuni\xF3n con ${esc(v.jefatura || "tu jefatura")} el <span class="nw">${esc(fmtDT(f?.reunion_at))}</span>.` : `Personas revisar\xE1 lo que no coincide y te contactar\xE1 ${c.canal_contacto ? "por tu canal registrado" : "(no tienes canal registrado: Personas ya tiene la alerta)"}. Se notificar\xEDa a Personas por correo (simulado).`}</p>
+      ${fijo}<div><button class="btn btn-ghost" data-act="ver-ficha">Ver mi ficha</button></div></section>`;
+    }
+    const enviada = !!f;
+    const respondible = ["enviada", "requiere_reconfirmacion"].includes(est);
+    const acciones = respondible ? `<div class="row"><button class="btn btn-primary" data-act="ficha-confirmar">Todo claro, confirmo</button>
+      <button class="btn btn-ghost" data-act="ficha-disc">Algo no coincide</button></div>
+      ${ui.discrepancia ? `<form data-form="discrepancia" class="form"><fieldset class="choice"><legend class="caption">\xBFQu\xE9 no coincide?*</legend>
+        ${Object.entries(MOTIVOS).map(([k, t]) => `<label class="radio"><input type="radio" name="motivo" value="${esc(k)}"> ${esc(t)}</label>`).join("")}</fieldset>
+        <p class="hint">Solo eliges el motivo: no pedimos relatos ni datos personales adicionales.</p>
+        <div class="row"><button class="btn btn-primary" type="submit">Enviar a Personas</button><button class="btn btn-ghost" type="button" data-act="ficha-disc-cerrar">Cancelar</button></div></form>` : ""}` : est === "confirmada" ? `<p>${chipFicha(est)} Confirmaste tu ficha el <span class="nw">${esc(fmtDT(f.respondida_at))}</span>.</p>` : est === "con_discrepancia" ? `<p>${chipFicha(est)} Avisaste que algo no coincide (${esc(MOTIVOS[f.motivo] || "")}). Personas lo est\xE1 revisando.</p>` : '<p class="dim">Podr\xE1s confirmar cuando tu jefatura env\xEDe la ficha.</p>';
+    return `<section class="blk" id="ficha"><div class="row-between"><p class="caption">Tu ficha de ingreso</p>${chipFicha(est)}</div>
+    ${!enviada ? '<p class="lead">Tu jefatura todav\xEDa no env\xEDa tu ficha. Cuando lo haga, aqu\xED ver\xE1s tus tareas, tu compa\xF1ero o compa\xF1era de apoyo y la reuni\xF3n.</p>' : ""}
+    <div class="detail">
+      <div class="stack"><p class="caption">Qu\xE9 har\xE1s tu primera semana</p>
+        ${enviada ? `<ol class="rows tareas">${[f.tarea_1, f.tarea_2, f.tarea_3].map((t, i) => `<li class="hrow"><span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(t)}</b></span></li>`).join("")}</ol>` : '<p class="dim">Tu jefatura a\xFAn no completa esta secci\xF3n.</p>'}
+      </div>
+      ${stats([
+      ["Ingreso", c.fecha_ingreso ? `${fmt(c.fecha_ingreso)} \xB7 hora ${SIN_DATO("no viene en el registro")}` : SIN_DATO()],
+      ["Cu\xE1ndo trabajas", c.tipo_turno ? `${esc(c.tipo_turno)} <span class="chip chip-ok">Validado por RR.LL.</span>` : SIN_DATO("Personas lo est\xE1 revisando")],
+      ["Jefatura", v.jefatura ? esc(v.jefatura) : SIN_DATO("Personas est\xE1 asignando tu jefatura")],
+      ["Compa\xF1ero/a de apoyo", v.companero ? esc(v.companero) : '<span class="dim">Pendiente de tu jefatura</span>'],
+      ["Reuni\xF3n con jefatura", enviada ? esc(fmtDT(f.reunion_at)) : '<span class="dim">Pendiente de tu jefatura</span>']
+    ])}
+    </div>
+    ${acciones}${fijo}</section>`;
   }
   function vJefatura(u) {
     const s = store.state;
@@ -1227,14 +1918,22 @@ table.inner th, table.inner td { padding-left: .5rem; }
     const proximos = equipo.filter((c) => c.fecha_ingreso > hoy);
     const recientes = equipo.filter((c) => c.fecha_ingreso <= hoy && diffDays(hoy, c.fecha_ingreso) <= 30);
     const metr = auth.alcanceMetricas(u) === "equipo" ? metricasPorTipo(items) : null;
+    const fichas = equipo.map((c) => store.vistaFicha(c.colaborador_id)).filter(Boolean);
+    const porEnviar = fichas.filter((v) => ["incompleta", "lista"].includes(v.est)).length;
     const body = `<section class="blk hero" id="inicio">
       ${tags([u.area, `Equipo de ${equipo.length}`, "Jefatura"])}
-      <h1>${mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"} con tu equipo de ingreso.` : "Tu equipo de ingreso est\xE1 al d\xEDa contigo."}</h1>
+      <h1>${porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? "ficha de ingreso por enviar" : "fichas de ingreso por enviar"}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"}` : ""}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? "acci\xF3n pendiente" : "acciones pendientes"} con tu equipo de ingreso.` : "Tu equipo de ingreso est\xE1 al d\xEDa contigo."}</h1>
       <div class="detail">
         <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
           ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? "" : "notice-bad"}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} est\xE1 en tu equipo.` : `${esc(ui.busqueda.id)} est\xE1 fuera de tu alcance. El intento qued\xF3 registrado en la bit\xE1cora.`}</p>` : ""}</form>
-        ${auth.puedeVerMetricas(u) ? stats([["Personas en tu equipo", String(equipo.length)], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats([["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
+        ${auth.puedeVerMetricas(u) ? stats([["Personas en tu equipo", String(equipo.length)], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats([["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
       </div>
+    </section>
+    <section class="blk" id="fichas"><p class="caption">Fichas de ingreso</p>
+      <p class="lead">Completa 3 tareas reales, una persona de apoyo de tu equipo y la reuni\xF3n. Al enviarla, la persona la confirma o avisa si algo no coincide.</p>
+      <ul class="rows">${fichas.map((v) => `<li><div class="hrow"><span class="rb-main"><b>${esc(nombreDe(v.c.colaborador_id))}</b><span class="dim"><code>${esc(v.c.colaborador_id)}</code> \xB7 ingreso ${v.c.fecha_ingreso ? fmt(v.c.fecha_ingreso) : "sin dato"}</span></span>
+        <span class="row">${chipFicha(v.est, v.estadoVisible)}<button class="btn ${["incompleta", "lista"].includes(v.est) ? "btn-primary" : "btn-ghost"} btn-sm" data-act="ficha-abrir" data-arg="${esc(v.c.colaborador_id)}">${ui.fichaAbierta === v.c.colaborador_id ? "Cerrar" : ["incompleta", "lista"].includes(v.est) ? "Completar ficha" : "Ver ficha"}</button></span></div>
+        ${ui.fichaAbierta === v.c.colaborador_id ? `<div class="sub-panel">${formFicha(u, v.c.colaborador_id)}</div>` : ""}</li>`).join("")}</ul>
     </section>
     <section class="blk" id="acciones"><p class="caption">Tus acciones</p>
       ${mias.length ? `<ul class="rows">${mias.map(({ h, ev }) => `<li class="hrow"><span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])} \xB7 ${esc(nombreDe(h.colaborador_id))}</b><span class="dim">Plazo ${fmt(ev.limite)}${ev.flags.includes("plazo_corrido") ? ` \xB7 registrado para ${fmt(ev.limiteRegistrado)}` : ""}</span></span>
@@ -1261,12 +1960,40 @@ table.inner th, table.inner td { padding-left: .5rem; }
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ""}`;
     const nav = [
       { label: "Resumen", href: "inicio" },
+      { label: "Fichas de ingreso", href: "fichas", right: porEnviar },
       { label: "Tus acciones", href: "acciones", right: mias.length },
       { label: "Pr\xF3ximos ingresos", href: "ingresos", right: proximos.length },
       { label: "Personas de tu equipo", href: "equipo", right: equipo.length },
       ...metr ? [{ label: "Cumplimiento", href: "cumplimiento" }] : []
     ];
     return { nav, body };
+  }
+  function formFicha(u, colId) {
+    const v = store.vistaFicha(colId);
+    if (!v) return v403();
+    const f = v.ficha || {};
+    const id = esc(colId);
+    const tec = v.hitos.filter((x) => HITOS_TECNICOS.includes(x.h.tipo_hito)).map((x) => `${esc(x.h.tipo_hito)}: ${esc(x.estado)}`).join(" \xB7 ");
+    const solo = stats([
+      ["Turno (solo lectura)", v.c.tipo_turno ? `${esc(v.c.tipo_turno)} \xB7 validado por RR.LL.` : SIN_DATO("lo corrige Personas")],
+      ["Equipo y accesos (solo lectura)", `${tec || "\u2014"} \xB7 lo gestiona TI`]
+    ]);
+    if (!["incompleta", "lista"].includes(v.est)) {
+      return `<div class="stack">${solo}<p>${chipFicha(v.est, v.estadoVisible)} ${f.enviada_at ? `Enviada el <span class="nw">${esc(fmtDT(f.enviada_at))}</span>.` : ""}</p>
+      <ol class="mini">${[f.tarea_1, f.tarea_2, f.tarea_3].map((t) => `<li>${esc(t)}</li>`).join("")}</ol>
+      <p>Compa\xF1ero/a de apoyo: <b>${esc(v.companero || "\u2014")}</b> \xB7 Reuni\xF3n: <span class="nw">${esc(fmtDT(f.reunion_at))}</span></p>
+      ${v.est === "con_discrepancia" ? '<p class="notice">La persona avis\xF3 que algo no coincide. Est\xE1 en revisi\xF3n por Personas; aqu\xED no se muestra el motivo.</p>' : ""}</div>`;
+    }
+    const comps = store.companerosPara(colId);
+    return `<form data-form="ficha" data-arg="${id}" class="form ficha-form">${solo}
+    ${[1, 2, 3].map((i) => `<div class="field"><label for="t${i}-${id}">Tarea ${i}*</label><input id="t${i}-${id}" name="tarea_${i}" maxlength="160" value="${esc(f[`tarea_${i}`] || "")}" placeholder="Qu\xE9 har\xE1 la persona su primera semana"></div>`).join("")}
+    <div class="field"><label for="cp-${id}">Compa\xF1ero o compa\xF1era de apoyo*</label>
+    <select id="cp-${id}" name="companero_id"><option value="">Elige una persona de tu equipo</option>${comps.map((x) => `<option value="${esc(x.id)}" ${x.id === f.companero_id ? "selected" : ""}>${esc(x.nombre)} (${esc(x.id)})</option>`).join("")}</select></div>
+    <div class="field"><label for="rn-${id}">Reuni\xF3n con la persona (fecha y hora)*</label>
+    <input id="rn-${id}" type="datetime-local" name="reunion_at" value="${esc(f.reunion_at || "")}"></div>
+    ${ui.fichaErrores ? `<div class="notice notice-bad" role="alert"><b>No se puede enviar todav\xEDa.</b><ul class="mini">${ui.fichaErrores.map((e) => `<li>${esc(e)}</li>`).join("")}</ul></div>` : ""}
+    <div class="row"><button class="btn btn-ghost" type="submit" name="op" value="guardar">Guardar borrador</button><button class="btn btn-primary" type="submit" name="op" value="enviar">Enviar ficha</button></div>
+    <p class="hint">Al enviar, se notificar\xEDa a la persona por su canal registrado (simulado: no se env\xEDa nada). No ves su canal ni lo que reporte a Personas.</p></form>`;
   }
   var listaIngresos = (l) => stats(l.map((c) => [nombreDe(c.colaborador_id), `${fmt(c.fecha_ingreso)} \xB7 ${esc(c.modalidad)} \xB7 ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}`]));
   function tablaHitos(u, colId) {
@@ -1312,19 +2039,19 @@ table.inner th, table.inner td { padding-left: .5rem; }
   function vTI(u) {
     const s = store.state;
     const abiertos = hitosVisibles(u).filter((x) => x.ev.estadoReal !== "Cumplido").sort((a, b) => b.ev.diasVencido - a.ev.diasVencido || CRIT_PESO[b.ev.crit] - CRIT_PESO[a.ev.crit]);
-    const filtros = { todos: abiertos, mios: abiertos.filter((x) => x.h.responsable_id === u.usuario_id), sin: abiertos.filter((x) => !x.h.responsable_id) };
-    const lista = filtros[ui.tiFiltro];
+    const filtros2 = { todos: abiertos, mios: abiertos.filter((x) => x.h.responsable_id === u.usuario_id), sin: abiertos.filter((x) => !x.h.responsable_id) };
+    const lista = filtros2[ui.tiFiltro];
     const titulo = { todos: "Todos los casos", mios: "Mis casos", sin: "Sin responsable" };
     const body = `<section class="blk hero" id="inicio">
       ${tags(["Soporte TI", "Equipo y Acceso", "Sin datos personales"])}
       <h1>${abiertos.filter((x) => x.ev.estadoReal === "Vencido").length} equipos y accesos est\xE1n atrasados seg\xFAn el plazo del cat\xE1logo.</h1>
       <div class="detail">
         <p class="lead">Ves solo los hitos de Equipo y Acceso, identificados por c\xF3digo. Los nombres y canales de contacto no son necesarios para resolverlos.</p>
-        ${s.auth.puedeVerMetricas(u) ? stats([["Casos t\xE9cnicos abiertos", String(abiertos.length)], ["Vencidos", String(abiertos.filter((x) => x.ev.estadoReal === "Vencido").length), "bad"], ["Sin responsable asignado", String(filtros.sin.length), filtros.sin.length ? "warn" : ""], ["Asignados a ti", String(filtros.mios.length)]]) : ""}
+        ${s.auth.puedeVerMetricas(u) ? stats([["Casos t\xE9cnicos abiertos", String(abiertos.length)], ["Vencidos", String(abiertos.filter((x) => x.ev.estadoReal === "Vencido").length), "bad"], ["Sin responsable asignado", String(filtros2.sin.length), filtros2.sin.length ? "warn" : ""], ["Asignados a ti", String(filtros2.mios.length)]]) : ""}
       </div>
     </section>
     <section class="blk" id="casos"><p class="caption">${esc(titulo[ui.tiFiltro])} \xB7 ${lista.length}</p>
-    <div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Deb\xEDa estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Deb\xEDa estar</th><th>Estado</th><th>Responsable</th><th>Fecha comprometida</th><th></th></tr></thead><tbody>
     ${lista.map(({ h, ev }) => {
       const c = store.verColaborador(h.colaborador_id);
       const pc = s.auth.puedeCompletar(u, h, s.hoy);
@@ -1332,17 +2059,27 @@ table.inner th, table.inner td { padding-left: .5rem; }
       return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small class="dim">Criticidad ${esc(ev.crit)}</small></td>
       <td><small>${esc(c.sede)} \xB7 ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal || "dispositivo sin dato").toLowerCase()} \xB7 correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
-      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
+      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar \xB7 TI por regla</span>'}</td><td>${tiPendiente(u, h)}</td>
       <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ""}
         ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${esc(h.hito_id)}">Tomar caso</button>` : ""}
         ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ""}</div></td></tr>
-      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ""}`;
-    }).join("") || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
+      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ""}`;
+    }).join("") || '<tr><td colspan="8" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
-    const nav = [["todos", "Todos"], ["mios", "Mis casos"], ["sin", "Sin responsable"]].map(([k, t], i) => ({ label: t, act: "ti-filtro", arg: k, n: pad2(i + 1), right: filtros[k].length, active: ui.tiFiltro === k }));
+    const nav = [["todos", "Todos"], ["mios", "Mis casos"], ["sin", "Sin responsable"]].map(([k, t], i) => ({ label: t, act: "ti-filtro", arg: k, n: pad2(i + 1), right: filtros2[k].length, active: ui.tiFiltro === k }));
     return { nav, body };
   }
+  function tiPendiente(u, h) {
+    const p = store.state.auth.puedeGestionarTecnico(u, h);
+    if (!p.ok) return `<small class="dim">${esc(p.motivo)}</small>`;
+    const id = esc(h.hito_id);
+    return `<form data-form="ti-pendiente" data-arg="${id}" class="ti-fecha"><label for="fc-${id}" class="sr">Fecha comprometida para ${id}</label>
+    <span class="field field-sm"><input type="date" id="fc-${id}" name="fecha" value="${esc(h.fecha_comprometida || "")}"></span><button class="btn btn-ghost btn-sm" type="submit">Guardar fecha</button></form>`;
+  }
   var TABS = [
+    ["fichas", "Fichas de ingreso", "Qui\xE9n est\xE1 listo para su primer d\xEDa."],
+    ["alertas", "Alertas", "Qu\xE9 hay que resolver, qui\xE9n y para cu\xE1ndo."],
+    ["indicadores", "Indicadores", "Si la ficha est\xE1 cambiando el ingreso."],
     ["resumen", "Resumen", "Proceso de ingreso completo."],
     ["casos", "Casos cr\xEDticos", "Personas que necesitan una acci\xF3n hoy."],
     ["calidad", "Calidad de datos", "Lo que los archivos no dicen bien."],
@@ -1359,7 +2096,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
     const reglasAltas = new Set(alertasVisibles(u).filter((a) => a.sev === "alta").map((a) => a.regla)).size;
     const [, nombreTab, titulo] = TABS.find((t) => t[0] === ui.tab);
     const i = TABS.findIndex((t) => t[0] === ui.tab);
-    const contenido = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+    const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
     const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === "Administrador" ? "Administraci\xF3n" : "Equipo de Personas", `${pad2(i + 1)} \xB7 ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
     const nav = disponibles.map(([k, t], j) => ({
       label: t,
@@ -1367,9 +2104,62 @@ table.inner th, table.inner td { padding-left: .5rem; }
       arg: k,
       n: pad2(j + 1),
       active: ui.tab === k,
-      right: k === "reportes" ? rep || void 0 : k === "calidad" ? reglasAltas : void 0
+      right: k === "reportes" ? rep || void 0 : k === "calidad" ? reglasAltas : k === "alertas" ? store.alertasFicha().filter((a) => a.estado === "abierta").length || void 0 : void 0
     }));
     return { nav, body };
+  }
+  function tFichas() {
+    const todas = store.ingresos();
+    const F = {
+      accion: ["Requieren acci\xF3n", todas.filter((v) => v.semaforo.color === "rojo")],
+      atrasados: ["Atrasados", todas.filter((v) => v.hitos.some((x) => x.estado === "Atrasado"))],
+      confirmados: ["Confirmados", todas.filter((v) => v.est === "confirmada")],
+      todos: ["Todos", todas]
+    };
+    const lista = F[ui.fichaFiltro][1];
+    return `<section class="blk"><p class="hint">Sede piloto: el kit no la define, se muestran todos los ingresos de tu alcance (supuesto declarado). Datos minimizados.</p>
+  ${filtros("ficha-filtro", Object.entries(F).map(([k, [t, l]]) => [k, t, l.length]), ui.fichaFiltro)}
+  <div class="table-wrap"><table><thead><tr><th>Sem\xE1foro</th><th>Persona</th><th>\xC1rea</th><th>Ingreso</th><th>Jefatura</th><th>Ficha</th><th>Motivo</th></tr></thead><tbody>
+  ${lista.map((v) => `<tr><td>${semaforoFicha(v.semaforo)}</td><td><b>${esc(v.c.nombre || v.c.colaborador_id)}</b><br><code>${esc(v.c.colaborador_id)}</code></td><td>${esc(v.c.area)}</td>
+    <td class="num">${v.c.fecha_ingreso ? fmt(v.c.fecha_ingreso) : SIN_DATO()}</td><td>${v.c.jefatura_id ? `<code>${esc(v.c.jefatura_id)}</code>` : SIN_DATO()}</td>
+    <td>${chipFicha(v.est)}</td><td>${v.ficha?.motivo ? esc(MOTIVOS[v.ficha.motivo]) : "\u2014"}</td></tr>`).join("") || '<tr><td colspan="7" class="empty">Sin personas en este filtro.</td></tr>'}
+  </tbody></table></div></section>`;
+  }
+  var PESO_PRIO = { Urgente: 4, Alta: 3, Media: 2, Baja: 1 };
+  function tAlertas(u) {
+    const todas = store.alertasFicha().sort((a, b) => PESO_PRIO[b.prioridad] - PESO_PRIO[a.prioridad] || String(a.plazo).localeCompare(String(b.plazo)));
+    const F = { abierta: "Abiertas", contactado: "Contactadas", escalada: "Escaladas", todas: "Todas" };
+    const lista = ui.alertaFiltro === "todas" ? todas : todas.filter((a) => a.estado === ui.alertaFiltro);
+    const s = store.state;
+    return `<section class="blk"><p class="hint">Cada alerta indica responsable, acci\xF3n requerida, plazo y prioridad. Plazos seg\xFAn ${store.state.config.fuentePlazo === "hito" ? "la fecha registrada en el hito (y el cat\xE1logo si falta)" : "el plazo del cat\xE1logo"}. Las notificaciones son simuladas: no se env\xEDa nada.</p>
+  ${filtros("alerta-filtro", Object.entries(F).map(([k, t]) => [k, t, k === "todas" ? todas.length : todas.filter((a) => a.estado === k).length]), ui.alertaFiltro)}
+  <div class="table-wrap"><table><thead><tr><th>Prioridad</th><th>Alerta</th><th>Persona</th><th>Responsable</th><th>Acci\xF3n requerida</th><th>Plazo</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${lista.slice(0, 150).map((a) => {
+      const h = a.hito_id ? s.data.hitos.find((x) => x.hito_id === a.hito_id) : null;
+      return `<tr><td>${chipPrio(a.prioridad)}</td><td><b>${esc(a.titulo)}</b><br><small class="dim">${esc(TIPOS_ALERTA[a.tipo] || a.tipo)}${a.hito_id ? ` \xB7 <code>${esc(a.hito_id)}</code>` : ""}</small></td>
+    <td><code>${esc(a.colaborador_id)}</code></td><td>${esc(a.responsable.etiqueta)}</td><td>${esc(a.accion_requerida)}</td>
+    <td class="num">${a.plazo < s.hoy ? `<span class="chip chip-bad">Venci\xF3 ${fmt(a.plazo)}</span>` : fmt(a.plazo)}</td><td>${esc(a.estado)}</td>
+    <td><div class="row">${a.estado !== "contactado" ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="contactado" data-arg="${esc(a.id)}">Marcar contactado</button>` : ""}
+      ${a.estado !== "escalada" ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="escalada" data-arg="${esc(a.id)}">Escalar</button>` : ""}
+      ${h && s.auth.puedeReasignar(u, h).ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ""}</div></td></tr>
+    ${h && ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ""}`;
+    }).join("") || '<tr><td colspan="8" class="empty">Sin alertas en este filtro.</td></tr>'}
+  </tbody></table></div>${lista.length > 150 ? `<p class="hint">Se muestran 150 de ${lista.length}.</p>` : ""}</section>`;
+  }
+  function tIndicadores() {
+    const k = store.indicadores();
+    if (!k) return "";
+    const disc = Object.values(k.porMotivo).reduce((a, b) => a + b, 0);
+    return `<section class="blk"><div class="detail">
+      <div class="stack"><p class="big-num num">${k.pctAntesDia1 === null ? "\u2014" : `${k.pctAntesDia1}%`}</p>
+        <p class="lead">de las fichas enviadas se confirmaron antes del d\xEDa 1 (${k.confirmadasAntesDia1} de ${k.enviadas}).</p>
+        ${k.enviadas ? "" : '<p class="hint">A\xFAn no hay fichas enviadas. El indicador aparece cuando una jefatura env\xEDa la primera.</p>'}</div>
+      ${stats([["Ingresos en tu alcance", String(k.ingresos)], ["Fichas enviadas", String(k.enviadas)], ["Fichas confirmadas", String(k.confirmadas), k.confirmadas ? "ok" : ""], ["Discrepancias reportadas", String(disc), disc ? "warn" : ""]])}
+    </div></section>
+  <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
+  <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
+    ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), "bad"])) : '<p class="empty">Sin hitos atrasados.</p>'}
+    <p class="hint">Indicadores calculados en vivo desde las fichas y los hitos. No se usan para evaluar personas.</p></section>`;
   }
   function tResumen(u) {
     if (!store.state.auth.puedeVerMetricas(u)) return "";
@@ -1508,6 +2298,31 @@ table.inner th, table.inner td { padding-left: .5rem; }
       if (!r.ok) ui.loginError = r.motivo;
       return render();
     }
+    if (kind === "discrepancia") {
+      const r = store.reportarDiscrepancia(String(fd.get("motivo") || ""));
+      if (r.ok) {
+        ui.resultado = "con_discrepancia";
+        ui.discrepancia = false;
+        return render();
+      }
+      return toastMsg(r.motivo);
+    }
+    if (kind === "ficha") {
+      const op = e.submitter?.value === "enviar" ? "enviar" : "guardar";
+      const campos = Object.fromEntries(["tarea_1", "tarea_2", "tarea_3", "companero_id", "reunion_at"].map((k) => [k, String(fd.get(k) || "")]));
+      const r = op === "enviar" ? store.enviarFicha(f.dataset.arg, campos) : store.guardarFicha(f.dataset.arg, campos);
+      if (!r.ok) {
+        ui.fichaErrores = r.faltan || [r.motivo];
+        render();
+        return toastMsg(r.motivo);
+      }
+      ui.fichaErrores = null;
+      return toastMsg(op === "enviar" ? `Ficha enviada. ${r.aviso}` : `Borrador guardado: ${ESTADOS_FICHA[r.estado]}.`);
+    }
+    if (kind === "ti-pendiente") {
+      const r = store.marcarPendiente(f.dataset.arg, String(fd.get("fecha") || ""));
+      return toastMsg(r.ok ? "Fecha comprometida guardada." : r.motivo);
+    }
     if (kind === "reporte") {
       const r = store.reportar(String(fd.get("tipo")));
       return toastMsg(r.ok ? "Solicitud creada en esta demo para revisi\xF3n de Personas. Se borra al recargar." : r.motivo);
@@ -1585,7 +2400,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
     }
   }
   function resetUi() {
-    Object.assign(ui, { tab: "resumen", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null });
+    Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: "fichas", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null });
   }
   function onClick(e) {
     const b = e.target.closest("[data-act]");
@@ -1629,6 +2444,58 @@ table.inner th, table.inner td { padding-left: .5rem; }
         ui.tiFiltro = arg;
         ui.reasignando = null;
         return render();
+      case "ficha-filtro":
+        ui.fichaFiltro = arg;
+        return render();
+      case "alerta-filtro":
+        ui.alertaFiltro = arg;
+        ui.reasignando = null;
+        return render();
+      case "volver":
+        ui.denegado = null;
+        return render();
+      case "probar-403": {
+        const r = store.entrar("/ficha", arg);
+        ui.denegado = r.ok ? null : arg;
+        render();
+        return window.scrollTo(0, 0);
+      }
+      case "ficha-abrir": {
+        if (ui.fichaAbierta === arg) {
+          ui.fichaAbierta = null;
+          return render();
+        }
+        const r = store.entrar("/ficha", arg);
+        if (!r.ok) {
+          ui.denegado = arg;
+          return render();
+        }
+        ui.fichaAbierta = arg;
+        ui.fichaErrores = null;
+        ui.detalle = null;
+        return render();
+      }
+      case "ficha-confirmar": {
+        const r = store.confirmarFicha();
+        if (r.ok) {
+          ui.resultado = "confirmada";
+          return render();
+        }
+        return toastMsg(r.motivo);
+      }
+      case "ficha-disc":
+        ui.discrepancia = true;
+        return render();
+      case "ficha-disc-cerrar":
+        ui.discrepancia = false;
+        return render();
+      case "ver-ficha":
+        ui.resultado = null;
+        return render();
+      case "alerta": {
+        const r = store.gestionarAlerta(arg, b.dataset.estado);
+        return toastMsg(r.ok ? r.aviso || "Alerta marcada como contactada." : r.motivo);
+      }
       case "reasignar-open":
         ui.reasignando = arg;
         return render();

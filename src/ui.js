@@ -3,6 +3,7 @@ import { evaluarHito, avanceColaborador, agruparAlertas, fmt, diffDays, NOMBRE_H
 import { MATRIZ_EFECTIVA, HITOS_TECNICOS } from './permissions.js';
 import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
+import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -19,6 +20,13 @@ const ui = {
   exportTexto: null,
   alertaAbierta: null,
   cargaErrores: null,
+  fichaAbierta: null,   // jefatura: colaborador con formulario de ficha abierto
+  fichaErrores: null,   // lista de faltantes al enviar
+  discrepancia: false,  // colaborador: formulario "Algo no coincide" abierto
+  resultado: null,      // colaborador: 'confirmada' | 'con_discrepancia'
+  denegado: null,       // pantalla 403
+  fichaFiltro: 'accion',
+  alertaFiltro: 'abierta',
 };
 let store; let root;
 
@@ -70,6 +78,23 @@ const pad2 = n => String(n).padStart(2, '0');
 // Lista de cifras: etiqueta a la izquierda, valor a la derecha, separadas por líneas finas.
 const stats = rows => `<div class="stats">${rows.map(([l, v, tone]) => `<div><span>${esc(l)}</span><span class="num ${tone ? 'tone-' + tone : ''}">${v}</span></div>`).join('')}</div>`;
 const tags = list => `<div class="tags caption">${list.filter(Boolean).map(t => `<span>${esc(t)}</span>`).join('')}</div>`;
+// Filtros como fila de pestañas compactas.
+const filtros = (grupo, opciones, actual) => `<div class="filters caption" role="group" aria-label="Filtro">${opciones.map(([k, t, n]) => `<button class="${actual === k ? 'on' : ''}" data-act="${grupo}" data-arg="${esc(k)}" aria-pressed="${actual === k}">${esc(t)}${n !== undefined ? ` <span class="num">${n}</span>` : ''}</button>`).join('')}</div>`;
+
+// ---------- utilidades de la ficha ----------
+const SIN_DATO = (txt = '') => `<span class="missing">Sin dato${txt ? ` · ${esc(txt)}` : ''}</span>`;
+const fmtDT = v => { if (!v) return '—'; const [d, t] = String(v).split('T'); return `${fmt(d)} ${t ? t.slice(0, 5) : ''}`.trim(); };
+const TONO_FICHA = { incompleta: 'neutral', lista: 'warn', enviada: 'warn', confirmada: 'ok', con_discrepancia: 'bad', requiere_reconfirmacion: 'bad' };
+const chipFicha = (est, texto) => `<span class="chip chip-${TONO_FICHA[est] || 'neutral'}">${esc(texto || ESTADOS_FICHA[est])}</span>`;
+const TONO_PRIO = { Urgente: 'bad', Alta: 'bad', Media: 'warn', Baja: 'neutral' };
+const chipPrio = p => `<span class="chip chip-${TONO_PRIO[p] || 'neutral'}">${esc(p)}</span>`;
+const SEM_COLOR = { rojo: 'rojo', amarillo: 'amarillo', verde: 'verde' };
+const semaforoFicha = sm => `${dot(SEM_COLOR[sm.color] || 'gris')} <b>${esc(sm.texto)}</b><br><small class="dim">${esc(sm.motivos.join(' · '))}</small>`;
+function v403() {
+  return `<section class="blk hero-sm" role="alert"><p class="caption">Error 403</p><h1>No tienes acceso a esta ficha.</h1>
+    <p class="lead">Tu cuenta solo puede ver la información de su propio alcance. El intento quedó registrado en la bitácora.</p>
+    <div><button class="btn btn-primary" data-act="volver">Volver a mi inicio</button></div></section>`;
+}
 
 // ---------- shell ----------
 function topbar() {
@@ -121,6 +146,7 @@ function render() {
   try {
     if (!u) v = vLogin();
     else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) v = vDenegado(); // denegar por defecto
+    else if (ui.denegado) v = v403();
     else v = VISTAS[u.rol](u);
   } catch (err) {
     console.error(err);
@@ -188,7 +214,7 @@ function vLogin() {
       ${tags(['Nexo Laboral Group', 'Piloto de onboarding', 'Datos sintéticos'])}
       <h1>Qué falta para cada ingreso, quién lo resuelve y para cuándo.</h1>
       <p class="lead">Cada persona ve solo lo que necesita: el colaborador su checklist, la jefatura su equipo, TI los equipos y accesos, y Personas el proceso completo.</p>
-      <p class="notice">Simulación con cuentas sintéticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la página.</p>
+      <p class="notice"><b>Inicio de sesión simulado.</b> Simulación con cuentas sintéticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la página.</p>
     </section>
     <section class="blk" id="ingreso">
       <p class="caption">Ingresar</p>
@@ -224,12 +250,16 @@ function vColaborador(u) {
   const misRep = store.misReportes();
   const nombre = String(nombreDe(u.usuario_id)).split(' ')[0];
   const grupo = (tipos) => items.filter(x => tipos.includes(x.h.tipo_hito));
+  const vf = store.vistaFicha(u.usuario_id);
+  const fichaRecibida = vf && ['enviada', 'confirmada', 'con_discrepancia', 'requiere_reconfirmacion'].includes(vf.est);
+  const porResponder = vf && ['enviada', 'requiere_reconfirmacion'].includes(vf.est);
   const body = `<section class="blk hero" id="inicio">
       ${tags([c.area, c.sede, c.modalidad])}
       <h1>Hola${nombre ? `, ${esc(nombre)}` : ''}. ${faltan ? `Te ${faltan === 1 ? 'falta 1 paso' : `faltan ${faltan} pasos`} para completar tu ingreso.` : 'Tu ingreso está completo.'}</h1>
       <div class="detail">
         <div class="stack">
           ${vencidos.length ? `<p class="lead">${vencidos.length} ${vencidos.length === 1 ? 'paso está atrasado' : 'pasos están atrasados'} y ninguno depende de ti. Los responsables los tienen en su bandeja.</p>` : '<p class="lead">Aquí ves qué debe ocurrir, quién lo gestiona y para cuándo.</p>'}
+          ${porResponder ? '<p class="notice"><b>Tu jefatura envió tu ficha de ingreso.</b> Revísala y confírmala, o avísanos si algo no coincide.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>' : ''}
           ${c.correo_corporativo_activo === 'No' ? '<p class="hint">Aún no tienes correo corporativo. Puedes usar esta página desde tu teléfono igual.</p>' : ''}
         </div>
         ${stats([
@@ -240,10 +270,12 @@ function vColaborador(u) {
         ])}
       </div>
     </section>
+    ${fichaColaborador(u, vf)}
     ${GRUPOS.map(([g, tipos], i) => `<section class="blk" id="g${i}"><p class="caption">${pad2(i + 1)} · ${g}</p>
       <ul class="rows">${grupo(tipos).map(({ h, ev }) => `<li class="hrow hrow-${ev.estadoReal === 'Cumplido' ? 'ok' : ev.estadoReal === 'Vencido' ? 'bad' : ev.estadoReal === 'Por verificar' ? 'warn' : 'neutral'}">
         <span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><span class="dim">Lo gestiona ${esc(h.responsable_tipo === 'Jefatura' ? 'tu jefatura' : funcion[h.responsable_tipo])} · plazo <span class="nw">${fmt(ev.limite)}</span></span>
-        ${ev.estadoReal === 'Por verificar' ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ''}</span>${chip(ev)}</li>`).join('')}</ul></section>`).join('')}
+        ${ev.estadoReal === 'Por verificar' ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ''}
+        ${h.fecha_comprometida && ev.estadoReal !== 'Cumplido' ? `<span class="dim">Soporte TI comprometió el <span class="nw">${fmt(h.fecha_comprometida)}</span></span>` : ''}</span>${chip(ev)}</li>`).join('')}</ul></section>`).join('')}
     <section class="blk" id="contactos"><p class="caption">A quién pedir ayuda</p>
       ${stats([
         ['Tu jefatura', jef ? esc(nombreDe(jef.usuario_id)) : '<span class="missing">Sin asignar. Personas ya tiene la alerta.</span>'],
@@ -251,7 +283,7 @@ function vColaborador(u) {
         ['Contrato y dudas generales', 'Equipo de Personas'],
         ['Tu canal registrado', c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>'],
       ])}</section>
-    <section class="blk" id="ayuda"><p class="caption">¿Algo no coincide?</p>
+    ${fichaRecibida ? '' : `<section class="blk" id="ayuda"><p class="caption">¿Algo no coincide?</p>
       <h2 class="h-lg">Avísanos si algo no es como te dijeron.</h2>
       <form data-form="reporte" class="form">
         <div class="field"><label for="rep-tipo">Qué pasó*</label>
@@ -260,14 +292,56 @@ function vColaborador(u) {
         <div><button class="btn btn-primary" type="submit">Enviar a Personas</button></div>
       </form>
       ${misRep.length ? `<div class="stack"><p class="caption">Tus reportes</p>${stats(misRep.map(r => [r.tipo, `<span class="chip chip-neutral">${esc(r.estado)}</span>`]))}</div>` : ''}
-    </section>`;
+    </section>`}
+    <section class="blk blk-tight"><p class="hint">Prueba de permisos: <button class="link" data-act="probar-403" data-arg="COL-014">intentar abrir la ficha de COL-014</button></p></section>`;
   const nav = [
     { label: 'Resumen', href: 'inicio' },
+    ...(vf ? [{ label: 'Tu ficha de ingreso', href: 'ficha', right: porResponder ? '1' : undefined }] : []),
     ...GRUPOS.map(([g, tipos], i) => { const l = grupo(tipos); return { label: g, href: `g${i}`, n: pad2(i + 1), sub: true, right: `${l.filter(x => x.ev.estadoReal === 'Cumplido').length}/${l.length}` }; }),
     { label: 'A quién pedir ayuda', href: 'contactos' },
-    { label: '¿Algo no coincide?', href: 'ayuda' },
+    ...(fichaRecibida ? [] : [{ label: '¿Algo no coincide?', href: 'ayuda' }]),
   ];
   return { nav, body };
+}
+
+function fichaColaborador(u, v) {
+  if (!v) return '';
+  const { c, ficha: f, est } = v;
+  const fijo = '<p class="hint">Lo revisa Personas, no tu jefatura. No se usa para evaluarte.</p>';
+  if (ui.resultado) {
+    const ok = ui.resultado === 'confirmada';
+    return `<section class="blk" id="ficha" role="status"><p class="caption">Tu respuesta quedó registrada</p>
+      <h2 class="h-lg">${ok ? 'Confirmaste tu ficha.' : 'Recibimos tu aviso.'}</h2>
+      <p class="lead"><b>Próximo paso:</b> ${ok ? `reunión con ${esc(v.jefatura || 'tu jefatura')} el <span class="nw">${esc(fmtDT(f?.reunion_at))}</span>.`
+        : `Personas revisará lo que no coincide y te contactará ${c.canal_contacto ? 'por tu canal registrado' : '(no tienes canal registrado: Personas ya tiene la alerta)'}. Se notificaría a Personas por correo (simulado).`}</p>
+      ${fijo}<div><button class="btn btn-ghost" data-act="ver-ficha">Ver mi ficha</button></div></section>`;
+  }
+  const enviada = !!f;
+  const respondible = ['enviada', 'requiere_reconfirmacion'].includes(est);
+  const acciones = respondible ? `<div class="row"><button class="btn btn-primary" data-act="ficha-confirmar">Todo claro, confirmo</button>
+      <button class="btn btn-ghost" data-act="ficha-disc">Algo no coincide</button></div>
+      ${ui.discrepancia ? `<form data-form="discrepancia" class="form"><fieldset class="choice"><legend class="caption">¿Qué no coincide?*</legend>
+        ${Object.entries(MOTIVOS).map(([k, t]) => `<label class="radio"><input type="radio" name="motivo" value="${esc(k)}"> ${esc(t)}</label>`).join('')}</fieldset>
+        <p class="hint">Solo eliges el motivo: no pedimos relatos ni datos personales adicionales.</p>
+        <div class="row"><button class="btn btn-primary" type="submit">Enviar a Personas</button><button class="btn btn-ghost" type="button" data-act="ficha-disc-cerrar">Cancelar</button></div></form>` : ''}`
+    : est === 'confirmada' ? `<p>${chipFicha(est)} Confirmaste tu ficha el <span class="nw">${esc(fmtDT(f.respondida_at))}</span>.</p>`
+    : est === 'con_discrepancia' ? `<p>${chipFicha(est)} Avisaste que algo no coincide (${esc(MOTIVOS[f.motivo] || '')}). Personas lo está revisando.</p>`
+    : '<p class="dim">Podrás confirmar cuando tu jefatura envíe la ficha.</p>';
+  return `<section class="blk" id="ficha"><div class="row-between"><p class="caption">Tu ficha de ingreso</p>${chipFicha(est)}</div>
+    ${!enviada ? '<p class="lead">Tu jefatura todavía no envía tu ficha. Cuando lo haga, aquí verás tus tareas, tu compañero o compañera de apoyo y la reunión.</p>' : ''}
+    <div class="detail">
+      <div class="stack"><p class="caption">Qué harás tu primera semana</p>
+        ${enviada ? `<ol class="rows tareas">${[f.tarea_1, f.tarea_2, f.tarea_3].map((t, i) => `<li class="hrow"><span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(t)}</b></span></li>`).join('')}</ol>` : '<p class="dim">Tu jefatura aún no completa esta sección.</p>'}
+      </div>
+      ${stats([
+        ['Ingreso', c.fecha_ingreso ? `${fmt(c.fecha_ingreso)} · hora ${SIN_DATO('no viene en el registro')}` : SIN_DATO()],
+        ['Cuándo trabajas', c.tipo_turno ? `${esc(c.tipo_turno)} <span class="chip chip-ok">Validado por RR.LL.</span>` : SIN_DATO('Personas lo está revisando')],
+        ['Jefatura', v.jefatura ? esc(v.jefatura) : SIN_DATO('Personas está asignando tu jefatura')],
+        ['Compañero/a de apoyo', v.companero ? esc(v.companero) : '<span class="dim">Pendiente de tu jefatura</span>'],
+        ['Reunión con jefatura', enviada ? esc(fmtDT(f.reunion_at)) : '<span class="dim">Pendiente de tu jefatura</span>'],
+      ])}
+    </div>
+    ${acciones}${fijo}</section>`;
 }
 
 // ---------- jefatura ----------
@@ -281,14 +355,22 @@ function vJefatura(u) {
   const proximos = equipo.filter(c => c.fecha_ingreso > hoy);
   const recientes = equipo.filter(c => c.fecha_ingreso <= hoy && diffDays(hoy, c.fecha_ingreso) <= 30);
   const metr = auth.alcanceMetricas(u) === 'equipo' ? metricasPorTipo(items) : null;
+  const fichas = equipo.map(c => store.vistaFicha(c.colaborador_id)).filter(Boolean);
+  const porEnviar = fichas.filter(v => ['incompleta', 'lista'].includes(v.est)).length;
   const body = `<section class="blk hero" id="inicio">
       ${tags([u.area, `Equipo de ${equipo.length}`, 'Jefatura'])}
-      <h1>${mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'} con tu equipo de ingreso.` : 'Tu equipo de ingreso está al día contigo.'}</h1>
+      <h1>${porEnviar ? `Tienes ${porEnviar} ${porEnviar === 1 ? 'ficha de ingreso por enviar' : 'fichas de ingreso por enviar'}${mias.length ? ` y ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'}` : ''}.` : mias.length ? `Tienes ${mias.length} ${mias.length === 1 ? 'acción pendiente' : 'acciones pendientes'} con tu equipo de ingreso.` : 'Tu equipo de ingreso está al día contigo.'}</h1>
       <div class="detail">
         <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
           ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? '' : 'notice-bad'}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} está en tu equipo.` : `${esc(ui.busqueda.id)} está fuera de tu alcance. El intento quedó registrado en la bitácora.`}</p>` : ''}</form>
-        ${auth.puedeVerMetricas(u) ? stats([['Personas en tu equipo', String(equipo.length)], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : ''], ['Hitos atrasados del equipo, de cualquier área', String(vencEquipo.length), vencEquipo.length ? 'bad' : '']]) : stats([['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : '']])}
+        ${auth.puedeVerMetricas(u) ? stats([['Personas en tu equipo', String(equipo.length)], ['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : ''], ['Hitos atrasados del equipo, de cualquier área', String(vencEquipo.length), vencEquipo.length ? 'bad' : '']]) : stats([['Fichas por enviar', String(porEnviar), porEnviar ? 'warn' : ''], ['Acciones tuyas por hacer', String(mias.length), mias.length ? 'warn' : '']])}
       </div>
+    </section>
+    <section class="blk" id="fichas"><p class="caption">Fichas de ingreso</p>
+      <p class="lead">Completa 3 tareas reales, una persona de apoyo de tu equipo y la reunión. Al enviarla, la persona la confirma o avisa si algo no coincide.</p>
+      <ul class="rows">${fichas.map(v => `<li><div class="hrow"><span class="rb-main"><b>${esc(nombreDe(v.c.colaborador_id))}</b><span class="dim"><code>${esc(v.c.colaborador_id)}</code> · ingreso ${v.c.fecha_ingreso ? fmt(v.c.fecha_ingreso) : 'sin dato'}</span></span>
+        <span class="row">${chipFicha(v.est, v.estadoVisible)}<button class="btn ${['incompleta', 'lista'].includes(v.est) ? 'btn-primary' : 'btn-ghost'} btn-sm" data-act="ficha-abrir" data-arg="${esc(v.c.colaborador_id)}">${ui.fichaAbierta === v.c.colaborador_id ? 'Cerrar' : ['incompleta', 'lista'].includes(v.est) ? 'Completar ficha' : 'Ver ficha'}</button></span></div>
+        ${ui.fichaAbierta === v.c.colaborador_id ? `<div class="sub-panel">${formFicha(u, v.c.colaborador_id)}</div>` : ''}</li>`).join('')}</ul>
     </section>
     <section class="blk" id="acciones"><p class="caption">Tus acciones</p>
       ${mias.length ? `<ul class="rows">${mias.map(({ h, ev }) => `<li class="hrow"><span class="rb-main"><b>${esc(NOMBRE_HITO[h.tipo_hito])} · ${esc(nombreDe(h.colaborador_id))}</b><span class="dim">Plazo ${fmt(ev.limite)}${ev.flags.includes('plazo_corrido') ? ` · registrado para ${fmt(ev.limiteRegistrado)}` : ''}</span></span>
@@ -313,12 +395,38 @@ function vJefatura(u) {
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
   const nav = [
     { label: 'Resumen', href: 'inicio' },
+    { label: 'Fichas de ingreso', href: 'fichas', right: porEnviar },
     { label: 'Tus acciones', href: 'acciones', right: mias.length },
     { label: 'Próximos ingresos', href: 'ingresos', right: proximos.length },
     { label: 'Personas de tu equipo', href: 'equipo', right: equipo.length },
     ...(metr ? [{ label: 'Cumplimiento', href: 'cumplimiento' }] : []),
   ];
   return { nav, body };
+}
+function formFicha(u, colId) {
+  const v = store.vistaFicha(colId); if (!v) return v403();
+  const f = v.ficha || {}; const id = esc(colId);
+  const tec = v.hitos.filter(x => HITOS_TECNICOS.includes(x.h.tipo_hito)).map(x => `${esc(x.h.tipo_hito)}: ${esc(x.estado)}`).join(' · ');
+  const solo = stats([
+    ['Turno (solo lectura)', v.c.tipo_turno ? `${esc(v.c.tipo_turno)} · validado por RR.LL.` : SIN_DATO('lo corrige Personas')],
+    ['Equipo y accesos (solo lectura)', `${tec || '—'} · lo gestiona TI`],
+  ]);
+  if (!['incompleta', 'lista'].includes(v.est)) {
+    return `<div class="stack">${solo}<p>${chipFicha(v.est, v.estadoVisible)} ${f.enviada_at ? `Enviada el <span class="nw">${esc(fmtDT(f.enviada_at))}</span>.` : ''}</p>
+      <ol class="mini">${[f.tarea_1, f.tarea_2, f.tarea_3].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
+      <p>Compañero/a de apoyo: <b>${esc(v.companero || '—')}</b> · Reunión: <span class="nw">${esc(fmtDT(f.reunion_at))}</span></p>
+      ${v.est === 'con_discrepancia' ? '<p class="notice">La persona avisó que algo no coincide. Está en revisión por Personas; aquí no se muestra el motivo.</p>' : ''}</div>`;
+  }
+  const comps = store.companerosPara(colId);
+  return `<form data-form="ficha" data-arg="${id}" class="form ficha-form">${solo}
+    ${[1, 2, 3].map(i => `<div class="field"><label for="t${i}-${id}">Tarea ${i}*</label><input id="t${i}-${id}" name="tarea_${i}" maxlength="160" value="${esc(f[`tarea_${i}`] || '')}" placeholder="Qué hará la persona su primera semana"></div>`).join('')}
+    <div class="field"><label for="cp-${id}">Compañero o compañera de apoyo*</label>
+    <select id="cp-${id}" name="companero_id"><option value="">Elige una persona de tu equipo</option>${comps.map(x => `<option value="${esc(x.id)}" ${x.id === f.companero_id ? 'selected' : ''}>${esc(x.nombre)} (${esc(x.id)})</option>`).join('')}</select></div>
+    <div class="field"><label for="rn-${id}">Reunión con la persona (fecha y hora)*</label>
+    <input id="rn-${id}" type="datetime-local" name="reunion_at" value="${esc(f.reunion_at || '')}"></div>
+    ${ui.fichaErrores ? `<div class="notice notice-bad" role="alert"><b>No se puede enviar todavía.</b><ul class="mini">${ui.fichaErrores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+    <div class="row"><button class="btn btn-ghost" type="submit" name="op" value="guardar">Guardar borrador</button><button class="btn btn-primary" type="submit" name="op" value="enviar">Enviar ficha</button></div>
+    <p class="hint">Al enviar, se notificaría a la persona por su canal registrado (simulado: no se envía nada). No ves su canal ni lo que reporte a Personas.</p></form>`;
 }
 const listaIngresos = l => stats(l.map(c => [nombreDe(c.colaborador_id), `${fmt(c.fecha_ingreso)} · ${esc(c.modalidad)} · ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}`]));
 
@@ -377,23 +485,32 @@ function vTI(u) {
       </div>
     </section>
     <section class="blk" id="casos"><p class="caption">${esc(titulo[ui.tiFiltro])} · ${lista.length}</p>
-    <div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th>Fecha comprometida</th><th></th></tr></thead><tbody>
     ${lista.map(({ h, ev }) => { const c = store.verColaborador(h.colaborador_id); const pc = s.auth.puedeCompletar(u, h, s.hoy); const pr = s.auth.puedeReasignar(u, h);
       return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small class="dim">Criticidad ${esc(ev.crit)}</small></td>
       <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal || 'dispositivo sin dato').toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
-      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
+      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar · TI por regla</span>'}</td><td>${tiPendiente(u, h)}</td>
       <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ''}
         ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${esc(h.hito_id)}">Tomar caso</button>` : ''}
         ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
-      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
+      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="8" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
   const nav = [['todos', 'Todos'], ['mios', 'Mis casos'], ['sin', 'Sin responsable']].map(([k, t], i) => ({ label: t, act: 'ti-filtro', arg: k, n: pad2(i + 1), right: filtros[k].length, active: ui.tiFiltro === k }));
   return { nav, body };
 }
 
+function tiPendiente(u, h) {
+  const p = store.state.auth.puedeGestionarTecnico(u, h);
+  if (!p.ok) return `<small class="dim">${esc(p.motivo)}</small>`;
+  const id = esc(h.hito_id);
+  return `<form data-form="ti-pendiente" data-arg="${id}" class="ti-fecha"><label for="fc-${id}" class="sr">Fecha comprometida para ${id}</label>
+    <span class="field field-sm"><input type="date" id="fc-${id}" name="fecha" value="${esc(h.fecha_comprometida || '')}"></span><button class="btn btn-ghost btn-sm" type="submit">Guardar fecha</button></form>`;
+}
+
 // ---------- Personas / Administrador ----------
-const TABS = [['resumen', 'Resumen', 'Proceso de ingreso completo.'], ['casos', 'Casos críticos', 'Personas que necesitan una acción hoy.'], ['calidad', 'Calidad de datos', 'Lo que los archivos no dicen bien.'],
+const TABS = [['fichas', 'Fichas de ingreso', 'Quién está listo para su primer día.'], ['alertas', 'Alertas', 'Qué hay que resolver, quién y para cuándo.'], ['indicadores', 'Indicadores', 'Si la ficha está cambiando el ingreso.'],
+  ['resumen', 'Resumen', 'Proceso de ingreso completo.'], ['casos', 'Casos críticos', 'Personas que necesitan una acción hoy.'], ['calidad', 'Calidad de datos', 'Lo que los archivos no dicen bien.'],
   ['reportes', 'Reportes', 'Lo que dicen los colaboradores.'], ['permisos', 'Permisos', 'Quién puede ver y hacer qué.'], ['bitacora', 'Bitácora', 'Cada cambio y cada acceso, con su autor.'], ['datos', 'Datos', 'Fecha de corte y carga de archivos.']];
 function vPersonas(u) {
   const { auth } = store.state;
@@ -405,11 +522,62 @@ function vPersonas(u) {
   const reglasAltas = new Set(alertasVisibles(u).filter(a => a.sev === 'alta').map(a => a.regla)).size;
   const [, nombreTab, titulo] = TABS.find(t => t[0] === ui.tab);
   const i = TABS.findIndex(t => t[0] === ui.tab);
-  const contenido = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+  const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
   const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas', `${pad2(i + 1)} · ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
   const nav = disponibles.map(([k, t], j) => ({ label: t, act: 'tab', arg: k, n: pad2(j + 1), active: ui.tab === k,
-    right: k === 'reportes' ? (rep || undefined) : k === 'calidad' ? reglasAltas : undefined }));
+    right: k === 'reportes' ? (rep || undefined) : k === 'calidad' ? reglasAltas : k === 'alertas' ? (store.alertasFicha().filter(a => a.estado === 'abierta').length || undefined) : undefined }));
   return { nav, body };
+}
+
+function tFichas() {
+  const todas = store.ingresos();
+  const F = {
+    accion: ['Requieren acción', todas.filter(v => v.semaforo.color === 'rojo')],
+    atrasados: ['Atrasados', todas.filter(v => v.hitos.some(x => x.estado === 'Atrasado'))],
+    confirmados: ['Confirmados', todas.filter(v => v.est === 'confirmada')],
+    todos: ['Todos', todas],
+  };
+  const lista = F[ui.fichaFiltro][1];
+  return `<section class="blk"><p class="hint">Sede piloto: el kit no la define, se muestran todos los ingresos de tu alcance (supuesto declarado). Datos minimizados.</p>
+  ${filtros('ficha-filtro', Object.entries(F).map(([k, [t, l]]) => [k, t, l.length]), ui.fichaFiltro)}
+  <div class="table-wrap"><table><thead><tr><th>Semáforo</th><th>Persona</th><th>Área</th><th>Ingreso</th><th>Jefatura</th><th>Ficha</th><th>Motivo</th></tr></thead><tbody>
+  ${lista.map(v => `<tr><td>${semaforoFicha(v.semaforo)}</td><td><b>${esc(v.c.nombre || v.c.colaborador_id)}</b><br><code>${esc(v.c.colaborador_id)}</code></td><td>${esc(v.c.area)}</td>
+    <td class="num">${v.c.fecha_ingreso ? fmt(v.c.fecha_ingreso) : SIN_DATO()}</td><td>${v.c.jefatura_id ? `<code>${esc(v.c.jefatura_id)}</code>` : SIN_DATO()}</td>
+    <td>${chipFicha(v.est)}</td><td>${v.ficha?.motivo ? esc(MOTIVOS[v.ficha.motivo]) : '—'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin personas en este filtro.</td></tr>'}
+  </tbody></table></div></section>`;
+}
+const PESO_PRIO = { Urgente: 4, Alta: 3, Media: 2, Baja: 1 };
+function tAlertas(u) {
+  const todas = store.alertasFicha().sort((a, b) => PESO_PRIO[b.prioridad] - PESO_PRIO[a.prioridad] || String(a.plazo).localeCompare(String(b.plazo)));
+  const F = { abierta: 'Abiertas', contactado: 'Contactadas', escalada: 'Escaladas', todas: 'Todas' };
+  const lista = ui.alertaFiltro === 'todas' ? todas : todas.filter(a => a.estado === ui.alertaFiltro);
+  const s = store.state;
+  return `<section class="blk"><p class="hint">Cada alerta indica responsable, acción requerida, plazo y prioridad. Plazos según ${store.state.config.fuentePlazo === 'hito' ? 'la fecha registrada en el hito (y el catálogo si falta)' : 'el plazo del catálogo'}. Las notificaciones son simuladas: no se envía nada.</p>
+  ${filtros('alerta-filtro', Object.entries(F).map(([k, t]) => [k, t, k === 'todas' ? todas.length : todas.filter(a => a.estado === k).length]), ui.alertaFiltro)}
+  <div class="table-wrap"><table><thead><tr><th>Prioridad</th><th>Alerta</th><th>Persona</th><th>Responsable</th><th>Acción requerida</th><th>Plazo</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${lista.slice(0, 150).map(a => { const h = a.hito_id ? s.data.hitos.find(x => x.hito_id === a.hito_id) : null;
+    return `<tr><td>${chipPrio(a.prioridad)}</td><td><b>${esc(a.titulo)}</b><br><small class="dim">${esc(TIPOS_ALERTA[a.tipo] || a.tipo)}${a.hito_id ? ` · <code>${esc(a.hito_id)}</code>` : ''}</small></td>
+    <td><code>${esc(a.colaborador_id)}</code></td><td>${esc(a.responsable.etiqueta)}</td><td>${esc(a.accion_requerida)}</td>
+    <td class="num">${a.plazo < s.hoy ? `<span class="chip chip-bad">Venció ${fmt(a.plazo)}</span>` : fmt(a.plazo)}</td><td>${esc(a.estado)}</td>
+    <td><div class="row">${a.estado !== 'contactado' ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="contactado" data-arg="${esc(a.id)}">Marcar contactado</button>` : ''}
+      ${a.estado !== 'escalada' ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="escalada" data-arg="${esc(a.id)}">Escalar</button>` : ''}
+      ${h && s.auth.puedeReasignar(u, h).ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
+    ${h && ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="8" class="empty">Sin alertas en este filtro.</td></tr>'}
+  </tbody></table></div>${lista.length > 150 ? `<p class="hint">Se muestran 150 de ${lista.length}.</p>` : ''}</section>`;
+}
+function tIndicadores() {
+  const k = store.indicadores(); if (!k) return '';
+  const disc = Object.values(k.porMotivo).reduce((a, b) => a + b, 0);
+  return `<section class="blk"><div class="detail">
+      <div class="stack"><p class="big-num num">${k.pctAntesDia1 === null ? '—' : `${k.pctAntesDia1}%`}</p>
+        <p class="lead">de las fichas enviadas se confirmaron antes del día 1 (${k.confirmadasAntesDia1} de ${k.enviadas}).</p>
+        ${k.enviadas ? '' : '<p class="hint">Aún no hay fichas enviadas. El indicador aparece cuando una jefatura envía la primera.</p>'}</div>
+      ${stats([['Ingresos en tu alcance', String(k.ingresos)], ['Fichas enviadas', String(k.enviadas)], ['Fichas confirmadas', String(k.confirmadas), k.confirmadas ? 'ok' : ''], ['Discrepancias reportadas', String(disc), disc ? 'warn' : '']])}
+    </div></section>
+  <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
+  <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
+    ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), 'bad'])) : '<p class="empty">Sin hitos atrasados.</p>'}
+    <p class="hint">Indicadores calculados en vivo desde las fichas y los hitos. No se usan para evaluar personas.</p></section>`;
 }
 
 function tResumen(u) {
@@ -530,6 +698,20 @@ async function onSubmit(e) {
     ui.loginStep = null; ui.loginError = ''; resetUi(); return render();
   }
   if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
+  if (kind === 'discrepancia') {
+    const r = store.reportarDiscrepancia(String(fd.get('motivo') || ''));
+    if (r.ok) { ui.resultado = 'con_discrepancia'; ui.discrepancia = false; return render(); }
+    return toastMsg(r.motivo);
+  }
+  if (kind === 'ficha') {
+    const op = e.submitter?.value === 'enviar' ? 'enviar' : 'guardar';
+    const campos = Object.fromEntries(['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'].map(k => [k, String(fd.get(k) || '')]));
+    const r = op === 'enviar' ? store.enviarFicha(f.dataset.arg, campos) : store.guardarFicha(f.dataset.arg, campos);
+    if (!r.ok) { ui.fichaErrores = r.faltan || [r.motivo]; render(); return toastMsg(r.motivo); }
+    ui.fichaErrores = null;
+    return toastMsg(op === 'enviar' ? `Ficha enviada. ${r.aviso}` : `Borrador guardado: ${ESTADOS_FICHA[r.estado]}.`);
+  }
+  if (kind === 'ti-pendiente') { const r = store.marcarPendiente(f.dataset.arg, String(fd.get('fecha') || '')); return toastMsg(r.ok ? 'Fecha comprometida guardada.' : r.motivo); }
   if (kind === 'reporte') { const r = store.reportar(String(fd.get('tipo'))); return toastMsg(r.ok ? 'Solicitud creada en esta demo para revisión de Personas. Se borra al recargar.' : r.motivo); }
   if (kind === 'buscar') {
     const id = String(fd.get('q') || '').trim().toUpperCase(); if (!id) return;
@@ -565,7 +747,7 @@ async function onSubmit(e) {
   }
 }
 
-function resetUi() { Object.assign(ui, { tab: 'resumen', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
+function resetUi() { Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -579,6 +761,20 @@ function onClick(e) {
     case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; render(); return window.scrollTo(0, 0);
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();
     case 'ti-filtro': ui.tiFiltro = arg; ui.reasignando = null; return render();
+    case 'ficha-filtro': ui.fichaFiltro = arg; return render();
+    case 'alerta-filtro': ui.alertaFiltro = arg; ui.reasignando = null; return render();
+    case 'volver': ui.denegado = null; return render();
+    case 'probar-403': { const r = store.entrar('/ficha', arg); ui.denegado = r.ok ? null : arg; render(); return window.scrollTo(0, 0); }
+    case 'ficha-abrir': {
+      if (ui.fichaAbierta === arg) { ui.fichaAbierta = null; return render(); }
+      const r = store.entrar('/ficha', arg); if (!r.ok) { ui.denegado = arg; return render(); }
+      ui.fichaAbierta = arg; ui.fichaErrores = null; ui.detalle = null; return render();
+    }
+    case 'ficha-confirmar': { const r = store.confirmarFicha(); if (r.ok) { ui.resultado = 'confirmada'; return render(); } return toastMsg(r.motivo); }
+    case 'ficha-disc': ui.discrepancia = true; return render();
+    case 'ficha-disc-cerrar': ui.discrepancia = false; return render();
+    case 'ver-ficha': ui.resultado = null; return render();
+    case 'alerta': { const r = store.gestionarAlerta(arg, b.dataset.estado); return toastMsg(r.ok ? (r.aviso || 'Alerta marcada como contactada.') : r.motivo); }
     case 'reasignar-open': ui.reasignando = arg; return render();
     case 'reasignar-close': ui.reasignando = null; return render();
     case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();

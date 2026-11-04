@@ -86,7 +86,8 @@ export function crearAuth(data) {
       }
       if (u.rol === 'TI') {
         if (!HITOS_TECNICOS.includes(h.tipo_hito) || h.responsable_tipo !== 'TI') return { ok: false, motivo: 'Fuera de hitos técnicos' };
-        if (h.responsable_id !== u.usuario_id) return { ok: false, motivo: h.responsable_id ? 'Asignado a otra cuenta TI' : 'Sin responsable: primero tomar el caso' };
+        // Sin responsable_id el catálogo lo asigna a TI "por regla": cualquier cuenta TI puede resolverlo y queda en el historial.
+        if (h.responsable_id && h.responsable_id !== u.usuario_id) return { ok: false, motivo: `Asignado a ${h.responsable_id}` };
         return { ok: true };
       }
       if (u.rol === 'Personas') {
@@ -128,6 +129,40 @@ export function crearAuth(data) {
     puedeVerCalidad(u) { return conocido(u) && ['Personas', 'Administrador'].includes(u.rol); },
     puedeCargarArchivos(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
     puedeVerBitacora(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
+
+    // ---------- Ficha de Ingreso ----------
+    esPersonas(u) { return conocido(u) && (u.rol === 'Personas' || u.rol === 'Administrador'); },
+    puedeVerFicha(u, colId) {
+      if (!conocido(u) || u.rol === 'TI' || !colab.has(colId)) return false;
+      return auth.enAlcance(u, colId);
+    },
+    puedeEditarFicha(u, colId) {
+      if (!conocido(u) || u.rol !== 'Jefatura') return { ok: false, motivo: 'Solo la jefatura completa la ficha' };
+      if (!auth.enAlcance(u, colId)) return { ok: false, motivo: 'La persona no está en tu equipo asignado' };
+      return { ok: true };
+    },
+    companerosValidos(u, colId) { return conocido(u) && u.rol === 'Jefatura' ? [...auth.scope(u)].filter(id => id !== colId) : []; },
+    puedeResponderFicha(u, colId) {
+      return conocido(u) && u.rol === 'Colaborador' && u.usuario_id === colId && auth.enAlcance(u, colId) ? { ok: true } : { ok: false, motivo: 'Solo la persona puede responder su propia ficha' };
+    },
+    // El motivo de "Algo no coincide" solo lo ven su autor y Personas en su alcance.
+    puedeVerMotivo(u, colId) { return (auth.esPersonas(u) && auth.enAlcance(u, colId)) || (conocido(u) && u.rol === 'Colaborador' && u.usuario_id === colId); },
+    puedeGestionarAlertas(u) { return auth.esPersonas(u) && si(u, 'puede_asignar_responsables'); },
+    // TI marca listo o pendiente solo hitos técnicos suyos o sin cuenta asignada (asignados por regla a TI).
+    puedeGestionarTecnico(u, h) {
+      if (!conocido(u) || u.rol !== 'TI' || !si(u, 'puede_editar_hitos')) return { ok: false, motivo: 'Solo TI gestiona equipo y accesos' };
+      if (!HITOS_TECNICOS.includes(h.tipo_hito) || !auth.puedeVerHito(u, h)) return { ok: false, motivo: 'Fuera de hitos técnicos' };
+      if (h.responsable_id && h.responsable_id !== u.usuario_id) return { ok: false, motivo: `Asignado a ${h.responsable_id}` };
+      return { ok: true };
+    },
+    // Control de acceso por ruta (equivale al filtro del controlador). 403 = fuera de alcance.
+    puedeEntrar(u, ruta, param) {
+      if (!conocido(u)) return { ok: false, status: 401, motivo: 'Sin sesión' };
+      const R = { '/mi-ficha': ['Colaborador'], '/equipo': ['Jefatura'], '/ti': ['TI'], '/personas': ['Personas', 'Administrador'] };
+      if (ruta === '/ficha') return auth.puedeVerFicha(u, param) ? { ok: true } : { ok: false, status: 403, motivo: `${u.rol} sin alcance sobre la ficha` };
+      if (R[ruta]) return R[ruta].includes(u.rol) ? { ok: true } : { ok: false, status: 403, motivo: `La ruta ${ruta} no es para el rol ${u.rol}` };
+      return { ok: false, status: 404, motivo: 'Página no encontrada' };
+    },
   };
   return auth;
 }
