@@ -194,14 +194,11 @@ const DEMO = [
   ['PER-001', 'Equipo de Personas', 'Supervisión del proceso de ingreso'],
 ];
 function vLogin() {
-  const s = store.state;
-  const internos = ['Jefatura', 'Personas', 'TI', 'Administrador'].map(rol =>
-    `<optgroup label="${rol}">${s.data.usuarios.filter(x => x.rol === rol).map(x => `<option value="${esc(x.usuario_id)}">${esc(x.usuario_id)}</option>`).join('')}</optgroup>`).join('');
   let paso;
   if (!ui.loginStep) {
     paso = `<form data-form="col-id" class="form">
-      <div class="field"><label for="col-id">Tu código de colaborador*</label><input id="col-id" name="id" placeholder="COL-002" autocomplete="off" required></div>
-      <p class="hint">No necesitas correo corporativo.</p>
+      <div class="field"><label for="col-id">Tu código de persona*</label><input id="col-id" name="id" placeholder="Ej. COL-002, JEF-002, TI-004 o PER-001" autocomplete="off" autocapitalize="characters" required></div>
+      <p class="hint">No necesitas correo corporativo. En producción el código de verificación llegaría por tu canal registrado o se usaría el inicio de sesión corporativo.</p>
       <div><button class="btn btn-primary" type="submit">Continuar</button></div></form>`;
   } else {
     paso = `<form data-form="col-code" class="form">
@@ -219,18 +216,22 @@ function vLogin() {
     <section class="blk" id="ingreso">
       <p class="caption">Ingresar</p>
       <div class="detail">
-        <div><h2 class="h-md">Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
-        <div><h2 class="h-md">Equipo interno</h2>
-          <form data-form="staff" class="form">
-            <div class="field"><label for="staff-id">Cuenta*</label><select id="staff-id" name="id">${internos}</select></div>
-            <p class="hint">Selector de cuentas sintéticas. El inicio de sesión corporativo está pendiente.</p>
-            <div><button class="btn btn-primary" type="submit">Ingresar</button></div>
-          </form></div>
+        <div class="stack"><h2 class="h-lg">Una sola entrada para todo Nexo.</h2>
+          <p class="lead">Colaboradores, jefaturas, Soporte TI y Personas entran igual, con su código de persona. Según tu rol, Sprint te muestra tu checklist de ingreso o tu bandeja de trabajo.</p>
+          ${stats([
+            ['COL-###', 'Colaborador/a · tu checklist y tu ficha'],
+            ['JEF-###', 'Jefatura · fichas y acciones de tu equipo'],
+            ['TI-###', 'Soporte TI · equipos y accesos'],
+            ['PER-### · ADM-###', 'Personas · proceso completo'],
+          ])}
+        </div>
+        <div class="stack">${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
       </div>
     </section>
     <section class="blk" id="demo">
       <p class="caption">Recorrido de demo</p>
       <h2 class="h-lg">Cinco cuentas, un mismo proceso.</h2>
+      <p class="hint">Atajos para la presentación: entran directo, sin el código de verificación.</p>
       <ul class="rows">${DEMO.map(([id, n, d], i) => `<li><button class="row-btn" data-act="quick" data-arg="${esc(id)}">
         <span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(n)}</b><span class="dim">${esc(d)}</span></span><code>${esc(id)}</code><span class="plus-ico" aria-hidden="true"></span></button></li>`).join('')}</ul>
     </section>`;
@@ -693,11 +694,11 @@ async function onSubmit(e) {
   }
   if (kind === 'col-code') {
     if (String(fd.get('code')).trim() !== '123456') { store.rechazarEntrada('ingreso'); ui.loginError = 'El código no es correcto. En la demo es 123456.'; return render(); }
-    const r = store.login(ui.loginStep?.id);
-    if (!r.ok || s.user.rol !== 'Colaborador') { store.logout(); ui.loginError = 'No encontramos una cuenta de colaborador autorizada.'; return render(); }
+    // Misma entrada para todos: el rol de la cuenta decide la vista (colaborador, jefatura, TI o Personas).
+    const r = store.login(ui.loginStep?.id, 'código de verificación');
+    if (!r.ok) { store.logout(); ui.loginError = 'No encontramos una cuenta autorizada con ese código. Revísalo o pide ayuda al equipo de Personas.'; return render(); }
     ui.loginStep = null; ui.loginError = ''; resetUi(); return render();
   }
-  if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
   if (kind === 'discrepancia') {
     const r = store.reportarDiscrepancia(String(fd.get('motivo') || ''));
     if (r.ok) { ui.resultado = 'con_discrepancia'; ui.discrepancia = false; return render(); }
