@@ -250,6 +250,34 @@ fieldset.choice legend { padding: 0 0 .5rem; }
 .ficha-form { max-width: 40rem; }
 @media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
 
+/* Planificación semanal: misma tipografía y tokens que el resto del MVP. */
+.turnos-wide { max-width: none; margin-block: 1.5rem; }
+.turnos-wide fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 1.25rem; min-width: 0; }
+.turnos-wide fieldset:disabled { opacity: .6; }
+.turnos-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1.5rem; margin-block: 1rem; }
+.turnos-steps { display: flex; flex-wrap: wrap; list-style: none; padding: 0; gap: .75rem 1.5rem; margin-block: 2rem; color: var(--ink-60); font-size: .8rem; }
+.turnos-steps li { padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
+.turnos-config { border-block: 1px solid var(--line); padding-block: 1rem; margin-block: 1.5rem; }
+.turnos-config summary, #turnos-demanda summary, #turnos-resultados summary { cursor: pointer; font-weight: 500; }
+.turnos-check { display: flex; align-items: flex-start; gap: .75rem; font-size: .9rem; }
+.turnos-check input { accent-color: var(--ink); margin-top: .3rem; }
+.turnos-demand { min-width: 40rem; }
+.turnos-demand input { width: 5rem; padding: .7rem; background: var(--surface); color: var(--ink); border: 1px solid var(--line); font: inherit; }
+.turnos-demand input:focus { outline: 2px solid var(--sky-ink); outline-offset: 2px; }
+.turnos-toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-block: 1.5rem; }
+.turnos-priorities { display: grid; margin-block: 2rem; }
+.turnos-priority { display: grid; grid-template-columns: 2rem 1fr 5rem; align-items: start; gap: 1rem; padding-block: 1.5rem; border-bottom: 1px solid var(--line); }
+.turnos-priority h3 { font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin-bottom: .5rem; }
+.turnos-rank { display: grid; place-items: center; width: 2rem; height: 2rem; background: var(--sky); color: var(--sky-ink); border-radius: 50%; }
+.turnos-progress { display: grid; gap: 1rem; padding: 1.5rem; background: var(--surface); }
+.turnos-progress progress { width: 100%; accent-color: var(--ok); }
+.turnos-calendar { min-width: 58rem; font-size: .85rem; }
+.turnos-calendar td, .turnos-calendar th { vertical-align: top; min-width: 7rem; }
+#turnos-resultados h3 { margin-top: 2rem; font-weight: 500; }
+#turnos-resultados .table-wrap { margin-block: 1rem; }
+#turnos-resultados, #turnos-generar, #turnos-prioridades, #turnos-demanda, #turnos { scroll-margin-top: 6rem; }
+@media (max-width: 600px) { .turnos-priority { grid-template-columns: 2rem 1fr; } .turnos-priority .field { grid-column: 2; max-width: 9rem; } .turnos-toolbar .btn { width: 100%; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
 </style>
 <div id="app"></div>
@@ -723,6 +751,9 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       puedeVerBitacora(u) {
         return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length;
       },
+      puedePlanificarTurnos(u) {
+        return conocido(u) && u.rol === "Jefatura" && si(u, "puede_editar_hitos") && auth.scope(u).size > 0;
+      },
       // ---------- Ficha de Ingreso ----------
       esPersonas(u) {
         return conocido(u) && (u.rol === "Personas" || u.rol === "Administrador");
@@ -1129,6 +1160,669 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     }
   };
 
+  // src/optimization/model.js
+  var DIAS = ["Lunes", "Martes", "Mi\xE9rcoles", "Jueves", "Viernes", "S\xE1bado", "Domingo"];
+  var slotKey = (x) => `${x.day}|${x.shiftId}|${x.moduleId}`;
+  var assignmentKey = (x) => `${x.workerId}|${slotKey(x)}`;
+  var esLunes = (iso) => isISO(iso) && (/* @__PURE__ */ new Date(`${iso}T00:00:00Z`)).getUTCDay() === 1;
+  var fechasSemana = (iso) => DIAS.map((_, i) => addDays(iso, i));
+  var cache = /* @__PURE__ */ new WeakMap();
+  function indices(m) {
+    if (!cache.has(m)) cache.set(m, {
+      workers: new Map(m.workers.map((w) => [w.id, w])),
+      modules: new Map(m.modules.map((x) => [x.id, x])),
+      shifts: new Map(m.shifts.map((x) => [x.id, x])),
+      demand: new Map(m.demand.map((x) => [slotKey(x), x]))
+    });
+    return cache.get(m);
+  }
+  var horas = (s) => (s.end - s.start) / 60;
+  function validarModelo(m) {
+    const errors = [];
+    const add = (t) => errors.push(t);
+    if (!m || typeof m !== "object") return { ok: false, errors: ["Falta el escenario de demostraci\xF3n."] };
+    if (!esLunes(m.week)) add("La semana debe comenzar un lunes con fecha v\xE1lida.");
+    if (m.synthetic !== true) add("Este m\xF3dulo solo admite escenarios marcados como sint\xE9ticos.");
+    const listas = ["workers", "modules", "shifts", "demand"];
+    if (listas.some((k) => !Array.isArray(m[k]))) return { ok: false, errors: [...errors, "Faltan trabajadores, m\xF3dulos, bloques o demanda."] };
+    if (m.demand.some((d) => !d || typeof d !== "object" || Array.isArray(d))) return { ok: false, errors: [...errors, "Cada celda de demanda necesita d\xEDa, m\xF3dulo, bloque y cantidad expl\xEDcitos."] };
+    const id = (x) => typeof x === "string" && x.length > 0 && x.length <= 80 && !x.includes("|");
+    for (const k of ["workers", "modules", "shifts"]) {
+      if (m[k].some((x) => !x || !id(x.id)) || new Set(m[k].map((x) => x?.id)).size !== m[k].length) add(`Identificadores inv\xE1lidos o repetidos en ${k}.`);
+    }
+    if (errors.length) return { ok: false, errors };
+    if (!m.modules.length || !m.shifts.length || m.workers.length > 60 || m.modules.length > 8 || m.shifts.length > 3) add("Usa de 1 a 8 m\xF3dulos, de 1 a 3 bloques y hasta 60 trabajadores.");
+    const cfg = m.config;
+    if (!cfg || cfg.validated !== true) add("Confirma los par\xE1metros de demostraci\xF3n antes de optimizar.");
+    if (!cfg || cfg.maxBlocksPerDay !== 1 || !Number.isFinite(cfg.minRestHours) || cfg.minRestHours < 0 || !Number.isInteger(cfg.maxConsecutiveDays) || cfg.maxConsecutiveDays < 1 || cfg.maxConsecutiveDays > 7 || !Number.isFinite(cfg.maxDailyHours) || cfg.maxDailyHours <= 0 || cfg.maxDailyHours > 24) add("Faltan l\xEDmites de jornada y descanso v\xE1lidos. Se admite un bloque indivisible por d\xEDa.");
+    for (const s of m.shifts) if (!Number.isInteger(s.start) || !Number.isInteger(s.end) || s.start < 0 || s.end > 1440 || s.end <= s.start) add("Cada bloque necesita inicio y fin v\xE1lidos dentro del mismo d\xEDa.");
+    const ix = indices(m);
+    const disponibilidadValida = (a) => a && Number.isInteger(a.day) && a.day >= 0 && a.day <= 6 && ix.shifts.has(a.shiftId);
+    for (const module of m.modules) if (!id(module.siteId)) add("Falta la sede del m\xF3dulo.");
+    for (const w of m.workers) {
+      if (!id(w.siteId) || !Array.isArray(w.modules) || w.modules.some((k) => !ix.modules.has(k))) add("Falta sede o habilitaci\xF3n por m\xF3dulo de un trabajador.");
+      if (!Array.isArray(w.availability) || w.availability.some((a) => !disponibilidadValida(a))) add("Falta disponibilidad expl\xEDcita; una lista vac\xEDa significa indisponibilidad confirmada.");
+      if (w.unavailable !== void 0 && (!Array.isArray(w.unavailable) || w.unavailable.some((a) => !disponibilidadValida(a)))) add("Las ausencias deben se\xF1alar d\xEDa y bloque v\xE1lidos, sin motivos personales.");
+      if (!Number.isFinite(w.maxHours) || w.maxHours < 0 || !Number.isInteger(w.maxDays) || w.maxDays < 0 || w.maxDays > 7) add("Faltan l\xEDmites semanales del trabajador.");
+      if (w.targetHours !== void 0 && w.targetHours !== null && (!Number.isFinite(w.targetHours) || w.targetHours < 0 || w.targetHours > w.maxHours)) add("Las horas objetivo deben estar entre cero y el m\xE1ximo semanal.");
+      const p = w.preferences;
+      if (p && (p.shifts && (!Array.isArray(p.shifts) || p.shifts.some((s) => !ix.shifts.has(s))) || p.days && (!Array.isArray(p.days) || p.days.some((d) => !Number.isInteger(d) || d < 0 || d > 6)) || p.requests && (!Array.isArray(p.requests) || p.requests.some((a) => !disponibilidadValida(a) || typeof a.wanted !== "boolean")))) add("Preferencias con d\xEDas o bloques inv\xE1lidos.");
+    }
+    if (m.demand.some((d) => !disponibilidadValida(d) || !ix.modules.has(d.moduleId) || !Number.isInteger(d.required) || d.required < 0 || d.required > 99) || ix.demand.size !== m.demand.length) add("Demanda inv\xE1lida o duplicada: usa enteros de 0 a 99 por celda.");
+    if (m.baseline !== void 0 && (!Array.isArray(m.baseline) || m.baseline.some((a) => !disponibilidadValida(a) || !ix.workers.has(a.workerId) || !ix.modules.has(a.moduleId)))) add("El calendario anterior contiene referencias inv\xE1lidas.");
+    return { ok: errors.length === 0, errors };
+  }
+
+  // src/optimization/constraints.js
+  function elegible(m, a) {
+    const ix = indices(m);
+    const w = ix.workers.get(a.workerId);
+    const mod = ix.modules.get(a.moduleId);
+    return !!w && !!mod && ix.shifts.has(a.shiftId) && w.siteId === mod.siteId && w.modules.includes(a.moduleId) && w.availability.some((b) => b.day === a.day && b.shiftId === a.shiftId) && !(w.unavailable || []).some((b) => b.day === a.day && b.shiftId === a.shiftId);
+  }
+  function validarSolucion(m, assignments, { checkLocks = true } = {}) {
+    const errors = [];
+    const ix = indices(m);
+    const counts = /* @__PURE__ */ new Map();
+    const perWorker = /* @__PURE__ */ new Map();
+    const seen = /* @__PURE__ */ new Set();
+    for (const a of assignments) {
+      const key = assignmentKey(a);
+      const slot = slotKey(a);
+      if (seen.has(key)) errors.push("Asignaci\xF3n duplicada.");
+      seen.add(key);
+      if (!elegible(m, a)) {
+        errors.push("Asignaci\xF3n sin disponibilidad, sede o habilitaci\xF3n.");
+        continue;
+      }
+      counts.set(slot, (counts.get(slot) || 0) + 1);
+      if (counts.get(slot) > (ix.demand.get(slot)?.required || 0)) errors.push("La asignaci\xF3n supera la demanda del bloque.");
+      if (!perWorker.has(a.workerId)) perWorker.set(a.workerId, []);
+      perWorker.get(a.workerId).push(a);
+    }
+    for (const [id, list] of perWorker) {
+      const w = ix.workers.get(id);
+      const ordered = list.slice().sort((a, b) => a.day - b.day);
+      const days = new Set(list.map((a) => a.day));
+      if (days.size !== list.length) errors.push("M\xE1s de un bloque por d\xEDa: jornada superpuesta o fragmentada.");
+      if (days.size > w.maxDays || list.reduce((n, a) => n + horas(ix.shifts.get(a.shiftId)), 0) > w.maxHours + 1e-8) errors.push("Se supera el m\xE1ximo semanal.");
+      let consecutive = 0;
+      let previousDay = -2;
+      let previousEnd = null;
+      for (const a of ordered) {
+        const shift = ix.shifts.get(a.shiftId);
+        const start = a.day * 1440 + shift.start;
+        const end = a.day * 1440 + shift.end;
+        if (horas(shift) > m.config.maxDailyHours + 1e-8) errors.push("Se supera el m\xE1ximo diario.");
+        if (previousEnd !== null && start - previousEnd < m.config.minRestHours * 60) errors.push("No se respeta el descanso m\xEDnimo configurado.");
+        consecutive = a.day === previousDay + 1 ? consecutive + 1 : 1;
+        if (consecutive > m.config.maxConsecutiveDays) errors.push("Se supera el m\xE1ximo de d\xEDas consecutivos.");
+        previousDay = a.day;
+        previousEnd = end;
+      }
+    }
+    if (checkLocks && (m.baseline || []).some((a) => a.locked && !seen.has(assignmentKey(a)))) errors.push("Falta un turno bloqueado.");
+    return { ok: errors.length === 0, errors };
+  }
+  function puedeInsertar(m, assignments, a) {
+    return elegible(m, a) && validarSolucion(m, [...assignments, a], { checkLocks: false }).ok;
+  }
+
+  // src/optimization/demo.js
+  var DEMO_SETTINGS = {
+    mode: "alternativos",
+    morningStart: 480,
+    morningEnd: 720,
+    afternoonStart: 780,
+    afternoonEnd: 1020,
+    targetHours: 12,
+    maxHours: 20,
+    maxDays: 5,
+    maxDailyHours: 8,
+    minRestHours: 12,
+    maxConsecutiveDays: 5,
+    lockFirst: true,
+    validated: false
+  };
+  function escenarioDemo(ownerId, workerIds, week, settings = {}) {
+    const cfg = { ...DEMO_SETTINGS, ...settings };
+    const modules = [1, 2].map((n) => ({ id: `${ownerId}-DEMO-${n}`, label: `M\xF3dulo demo ${n}`, siteId: `${ownerId}-SEDE-DEMO` }));
+    const shifts = cfg.mode === "continuo" ? [{ id: "continua", label: "Jornada continua", start: cfg.morningStart, end: cfg.morningEnd }] : [{ id: "manana", label: "Ma\xF1ana", start: cfg.morningStart, end: cfg.morningEnd }, { id: "tarde", label: "Tarde", start: cfg.afternoonStart, end: cfg.afternoonEnd }];
+    const workers = workerIds.slice().sort().map((id, i) => ({
+      id,
+      siteId: modules[0].siteId,
+      modules: i % 3 === 0 ? [modules[0].id] : modules.map((m) => m.id),
+      targetHours: cfg.targetHours,
+      maxHours: cfg.maxHours,
+      maxDays: cfg.maxDays,
+      availability: DIAS.slice(0, 5).flatMap((_, day) => shifts.map((s) => ({ day, shiftId: s.id }))),
+      unavailable: i === 1 && shifts.length > 1 ? [{ day: 1, shiftId: "tarde" }] : [],
+      preferences: { shifts: [shifts[i % shifts.length].id], days: [0, 1, 2, 3, 4] }
+    }));
+    const demand = DIAS.flatMap((_, day) => modules.flatMap((m, mi) => shifts.map((s, si) => ({
+      day,
+      shiftId: s.id,
+      moduleId: m.id,
+      required: day < 5 && mi === si ? mi === 0 ? 2 : 1 : 0
+    }))));
+    const model = {
+      week,
+      ownerId,
+      synthetic: true,
+      modules,
+      shifts,
+      workers,
+      demand,
+      config: {
+        validated: cfg.validated === true,
+        maxBlocksPerDay: 1,
+        minRestHours: cfg.minRestHours,
+        maxConsecutiveDays: cfg.maxConsecutiveDays,
+        maxDailyHours: cfg.maxDailyHours
+      },
+      baseline: []
+    };
+    const baseline = [];
+    for (const d of demand) for (let n = 0; n < Math.min(d.required, workers.length); n++) {
+      const candidate = workers.map((w) => ({ workerId: w.id, day: d.day, shiftId: d.shiftId, moduleId: d.moduleId })).find((a) => puedeInsertar(model, baseline, a));
+      if (candidate) baseline.push(candidate);
+    }
+    model.baseline = baseline.map((a, i) => ({ ...a, locked: cfg.lockFirst === true && i === 0 }));
+    return { model, settings: cfg, provenance: "Escenario creado por el equipo; disponibilidades, puestos, sede, contratos, preferencias y calendario previo son supuestos de demostraci\xF3n. No vienen en los CSV oficiales." };
+  }
+
+  // src/optimization/objectives.js
+  var OBJETIVOS = [
+    { id: "cobertura", label: "Minimizar demanda desatendida", unit: "puestos sin cubrir", description: "Suma de faltantes por d\xEDa, bloque y m\xF3dulo." },
+    { id: "cambios", label: "Minimizar cambios del calendario previo", unit: "altas y bajas de asignaciones", description: "Diferencia sim\xE9trica con el calendario sint\xE9tico anterior; cambiar un turno cuenta una baja y un alta." },
+    { id: "horas", label: "Minimizar desviaci\xF3n de horas objetivo", unit: "horas de desviaci\xF3n absoluta", description: "Suma de diferencias absolutas con las horas objetivo conocidas." },
+    { id: "preferencias", label: "Mejorar satisfacci\xF3n de preferencias", unit: "preferencias incumplidas", description: "Bloques y d\xEDas no preferidos, m\xE1s solicitudes individuales incumplidas. Una ausencia siempre es obligatoria." },
+    { id: "equidad", label: "Minimizar inequidad proporcional", unit: "dispersi\xF3n normalizada", description: "Dispersi\xF3n de horas y horas no deseadas respecto de la capacidad contractual y disponible de cada trabajador." }
+  ];
+  var ORDEN_DEFAULT = OBJETIVOS.map((o) => o.id);
+  var ordenValido = (order) => Array.isArray(order) && order.length === 5 && new Set(order).size === 5 && order.every((k) => ORDEN_DEFAULT.includes(k));
+  var comparar = (a, b) => {
+    for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 1e-8) return a[i] < b[i] ? -1 : 1;
+    return 0;
+  };
+  var vector = (costs, order) => order.map((k) => costs[k]);
+  var round = (n) => Math.round(n * 1e8) / 1e8;
+  function evaluarObjetivos(m, assignments) {
+    const ix = indices(m);
+    const counts = /* @__PURE__ */ new Map();
+    const notes = [];
+    for (const a of assignments) counts.set(slotKey(a), (counts.get(slotKey(a)) || 0) + 1);
+    const uncovered = m.demand.map((d) => ({ ...d, covered: counts.get(slotKey(d)) || 0, missing: Math.max(0, d.required - (counts.get(slotKey(d)) || 0)) })).filter((d) => d.missing > 0);
+    const actual = new Set(assignments.map(assignmentKey));
+    const prior = new Set((m.baseline || []).map(assignmentKey));
+    const cambios = Array.isArray(m.baseline) ? [...actual].filter((k) => !prior.has(k)).length + [...prior].filter((k) => !actual.has(k)).length : 0;
+    if (!Array.isArray(m.baseline)) notes.push("Sin calendario previo: cambios no evaluados.");
+    let prefCost = 0;
+    let prefChecks = 0;
+    let hourDeviation = 0;
+    const loads = m.workers.map((w) => {
+      const list = assignments.filter((a) => a.workerId === w.id);
+      const p = w.preferences || {};
+      let unwantedHours = 0;
+      for (const a of list) {
+        const badShift = p.shifts?.length ? !p.shifts.includes(a.shiftId) : false;
+        const badDay = p.days?.length ? !p.days.includes(a.day) : false;
+        prefChecks += (p.shifts?.length ? 1 : 0) + (p.days?.length ? 1 : 0);
+        prefCost += Number(badShift) + Number(badDay);
+        if (badShift || badDay) unwantedHours += horas(ix.shifts.get(a.shiftId));
+      }
+      for (const r of p.requests || []) {
+        prefChecks++;
+        const assigned = list.some((a) => a.day === r.day && a.shiftId === r.shiftId);
+        if (assigned !== r.wanted) prefCost++;
+      }
+      const hours = list.reduce((n, a) => n + horas(ix.shifts.get(a.shiftId)), 0);
+      const target = Number.isFinite(w.targetHours) ? w.targetHours : null;
+      if (target !== null) hourDeviation += Math.abs(hours - target);
+      else notes.push("Horas objetivo faltantes: se excluyen de la desviaci\xF3n contractual.");
+      if (!w.preferences) notes.push("Preferencias faltantes: no se presume una preferencia personal.");
+      const availableDaily = Array.from({ length: 7 }, (_, day) => Math.max(0, ...w.availability.filter((a) => a.day === day && !(w.unavailable || []).some((b) => b.day === a.day && b.shiftId === a.shiftId)).map((a) => Math.min(horas(ix.shifts.get(a.shiftId)), m.config.maxDailyHours)))).sort((a, b) => b - a);
+      const availableHours = availableDaily.slice(0, w.maxDays).reduce((n, h) => n + h, 0);
+      const capacity = Math.min(w.maxHours, target ?? w.maxHours, availableHours);
+      return {
+        workerId: w.id,
+        blocks: list.length,
+        hours,
+        target,
+        deviation: target === null ? null : round(hours - target),
+        capacity,
+        ratio: capacity > 0 ? hours / capacity : null,
+        unwantedRatio: capacity > 0 ? unwantedHours / capacity : null
+      };
+    });
+    const capacities = loads.filter((w) => w.capacity > 0);
+    const dispersion = (field) => {
+      const mean = capacities.reduce((n, w) => n + w[field], 0) / (capacities.length || 1);
+      return capacities.reduce((n, w) => n + Math.abs(w[field] - mean), 0);
+    };
+    return {
+      costs: {
+        cobertura: uncovered.reduce((n, d) => n + d.missing, 0),
+        cambios,
+        preferencias: prefCost,
+        equidad: round(dispersion("ratio") + dispersion("unwantedRatio")),
+        horas: round(hourDeviation)
+      },
+      required: m.demand.reduce((n, d) => n + d.required, 0),
+      covered: assignments.length,
+      uncovered,
+      loads,
+      preferenceChecks: prefChecks,
+      preferenceSatisfied: prefChecks - prefCost,
+      satisfaction: prefChecks ? round((prefChecks - prefCost) / prefChecks * 100) : null,
+      notes: [...new Set(notes)]
+    };
+  }
+
+  // src/optimization/operators.js
+  var DESTROY = ["random", "worst", "related"];
+  var REPAIR = ["greedy", "regret2", "active"];
+  function randomSeed(seed) {
+    let state = seed >>> 0;
+    return () => {
+      state += 1831565813;
+      let t = Math.imul(state ^ state >>> 15, 1 | state);
+      t ^= t + Math.imul(t ^ t >>> 7, 61 | t);
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+  function elegir(weights, rng) {
+    let n = rng() * weights.reduce((sum, w) => sum + w.weight, 0);
+    return weights.findIndex((w) => (n -= w.weight) <= 0);
+  }
+  function destruir(kind, m, solution, active, rng, fraction = 0.35) {
+    const locked = new Set((m.baseline || []).filter((a) => a.locked).map(assignmentKey));
+    let movable = solution.filter((a) => !locked.has(assignmentKey(a)));
+    const count = Math.max(1, Math.ceil(movable.length * fraction));
+    if (kind === "random") movable = movable.map((a) => ({ a, score: rng() })).sort((a, b) => a.score - b.score).map((x) => x.a);
+    if (kind === "worst") {
+      const original = evaluarObjetivos(m, solution).costs[active];
+      movable = movable.map((a) => ({ a, tie: rng(), benefit: evaluarObjetivos(m, solution.filter((x) => x !== a)).costs[active] - original })).sort((a, b) => a.benefit - b.benefit || a.tie - b.tie).map((x) => x.a);
+    }
+    if (kind === "related" && movable.length) {
+      const seed = movable[Math.floor(rng() * movable.length)];
+      movable = movable.map((a) => ({ a, tie: rng(), relation: Number(a.day === seed.day) + Number(a.moduleId === seed.moduleId) + Number(a.workerId === seed.workerId) })).sort((a, b) => b.relation - a.relation || a.tie - b.tie).map((x) => x.a);
+    }
+    const removed = new Set(movable.slice(0, count).map(assignmentKey));
+    return solution.filter((a) => !removed.has(assignmentKey(a)));
+  }
+  function rank(costs, order, stage, locks, activeMode) {
+    if (!activeMode) return vector(costs, order);
+    return [...order.slice(0, stage).map((k) => Math.max(0, costs[k] - locks[k])), costs[order[stage]], ...vector(costs, order)];
+  }
+  function reparar(kind, m, partial, order, stage, locks, rng) {
+    const result = partial.slice();
+    const ix = indices(m);
+    const activeMode = kind === "active";
+    const ranking = (costs) => rank(costs, order, stage, locks, activeMode);
+    for (let step = 0; step < m.workers.length * 7; step++) {
+      const current = ranking(evaluarObjetivos(m, result).costs);
+      const counts = /* @__PURE__ */ new Map();
+      for (const a of result) counts.set(slotKey(a), (counts.get(slotKey(a)) || 0) + 1);
+      const options = [];
+      for (const d of m.demand) {
+        if ((counts.get(slotKey(d)) || 0) >= d.required) continue;
+        const slotOptions = [];
+        for (const w of m.workers) {
+          const a = { workerId: w.id, day: d.day, shiftId: d.shiftId, moduleId: d.moduleId };
+          if (!puedeInsertar(m, result, a)) continue;
+          const score = ranking(evaluarObjetivos(m, [...result, a]).costs);
+          if (comparar(score, current) >= 0) continue;
+          slotOptions.push({ a, score, tie: rng() });
+        }
+        slotOptions.sort((a, b) => comparar(a.score, b.score) || a.tie - b.tie);
+        if (kind === "regret2" && slotOptions.length) {
+          const first = slotOptions[0];
+          const second = slotOptions[1];
+          const regret = second ? second.score.map((v, i) => v - first.score[i]) : current.map(() => Infinity);
+          options.push({ ...first, regret });
+        } else options.push(...slotOptions);
+      }
+      if (!options.length) break;
+      options.sort((a, b) => (kind === "regret2" ? comparar(b.regret, a.regret) : 0) || comparar(a.score, b.score) || a.tie - b.tie);
+      result.push(options[0].a);
+    }
+    return result;
+  }
+  function dificultad(m, d) {
+    const eligible = m.workers.filter((w) => elegible(m, { workerId: w.id, ...d })).length;
+    return eligible / Math.max(1, d.required);
+  }
+
+  // src/optimization/initialSolution.js
+  function construirInicial(m, order, rng) {
+    const result = (m.baseline || []).filter((a) => a.locked).map((a) => ({ workerId: a.workerId, day: a.day, shiftId: a.shiftId, moduleId: a.moduleId }));
+    if (!validarSolucion(m, result).ok) return { ok: false, errors: ["Los turnos bloqueados son incompatibles con la demanda o las restricciones. Revisa los datos."] };
+    const present = new Set(result.map(assignmentKey));
+    for (const a of m.baseline || []) if (!present.has(assignmentKey(a)) && puedeInsertar(m, result, a)) {
+      result.push({ workerId: a.workerId, day: a.day, shiftId: a.shiftId, moduleId: a.moduleId });
+      present.add(assignmentKey(a));
+    }
+    const slots = m.demand.filter((d) => d.required > 0).slice().sort((a, b) => dificultad(m, a) - dificultad(m, b));
+    for (const d of slots) {
+      for (let n = 0; n < Math.min(d.required, m.workers.length); n++) {
+        const current = vector(evaluarObjetivos(m, result).costs, order);
+        const choices = [];
+        for (const w of m.workers) {
+          const a = { workerId: w.id, day: d.day, shiftId: d.shiftId, moduleId: d.moduleId };
+          if (puedeInsertar(m, result, a)) choices.push({ a, score: vector(evaluarObjetivos(m, [...result, a]).costs, order), tie: rng() });
+        }
+        choices.sort((a, b) => comparar(a.score, b.score) || a.tie - b.tie);
+        if (!choices.length || comparar(choices[0].score, current) >= 0) break;
+        result.push(choices[0].a);
+      }
+    }
+    return { ok: true, assignments: result };
+  }
+
+  // src/optimization/alns.js
+  var clock = () => globalThis.performance?.now() ?? Date.now();
+  var SEARCH_DEFAULT = { iterations: 400, maxTimeMs: 5e3, maxStall: 60, seed: 2026 };
+  var stats = (names) => names.map((name) => ({ name, weight: 1, uses: 0, improvements: 0, accepted: 0 }));
+  function* buscar(m, options = {}) {
+    const validation = validarModelo(m);
+    if (!validation.ok) return { ok: false, motivo: validation.errors.join(" "), errors: validation.errors };
+    const order = options.order || ORDEN_DEFAULT;
+    const cfg = { ...SEARCH_DEFAULT, ...options };
+    if (!ordenValido(order)) return { ok: false, motivo: "Ordena una vez cada uno de los cinco objetivos." };
+    if (!Number.isInteger(cfg.iterations) || cfg.iterations < 5 || cfg.iterations > 5e3 || !Number.isFinite(cfg.maxTimeMs) || cfg.maxTimeMs <= 0 || cfg.maxTimeMs > 6e4 || !Number.isInteger(cfg.maxStall) || cfg.maxStall < 1 || !Number.isInteger(cfg.seed) || cfg.seed < 0 || cfg.seed > 4294967295) return { ok: false, motivo: "Presupuesto o semilla inv\xE1lidos." };
+    const tolerances = Object.fromEntries(order.map((k) => [k, options.tolerances?.[k] ?? 0]));
+    if (Object.entries(options.tolerances || {}).some(([k, v]) => !order.includes(k) || !Number.isFinite(v) || v < 0)) return { ok: false, motivo: "Las tolerancias deben ser expl\xEDcitas, finitas y no negativas." };
+    const rng = randomSeed(cfg.seed);
+    const start = clock();
+    const initial = construirInicial(m, order, rng);
+    if (!initial.ok) return { ...initial, motivo: initial.errors.join(" ") };
+    let best = initial.assignments;
+    let metrics = evaluarObjetivos(m, best);
+    let iterations = 0;
+    let termination = "iteraciones";
+    const stages = [];
+    const locks = {};
+    const destroyStats = stats(DESTROY);
+    const repairStats = stats(REPAIR);
+    let stopped = false;
+    for (let stage = 0; stage < order.length; stage++) {
+      const active = order[stage];
+      const lockedBefore = { ...locks };
+      let current = best.slice();
+      let currentMetrics = metrics;
+      let stall = 0;
+      let used = 0;
+      const budget = Math.floor(cfg.iterations / 5) + (stage < cfg.iterations % 5 ? 1 : 0);
+      let temperature = Math.max(1, Math.abs(metrics.costs[active]) * 0.15);
+      while (used < budget && stall < cfg.maxStall && !stopped) {
+        if (options.shouldCancel?.()) {
+          termination = "cancelado";
+          stopped = true;
+          break;
+        }
+        if (clock() - start >= cfg.maxTimeMs) {
+          termination = "tiempo";
+          stopped = true;
+          break;
+        }
+        const di = elegir(destroyStats, rng);
+        const ri = elegir(repairStats, rng);
+        const ds = destroyStats[di];
+        const rs = repairStats[ri];
+        ds.uses++;
+        rs.uses++;
+        const partial = destruir(ds.name, m, current, active, rng, 0.2 + rng() * 0.5);
+        const candidate = reparar(rs.name, m, partial, order, stage, locks, rng);
+        const candidateMetrics = evaluarObjetivos(m, candidate);
+        const feasible = validarSolucion(m, candidate).ok && order.slice(0, stage).every((k) => candidateMetrics.costs[k] <= locks[k] + 1e-8);
+        let reward = 0;
+        stall++;
+        used++;
+        iterations++;
+        if (feasible) {
+          const delta = candidateMetrics.costs[active] - currentMetrics.costs[active];
+          const improves = candidateMetrics.costs[active] < metrics.costs[active] - 1e-8;
+          const tieBetter = Math.abs(candidateMetrics.costs[active] - metrics.costs[active]) <= 1e-8 && comparar(vector(candidateMetrics.costs, order), vector(metrics.costs, order)) < 0;
+          if (improves || tieBetter) {
+            best = candidate;
+            metrics = candidateMetrics;
+            stall = 0;
+            reward = 8;
+            ds.improvements++;
+            rs.improvements++;
+          }
+          if (delta <= 0 || rng() < Math.exp(-delta / Math.max(0.01, temperature))) {
+            current = candidate;
+            currentMetrics = candidateMetrics;
+            reward = Math.max(reward, delta < 0 ? 4 : 1);
+            ds.accepted++;
+            rs.accepted++;
+          }
+        }
+        for (const op of [ds, rs]) op.weight = Math.max(0.1, 0.8 * op.weight + 0.2 * reward);
+        temperature *= 0.97;
+        if (iterations % (options.yieldEvery || 3) === 0) yield { stage: stage + 1, active, iterations, maxIterations: cfg.iterations, costs: { ...metrics.costs }, progress: Math.round(iterations / cfg.iterations * 100) };
+      }
+      for (const k of order.slice(0, stage + 1)) locks[k] = Math.min(locks[k] ?? Infinity, metrics.costs[k] + tolerances[k]);
+      stages.push({ objective: active, iterations: used, lockedBefore, costs: { ...metrics.costs }, boundsAfter: { ...locks }, skipped: stopped && used === 0 });
+      if (!stopped && used < budget && stage === 4) termination = "sin_mejora";
+    }
+    return {
+      ok: true,
+      assignments: best.slice().sort((a, b) => a.day - b.day || a.shiftId.localeCompare(b.shiftId) || a.moduleId.localeCompare(b.moduleId) || a.workerId.localeCompare(b.workerId)),
+      metrics,
+      stages,
+      order: [...order],
+      tolerances,
+      seed: cfg.seed,
+      iterations,
+      elapsedMs: Math.round(clock() - start),
+      termination,
+      operators: { destroy: destroyStats, repair: repairStats },
+      heuristic: true
+    };
+  }
+  async function optimizarALNS(model, options = {}) {
+    const search = buscar(model, options);
+    const pause = options.scheduler || (() => new Promise((resolve) => setTimeout(resolve, 0)));
+    let step = search.next();
+    while (!step.done) {
+      options.onProgress?.(step.value);
+      await pause();
+      step = search.next();
+    }
+    options.onProgress?.({ progress: 100, stage: 5, iterations: step.value.iterations || 0, done: true });
+    return step.value;
+  }
+
+  // src/optimization/planning.js
+  var MOTIVOS_EXCEPCION = ["Ajuste operativo", "Correcci\xF3n de requerimientos", "Contingencia de cobertura"];
+  function crearPlanificador({ state, log, denegar }) {
+    const plans = /* @__PURE__ */ new Map();
+    let serial = 0;
+    const key = (owner, week) => `${owner}|${week}`;
+    const registrar = (accion, p, detalle) => log(accion, "\u2014", `Semana ${p.week} \xB7 jefatura ${p.ownerId}: ${detalle}`);
+    const permitido = () => state().auth.puedePlanificarTurnos(state().user);
+    const planPropio = (week) => permitido() ? plans.get(key(state().user.usuario_id, week)) : null;
+    const alcanceVigente = (p) => p && p.model.workers.every((w) => state().auth.enAlcance(state().user, w.id));
+    function invalidar(p) {
+      if (p.running) p.running.cancelled = true;
+      p.running = null;
+      p.progress = null;
+      p.confirmed = false;
+      p.exception = null;
+      p.results = [];
+      p.approvedId = null;
+      p.revision++;
+    }
+    function fallo2(accion, motivo = "Solo la jefatura puede planificar su equipo y sus m\xF3dulos de demostraci\xF3n.") {
+      return denegar(accion, "\u2014", motivo);
+    }
+    const api = {
+      planTurnos(week) {
+        if (!permitido()) {
+          fallo2("turnos_acceso");
+          return null;
+        }
+        const p = planPropio(week);
+        if (!p) return null;
+        if (!alcanceVigente(p)) {
+          fallo2("turnos_acceso");
+          return null;
+        }
+        const { running, ...view } = p;
+        return structuredClone({ ...view, running: !!running });
+      },
+      prepararTurnos(week, settings = {}) {
+        if (!permitido()) return fallo2("turnos_preparar");
+        if (!settings || typeof settings !== "object" || Array.isArray(settings) || Object.keys(settings).some((k) => !Object.hasOwn(DEMO_SETTINGS, k))) return fallo2("turnos_preparar", "Usa \xFAnicamente los par\xE1metros operativos de la demostraci\xF3n, sin informaci\xF3n adicional.");
+        if (!esLunes(week)) return fallo2("turnos_preparar", "Selecciona el lunes de la semana que quieres planificar.");
+        if (!["alternativos", "continuo"].includes(settings.mode || "alternativos")) return fallo2("turnos_preparar", "Tipo de bloque no v\xE1lido.");
+        const ownerId = state().user.usuario_id;
+        const ids = [...state().auth.scope(state().user)];
+        const demo = escenarioDemo(ownerId, ids, week, settings);
+        const valid = validarModelo(demo.model);
+        if (!valid.ok) return fallo2("turnos_preparar", valid.errors.join(" "));
+        const old = planPropio(week);
+        if (old?.running) old.running.cancelled = true;
+        plans.set(key(ownerId, week), {
+          ...demo,
+          week,
+          ownerId,
+          order: [...ORDEN_DEFAULT],
+          revision: (old?.revision || 0) + 1,
+          confirmed: false,
+          exception: null,
+          results: [],
+          running: null,
+          progress: null
+        });
+        registrar("turnos_preparar", { week, ownerId }, "Escenario sint\xE9tico del equipo preparado en memoria; sin cambios oficiales");
+        return { ok: true };
+      },
+      ordenarTurnos(week, order) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p)) return fallo2("turnos_prioridades");
+        if (!ordenValido(order) || p.running) return fallo2("turnos_prioridades", "Ordena una vez cada objetivo cuando no haya una b\xFAsqueda en curso.");
+        p.order = [...order];
+        registrar("turnos_prioridades", p, `Prioridades de b\xFAsqueda: ${order.join(" \u2192 ")}`);
+        return { ok: true };
+      },
+      guardarDemandaTurnos(week, demand) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p)) return fallo2("turnos_demanda");
+        if (!Array.isArray(demand)) return fallo2("turnos_demanda", "Completa todas las celdas de demanda; no se presumen ceros.");
+        const expected = new Set(p.model.demand.map(slotKey));
+        if (demand.length !== expected.size || demand.some((d) => !d || !expected.has(slotKey(d)) || Object.keys(d).some((k) => !["day", "shiftId", "moduleId", "required"].includes(k)))) return fallo2("turnos_demanda", "Incluye una vez cada celda de los m\xF3dulos y bloques autorizados.");
+        const candidate = { ...structuredClone(p.model), demand: structuredClone(demand) };
+        const valid = validarModelo(candidate);
+        if (!valid.ok) return fallo2("turnos_demanda", valid.errors.join(" "));
+        invalidar(p);
+        p.model = candidate;
+        registrar("turnos_demanda", p, "Borrador semanal actualizado; confirmaci\xF3n y propuestas anteriores invalidadas");
+        return { ok: true };
+      },
+      confirmarDemandaTurnos(week) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p)) return fallo2("turnos_confirmar");
+        if (diffDays(week, state().hoy) < 7 && !(p.exception?.status === "autorizada" && p.exception.revision === p.revision)) return fallo2("turnos_confirmar", "Faltan menos de siete d\xEDas: solicita una excepci\xF3n y autorizaci\xF3n de Personas.");
+        const locks = (p.model.baseline || []).filter((a) => a.locked);
+        if (!validarSolucion(p.model, locks).ok) return fallo2("turnos_confirmar", "La demanda contradice un turno bloqueado. Revisa el escenario de demostraci\xF3n antes de confirmarla.");
+        p.confirmed = true;
+        p.confirmedOn = state().hoy;
+        registrar("turnos_confirmar", p, "Demanda confirmada con fecha simulada; no equivale a validaci\xF3n de tiempo en producci\xF3n");
+        return { ok: true };
+      },
+      solicitarExcepcionTurnos(week, reason) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p)) return fallo2("turnos_excepcion");
+        if (!MOTIVOS_EXCEPCION.includes(reason)) return fallo2("turnos_excepcion", "Elige un motivo operativo, sin datos personales.");
+        p.confirmed = false;
+        p.exception = { status: "pendiente", reason, revision: p.revision };
+        registrar("turnos_excepcion_solicitada", p, "Solicitud excepcional de demanda tard\xEDa pendiente de Personas");
+        return { ok: true };
+      },
+      excepcionesTurnos() {
+        const s = state();
+        if (!s.auth.esPersonas(s.user) || s.user.puede_asignar_responsables !== "S\xED") {
+          fallo2("turnos_excepciones_acceso");
+          return [];
+        }
+        return [...plans.values()].filter((p) => p.exception?.status === "pendiente" && p.model.workers.every((w) => s.auth.enAlcance(s.user, w.id))).map((p) => ({ ownerId: p.ownerId, week: p.week, reason: p.exception.reason, status: p.exception.status }));
+      },
+      autorizarExcepcionTurnos(ownerId, week, { confirmado = false } = {}) {
+        const s = state();
+        const p = plans.get(key(ownerId, week));
+        if (!s.auth.esPersonas(s.user) || s.user.puede_asignar_responsables !== "S\xED" || !p || !p.model.workers.every((w) => s.auth.enAlcance(s.user, w.id))) return fallo2("turnos_excepcion_autorizar", "Solo Personas o Administraci\xF3n con alcance puede autorizar esta excepci\xF3n.");
+        if (confirmado !== true || p.exception?.status !== "pendiente" || p.exception.revision !== p.revision) return fallo2("turnos_excepcion_autorizar", "Confirma una solicitud vigente.");
+        p.exception.status = "autorizada";
+        p.exception.authorizedBy = s.user.usuario_id;
+        p.exception.authorizedOn = s.hoy;
+        registrar("turnos_excepcion_autorizada", p, "Excepci\xF3n operativa autorizada para demanda tard\xEDa; autorizaci\xF3n de demo");
+        return { ok: true };
+      },
+      async generarTurnos(week, order = ORDEN_DEFAULT, options = {}) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p) || !p.confirmed) return fallo2("turnos_generar", "Guarda y confirma la demanda de tu equipo antes de generar propuestas.");
+        if (p.running) return fallo2("turnos_generar", "Ya hay una b\xFAsqueda en curso. Espera o canc\xE9lala.");
+        const ownerId = state().user.usuario_id;
+        const revision = p.revision;
+        const sessionVersion = state().sessionVersion;
+        const token = { cancelled: false };
+        p.running = token;
+        registrar("turnos_generar", p, "B\xFAsqueda ALNS iniciada para el equipo; solo propuesta de demostraci\xF3n");
+        try {
+          const changed = () => token.cancelled || state().sessionVersion !== sessionVersion || state().user?.usuario_id !== ownerId || !permitido() || p.revision !== revision || !alcanceVigente(p) || plans.get(key(ownerId, week)) !== p;
+          const result = await optimizarALNS(structuredClone(p.model), {
+            ...options,
+            order,
+            shouldCancel: () => changed() || options.shouldCancel?.(),
+            onProgress: (progress) => {
+              if (!changed()) {
+                p.progress = progress;
+                options.onProgress?.(progress);
+              }
+            }
+          });
+          if (changed() || result.termination === "cancelado") return fallo2("turnos_cancelar", "La ejecuci\xF3n se cancel\xF3 o cambi\xF3 la sesi\xF3n. No se guard\xF3 una propuesta.");
+          if (!result.ok) return fallo2("turnos_generar", result.motivo);
+          const id = `PROP-${++serial}`;
+          p.results.unshift({ ...result, id, revision, status: "propuesta" });
+          p.results.length = Math.min(p.results.length, 6);
+          registrar("turnos_propuesta", p, `${id}: propuesta factible con ${result.metrics.covered} puestos cubiertos; no es un \xF3ptimo global garantizado`);
+          return { ok: true, id };
+        } catch {
+          log("error", "\u2014", "Fall\xF3 la planificaci\xF3n; no se registra contenido ni preferencias", "error");
+          return { ok: false, motivo: "No se pudo generar la propuesta. Revisa los par\xE1metros y vuelve a intentar." };
+        } finally {
+          if (p.running === token) p.running = null;
+        }
+      },
+      cancelarTurnos(week) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p) || !p.running) return fallo2("turnos_cancelar", "No hay una b\xFAsqueda propia en curso.");
+        p.running.cancelled = true;
+        registrar("turnos_cancelar", p, "Cancelaci\xF3n de b\xFAsqueda solicitada");
+        return { ok: true };
+      },
+      aprobarTurnos(week, id, { confirmado = false } = {}) {
+        const p = planPropio(week);
+        if (!alcanceVigente(p)) return fallo2("turnos_aprobar");
+        const result = p.results.find((r) => r.id === id);
+        if (confirmado !== true || !p.confirmed || !result || result.revision !== p.revision || !validarSolucion(p.model, result.assignments).ok) return fallo2("turnos_aprobar", "Confirma una propuesta vigente y factible.");
+        result.status = "borrador_validado";
+        p.approvedId = id;
+        registrar("turnos_aprobar", p, `${id}: borrador validado en demo; no se publican ni cambian turnos oficiales`);
+        return { ok: true };
+      }
+    };
+    return { api, limpiar() {
+      for (const p of plans.values()) if (p.running) p.running.cancelled = true;
+      plans.clear();
+    } };
+  }
+
   // src/store.js
   var limpiar = (v, max = 200) => {
     const t = String(v ?? "").trim().slice(0, max);
@@ -1136,6 +1830,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   };
   var CAMPOS_FICHA_EDITABLES = ["tarea_1", "tarea_2", "tarea_3", "companero_id", "reunion_at"];
   function crearStore(base, { now = () => (/* @__PURE__ */ new Date()).toISOString(), config = CONFIG } = {}) {
+    let turnos;
     if (!validarCampos(base, { permitirVacios: true })) throw new Error("Los datos deben contener \xFAnicamente los campos del kit sint\xE9tico.");
     const original = structuredClone(base);
     const s = {
@@ -1149,6 +1844,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       bitacora: [],
       reportes: [],
       user: null,
+      sessionVersion: 0,
       config,
       reglas: null,
       fichas: {},
@@ -1216,12 +1912,14 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         if (!u || !s.auth.puedeVerColaborador(u, [...s.auth.scope(u)][0])) return denegar("ingreso", "\u2014", "Cuenta sin acceso autorizado");
         if (opciones?.soloInterno && u.rol === "Colaborador") return denegar("ingreso", usuarioId, "Los colaboradores ingresan con su c\xF3digo");
         s.user = u;
+        s.sessionVersion++;
         log("ingreso", usuarioId, "Selecci\xF3n de cuenta sint\xE9tica (simulaci\xF3n)");
         return { ok: true };
       },
       logout() {
         if (s.user) log("salida", s.user.usuario_id, "");
         s.user = null;
+        s.sessionVersion++;
       },
       verColaborador(colId) {
         const u = s.user;
@@ -1304,6 +2002,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         s.base = candidato;
         s.overrides = {};
         rebuild();
+        turnos.limpiar();
         if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
         log("carga_archivos", "\u2014", "Carga del kit sint\xE9tico validada; datos solo en memoria");
         return { ok: true, sesionCerrada: !s.user };
@@ -1538,6 +2237,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         s.hoy = HOY_DEFAULT;
         s.fichas = {};
         s.alertaEstados = {};
+        turnos.limpiar();
         s.almacenamientoLimpio = limpiarPersistenciaAnterior();
         rebuild();
         log("reiniciar", "\u2014", "Datos originales restaurados; reportes y movimientos anteriores eliminados");
@@ -1545,6 +2245,8 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         return { ok: true };
       }
     };
+    turnos = crearPlanificador({ state: () => s, log, denegar });
+    Object.assign(api, turnos.api);
     for (const nombre of Object.keys(api)) {
       if (typeof api[nombre] !== "function") continue;
       const ejecutar = api[nombre];
@@ -1554,13 +2256,255 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         } catch {
           log("error", "\u2014", "No se pudo completar la acci\xF3n; no se registra su contenido", "error");
           if (nombre === "verColaborador") return null;
-          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias"].includes(nombre)) return [];
-          if (["vistaFicha", "indicadores"].includes(nombre)) return null;
+          if (["reportesVisibles", "misReportes", "ingresos", "companerosPara", "casosTI", "alertasFicha", "discrepancias", "excepcionesTurnos"].includes(nombre)) return [];
+          if (["vistaFicha", "indicadores", "planTurnos"].includes(nombre)) return null;
           return { ok: false, motivo: "No se pudo completar la acci\xF3n. Revisa los datos e intenta nuevamente." };
         }
       };
     }
     return api;
+  }
+
+  // src/optimization/ui.js
+  function reiniciarTurnosUI(ui2) {
+    ui2.turnos = null;
+  }
+  function estadoUI(store2, ui2) {
+    const ownerId = store2.state.user?.usuario_id;
+    if (!ui2.turnos || ui2.turnos.ownerId !== ownerId) {
+      let week = addDays(store2.state.hoy, 7);
+      while (!esLunes(week)) week = addDays(week, 1);
+      ui2.turnos = { ownerId, week, order: [...ORDEN_DEFAULT], selected: null, compare: "original", search: { ...SEARCH_DEFAULT }, tolerances: {} };
+    }
+    return ui2.turnos;
+  }
+  var hhmm = (n) => `${String(Math.floor(n / 60)).padStart(2, "0")}:${String(n % 60).padStart(2, "0")}`;
+  var minutos = (text) => /^\d{2}:\d{2}$/.test(text || "") ? Number(text.slice(0, 2)) * 60 + Number(text.slice(3)) : NaN;
+  var nfmt = (n) => Number(n).toLocaleString("es-CL", { maximumFractionDigits: 3 });
+  function formularioEscenario(p, st, esc2) {
+    const settings = p?.settings || DEMO_SETTINGS;
+    const input = (label, name, type = "number", min = 0, max = 24) => `<div class="field"><label for="tp-${esc2(name)}">${esc2(label)}</label><input id="tp-${esc2(name)}" name="${esc2(name)}" type="${type}" ${type === "number" ? `min="${min}" max="${max}" step="0.5"` : ""} value="${esc2(type === "time" ? hhmm(settings[name]) : settings[name])}" required></div>`;
+    return `<form data-form="turnos-preparar" class="form turnos-wide"><fieldset ${p?.running ? "disabled" : ""}>
+    <div class="turnos-grid">
+      <div class="field"><label for="tp-week">Semana que comienza el lunes</label><input id="tp-week" name="week" type="date" value="${esc2(st.week)}" required></div>
+      <div class="field"><label for="tp-mode">Bloques de trabajo</label><select id="tp-mode" name="mode"><option value="alternativos" ${settings.mode === "alternativos" ? "selected" : ""}>Ma\xF1ana o tarde, un bloque por d\xEDa</option><option value="continuo" ${settings.mode === "continuo" ? "selected" : ""}>Un bloque continuo por d\xEDa</option></select></div>
+      ${input("Inicio de ma\xF1ana o bloque continuo", "morningStart", "time")}${input("Fin de ma\xF1ana o bloque continuo", "morningEnd", "time")}
+      ${input("Inicio de tarde (solo bloques alternativos)", "afternoonStart", "time")}${input("Fin de tarde (solo bloques alternativos)", "afternoonEnd", "time")}
+      ${input("Horas objetivo semanales demo por persona", "targetHours", "number", 0, 168)}${input("M\xE1ximo de horas semanales demo", "maxHours", "number", 0, 168)}
+      ${input("M\xE1ximo de d\xEDas por semana demo", "maxDays", "number", 0, 7)}${input("M\xE1ximo de horas por d\xEDa demo", "maxDailyHours")}
+      ${input("Descanso m\xEDnimo entre bloques (horas demo)", "minRestHours", "number", 0, 72)}${input("M\xE1ximo de d\xEDas consecutivos demo", "maxConsecutiveDays", "number", 1, 7)}
+    </div>
+    <label class="turnos-check"><input name="lockFirst" type="checkbox" ${settings.lockFirst ? "checked" : ""}> Bloquear la primera asignaci\xF3n del calendario previo sint\xE9tico</label>
+    <label class="turnos-check"><input name="validated" type="checkbox" required> Confirmo que son supuestos de demostraci\xF3n, sin valor contractual ni validaci\xF3n legal</label>
+    <p class="hint">Preparar de nuevo esta semana reemplaza su demanda y sus propuestas. El bloque continuo usa el inicio y fin del primer bloque; nunca combina dos jornadas separadas.</p>
+    <button class="btn btn-primary" type="submit">${p ? "Preparar o reiniciar escenario" : "Preparar semana de demostraci\xF3n"}</button>
+  </fieldset></form>`;
+  }
+  function vistaTurnos(store2, ui2, esc2, fmt2) {
+    if (!store2.state.auth.puedePlanificarTurnos(store2.state.user)) return "";
+    const st = estadoUI(store2, ui2);
+    const p = store2.planTurnos(st.week);
+    if (p?.order) st.order = [...p.order];
+    const intro = `<section class="blk" id="turnos"><p class="caption">Extensi\xF3n de demostraci\xF3n \xB7 solo tu equipo</p><h2 class="h-lg">Planificaci\xF3n Inteligente de Turnos</h2>
+    <p class="lead">Define la cobertura, ordena tus prioridades y compara propuestas semanales sin cambiar los turnos oficiales.</p>
+    <p class="notice">Los puestos, las habilitaciones, la disponibilidad, las horas, las preferencias y el calendario previo de esta secci\xF3n son <b>datos sint\xE9ticos creados por el equipo</b>. No se infieren del \xE1rea, modalidad, dispositivo ni atrasos de onboarding. Se borran al recargar.</p>
+    <ol class="turnos-steps"><li>1. Demanda semanal</li><li>2. Prioridades</li><li>3. Generar propuesta</li><li>4. Comparar y aprobar</li></ol>
+    <form data-form="turnos-abrir" class="form form-inline"><div class="field"><label for="turnos-open-week">Abrir una semana ya preparada en esta sesi\xF3n</label><input id="turnos-open-week" name="week" type="date" value="${esc2(st.week)}" required></div><button type="submit" class="btn btn-ghost">Abrir semana guardada</button></form>
+    ${p ? `<details class="turnos-config"><summary>Preparar otra semana o cambiar par\xE1metros demo</summary>${formularioEscenario(p, st, esc2)}</details>` : formularioEscenario(null, st, esc2)}
+  </section>`;
+    if (!p) return intro;
+    const m = p.model;
+    const dates = fechasSemana(st.week);
+    const columns = m.modules.flatMap((mod) => m.shifts.map((shift) => ({ mod, shift })));
+    const late = diffDays(st.week, store2.state.hoy) < 7;
+    const priorityName = (id) => OBJETIVOS.find((o) => o.id === id)?.label || id;
+    const current = p.results.find((r) => r.id === st.selected) || p.results[0];
+    const metricas = store2.state.auth.puedeVerMetricas(store2.state.user);
+    const demand = `<section class="blk" id="turnos-demanda"><p class="caption">1 \xB7 Demanda semanal \xB7 ${fmt2(st.week)} al ${fmt2(dates[6])}</p>
+    <p class="hint">Sede demo de tu equipo. Un trabajador ocupa un bloque completo por d\xEDa. Disponibilidad demo: lunes a viernes, con una ausencia t\xE9cnica de ejemplo sin motivo personal. S\xE1bado y domingo sin disponibilidad.</p>
+    <details><summary>Ver capacidad y habilitaciones de demostraci\xF3n</summary><div class="table-wrap"><table><thead><tr><th>C\xF3digo</th><th>M\xF3dulos habilitados demo</th><th>Objetivo / m\xE1ximo semanal</th><th>D\xEDas disponibles</th></tr></thead><tbody>
+      ${m.workers.map((w) => `<tr><td><code>${esc2(w.id)}</code></td><td>${esc2(w.modules.map((id) => m.modules.find((x) => x.id === id)?.label).join(", "))}</td><td>${esc2(w.targetHours)} / ${esc2(w.maxHours)} h</td><td>${esc2(new Set(w.availability.map((a) => a.day)).size)}</td></tr>`).join("")}
+    </tbody></table></div><p class="hint">Las preferencias se eval\xFAan como indicadores agregados; no se muestran solicitudes individuales ni motivos de ausencia.</p></details>
+    <form data-form="turnos-demanda" class="form turnos-wide"><fieldset ${p.running ? "disabled" : ""}><div class="table-wrap"><table class="turnos-demand"><thead><tr><th>D\xEDa</th>${columns.map(({ mod, shift }) => `<th>${esc2(mod.label)}<br><small>${esc2(shift.label)} \xB7 ${esc2(hhmm(shift.start))}\u2013${esc2(hhmm(shift.end))}</small></th>`).join("")}</tr></thead><tbody>
+      ${DIAS.map((day, i) => `<tr><th scope="row">${esc2(day)}<br><small>${fmt2(dates[i])}</small></th>${columns.map(({ mod, shift }) => {
+      const index = m.demand.findIndex((d) => d.day === i && d.moduleId === mod.id && d.shiftId === shift.id);
+      return `<td><input aria-label="${esc2(`${day}, ${mod.label}, ${shift.label}`)}" name="d-${index}" type="number" min="0" max="99" step="1" value="${esc2(m.demand[index].required)}" required></td>`;
+    }).join("")}</tr>`).join("")}
+    </tbody></table></div><p class="hint">Cada celda exige un entero expl\xEDcito, incluido cero. Guardar cambios invalida la confirmaci\xF3n y las propuestas previas.</p><button class="btn btn-primary" type="submit">Guardar borrador de demanda</button></fieldset></form>
+    <div class="turnos-toolbar"><span class="chip chip-${p.confirmed ? "ok" : "warn"}">${p.confirmed ? "Demanda confirmada" : "Borrador sin confirmar"}</span><button class="btn btn-ghost" data-act="turnos-confirmar" ${p.running ? "disabled" : ""}>Confirmar demanda semanal</button></div>
+    <p class="hint">Anticipaci\xF3n ordinaria: siete d\xEDas antes del lunes planificado. Se comprueba contra la fecha de corte simulada ${fmt2(store2.state.hoy)}. El navegador offline no acredita identidad ni tiempo confiables para producci\xF3n.</p>
+    ${late ? `<div class="notice notice-bad"><b>Demanda tard\xEDa.</b> Requiere motivo operativo y autorizaci\xF3n de Personas antes de confirmar. Estado: ${esc2(p.exception?.status || "sin solicitud")}.</div>
+      <form data-form="turnos-excepcion" class="form form-inline"><div class="field"><label for="t-excepcion">Motivo operativo</label><select name="reason" id="t-excepcion">${MOTIVOS_EXCEPCION.map((x) => `<option>${esc2(x)}</option>`).join("")}</select></div><button class="btn btn-ghost" type="submit">Solicitar autorizaci\xF3n a Personas</button></form>` : ""}
+  </section>`;
+    const priorities = `<section class="blk" id="turnos-prioridades"><p class="caption">2 \xB7 Prioridades de optimizaci\xF3n</p>
+    <p class="lead">Primero se busca el mejor valor de la prioridad 1. Despu\xE9s se mejoran las siguientes conservando los valores ya fijados.</p><p class="hint">Los objetivos son costos de minimizaci\xF3n. Se resuelven por etapas, sin una suma ponderada. Las restricciones obligatorias siempre se mantienen.</p>
+    ${st.order[0] !== "cobertura" ? '<p class="notice notice-bad">Cobertura tiene una prioridad inferior: otras prioridades pueden dejar puestos sin cubrir. Revisa los faltantes antes de aprobar.</p>' : ""}
+    <div class="turnos-priorities">${st.order.map((id, index) => {
+      const o = OBJETIVOS.find((x) => x.id === id);
+      return `<article class="turnos-priority"><span class="turnos-rank">${index + 1}</span><div><h3>${esc2(o.label)}</h3><p class="hint">${esc2(o.description)} Unidad: ${esc2(o.unit)}.</p></div><div class="field"><label for="prio-${esc2(id)}">Prioridad</label><select id="prio-${esc2(id)}" data-change="turnos-prioridad" data-arg="${esc2(id)}" ${p.running ? "disabled" : ""}>${ORDEN_DEFAULT.map((_, n) => `<option value="${n}" ${n === index ? "selected" : ""}>${n + 1}</option>`).join("")}</select></div></article>`;
+    }).join("")}</div>
+    <button class="btn btn-ghost" data-act="turnos-restablecer" ${p.running ? "disabled" : ""}>Restablecer prioridades recomendadas</button>
+  </section>`;
+    const run = `<section class="blk" id="turnos-generar"><p class="caption">3 \xB7 Ejecutar optimizaci\xF3n</p>
+    <form data-form="turnos-generar" class="form turnos-wide"><fieldset ${p.running ? "disabled" : ""}><div class="turnos-grid">
+      ${[["iterations", "M\xE1ximo de iteraciones", 5, 5e3], ["maxTimeMs", "Tiempo m\xE1ximo (milisegundos)", 1, 6e4], ["maxStall", "Iteraciones sin mejora por etapa", 1, 5e3], ["seed", "Semilla reproducible", 0, 4294967295]].map(([key, label, min, max]) => `<div class="field"><label for="search-${key}">${esc2(label)}</label><input id="search-${key}" type="number" name="${key}" min="${min}" max="${max}" step="1" value="${esc2(st.search[key])}" required></div>`).join("")}
+    </div><details class="turnos-config"><summary>Tolerancias expl\xEDcitas (cero por defecto)</summary><p class="hint">Cero impide deteriorar objetivos anteriores. Un valor positivo permite hasta esa cantidad de la unidad de ese objetivo; no modifica ninguna restricci\xF3n obligatoria.</p><div class="turnos-grid">${OBJETIVOS.map((o) => `<div class="field"><label for="tol-${o.id}">${esc2(o.label)}</label><input id="tol-${o.id}" name="tol-${o.id}" type="number" min="0" step="0.01" value="${esc2(st.tolerances[o.id] || 0)}" required></div>`).join("")}</div></details>
+    <button class="btn btn-primary" type="submit" ${!p.confirmed ? "disabled" : ""}>Generar planificaci\xF3n optimizada</button></fieldset></form>
+    ${!p.confirmed ? '<p class="hint">Guarda y confirma la demanda para habilitar la b\xFAsqueda.</p>' : ""}
+    ${p.running ? `<div class="turnos-progress" role="status" aria-live="polite"><progress max="100" value="${esc2(p.progress?.progress || 0)}"></progress><p>Etapa ${esc2(p.progress?.stage || 1)} de 5 \xB7 ${esc2(priorityName(p.progress?.active || st.order[0]))} \xB7 ${esc2(p.progress?.iterations || 0)} iteraciones</p><button class="btn btn-ghost" data-act="turnos-cancelar">Cancelar b\xFAsqueda</button></div>` : ""}
+    <p class="hint">ALNS es una b\xFAsqueda heur\xEDstica: devuelve la mejor propuesta factible encontrada dentro del presupuesto, sin garant\xEDa de \xF3ptimo global. Con tiempo suficiente, la misma semilla y el mismo n\xFAmero de iteraciones reproducen la b\xFAsqueda; un corte por tiempo puede variar entre equipos.</p>
+  </section>`;
+    return intro + demand + priorities + run + (current ? resultados(p, current, st, esc2, fmt2, metricas) : '<section class="blk" id="turnos-resultados"><p class="caption">4 \xB7 Resultados</p><p class="empty">Todav\xEDa no hay propuestas. Confirma tu demanda y genera la primera.</p></section>');
+  }
+  function resultados(p, result, st, esc2, fmt2, metricas) {
+    const m = p.model;
+    const dates = fechasSemana(p.week);
+    const metrics = result.metrics;
+    const compare = p.results.find((r) => r.id === st.compare);
+    const reference = compare ? compare.metrics : evaluarObjetivos(m, m.baseline || []);
+    const known = result.revision === p.revision;
+    const modName = (id) => m.modules.find((x) => x.id === id)?.label || id;
+    const shiftName = (id) => m.shifts.find((x) => x.id === id)?.label || id;
+    const locked = new Set((m.baseline || []).filter((a) => a.locked).map(assignmentKey));
+    return `<section class="blk" id="turnos-resultados"><p class="caption">4 \xB7 Comparar y aprobar</p>
+    <div class="turnos-grid"><div class="field"><label for="turnos-selected">Propuesta que quieres revisar</label><select id="turnos-selected" data-change="turnos-seleccionar">${p.results.map((r) => `<option value="${esc2(r.id)}" ${r.id === result.id ? "selected" : ""}>${esc2(r.id)} \xB7 ${r.status === "borrador_validado" ? "borrador validado" : "propuesta"}${r.revision !== p.revision ? " \xB7 demanda anterior" : ""}</option>`).join("")}</select></div>
+      <div class="field"><label for="turnos-compare">Comparar con</label><select id="turnos-compare" data-change="turnos-comparar"><option value="original">Calendario anterior sint\xE9tico</option>${p.results.filter((r) => r.revision === result.revision).map((r) => `<option value="${esc2(r.id)}" ${r.id === st.compare ? "selected" : ""}>${esc2(r.id)}</option>`).join("")}</select></div></div>
+    ${!known ? '<p class="notice notice-bad">Esta propuesta corresponde a una demanda anterior. No puede aprobarse: genera una nueva para la demanda vigente.</p>' : ""}
+    <p class="notice">${metrics.costs.cobertura ? `<b>${metrics.costs.cobertura === 1 ? "Queda 1 puesto" : `Quedan ${esc2(metrics.costs.cobertura)} puestos`} sin cubrir.</b> Revisa capacidad o demanda; la b\xFAsqueda no rompe restricciones para cubrirlos.` : "<b>Demanda cubierta en esta propuesta.</b> Verifica los supuestos antes de validar el borrador."} El resultado no publica turnos oficiales.</p>
+    <p class="hint">Prioridades usadas: ${result.order.map((id) => esc2(OBJETIVOS.find((o) => o.id === id).label)).join(" \u2192 ")}. Semilla ${esc2(result.seed)} \xB7 ${esc2(result.iterations)} iteraciones \xB7 ${esc2(result.elapsedMs)} ms \xB7 t\xE9rmino: ${esc2({ iteraciones: "l\xEDmite de iteraciones", sin_mejora: "sin mejoras recientes", tiempo: "l\xEDmite de tiempo", cancelado: "cancelaci\xF3n" }[result.termination] || result.termination)}.</p>
+    ${metricas ? `<div class="table-wrap"><table><thead><tr><th>Indicador (menor es mejor)</th><th>Referencia</th><th>${esc2(result.id)}</th><th>Unidad</th></tr></thead><tbody>${OBJETIVOS.map((o) => `<tr><th scope="row">${esc2(o.label)}</th><td class="num">${esc2(nfmt(reference.costs[o.id]))}</td><td class="num">${esc2(nfmt(metrics.costs[o.id]))}</td><td>${esc2(o.unit)}</td></tr>`).join("")}</tbody></table></div>
+      <p class="hint">Preferencias satisfechas: ${metrics.satisfaction === null ? "Sin dato: no hay preferencias evaluables" : `${esc2(nfmt(metrics.satisfaction))}% (${esc2(metrics.preferenceSatisfied)} de ${esc2(metrics.preferenceChecks)} comprobaciones)`}. ${metrics.notes.map(esc2).join(" ")}</p>` : ""}
+    <h3>Calendario semanal por trabajador y m\xF3dulo</h3><div class="table-wrap"><table class="turnos-calendar"><thead><tr><th>C\xF3digo</th>${DIAS.map((d, i) => `<th>${esc2(d)}<br><small>${fmt2(dates[i])}</small></th>`).join("")}</tr></thead><tbody>
+      ${m.workers.map((w) => `<tr><th scope="row"><code>${esc2(w.id)}</code></th>${DIAS.map((_, day) => {
+      const a = result.assignments.find((x) => x.workerId === w.id && x.day === day);
+      const shift = a && m.shifts.find((x) => x.id === a.shiftId);
+      return `<td>${a ? `<b>${esc2(modName(a.moduleId))}</b><br>${esc2(shiftName(a.shiftId))}<br><small>${esc2(hhmm(shift.start))}\u2013${esc2(hhmm(shift.end))}${locked.has(assignmentKey(a)) ? " \xB7 bloqueado" : ""}</small>` : '<span class="dim">Sin asignaci\xF3n</span>'}</td>`;
+    }).join("")}</tr>`).join("")}
+    </tbody></table></div>
+    <h3>Cobertura por d\xEDa, m\xF3dulo y jornada</h3><div class="table-wrap"><table><thead><tr><th>D\xEDa</th><th>M\xF3dulo</th><th>Jornada</th><th>Requeridos</th><th>Cubiertos</th><th>Sin cubrir</th></tr></thead><tbody>${m.demand.filter((d) => d.required > 0).map((d) => {
+      const covered = result.assignments.filter((a) => slotKey(a) === slotKey(d)).length;
+      const missing = Math.max(0, d.required - covered);
+      return `<tr><td>${esc2(DIAS[d.day])}</td><td>${esc2(modName(d.moduleId))}</td><td>${esc2(shiftName(d.shiftId))}</td><td>${esc2(d.required)}</td><td>${esc2(covered)}</td><td class="${missing ? "tone-bad" : ""}">${esc2(missing)}</td></tr>`;
+    }).join("") || '<tr><td colspan="6">Demanda expl\xEDcita en cero.</td></tr>'}</tbody></table></div>
+    ${metricas ? `<h3>Distribuci\xF3n proporcional y horas objetivo de demostraci\xF3n</h3><div class="table-wrap"><table><thead><tr><th>C\xF3digo</th><th>Bloques</th><th>Horas</th><th>Objetivo</th><th>Desviaci\xF3n</th><th>Capacidad proporcional</th><th>Uso de capacidad</th></tr></thead><tbody>${metrics.loads.map((w) => `<tr><td><code>${esc2(w.workerId)}</code></td><td>${esc2(w.blocks)}</td><td>${esc2(nfmt(w.hours))}</td><td>${w.target === null ? "Sin dato" : esc2(nfmt(w.target))}</td><td>${w.deviation === null ? "No evaluada" : esc2(nfmt(w.deviation))}</td><td>${esc2(nfmt(w.capacity))} h</td><td>${w.ratio === null ? "No disponible" : `${esc2(nfmt(w.ratio * 100))}%`}</td></tr>`).join("")}</tbody></table></div>
+      <details><summary>Resultados de las etapas y valores conservados</summary><div class="table-wrap"><table><thead><tr><th>Etapa</th><th>Objetivo</th><th>Mejor costo encontrado</th><th>Iteraciones</th><th>Objetivos anteriores conservados</th></tr></thead><tbody>${result.stages.map((s, i) => `<tr><td>${i + 1}</td><td>${esc2(s.objective)}${s.skipped ? " \xB7 sin b\xFAsqueda por l\xEDmite" : ""}</td><td>${esc2(nfmt(s.costs[s.objective]))}</td><td>${esc2(s.iterations)}</td><td>${Object.entries(s.lockedBefore).map(([k, v]) => `${esc2(k)} \u2264 ${esc2(nfmt(v))}`).join("; ") || "Primera etapa"}</td></tr>`).join("")}</tbody></table></div></details>` : ""}
+    <div class="turnos-toolbar"><span class="chip chip-${result.status === "borrador_validado" ? "ok" : "neutral"}">${esc2(result.status === "borrador_validado" ? "Borrador validado, sin publicaci\xF3n oficial" : "Propuesta de demostraci\xF3n")}</span><button class="btn btn-primary" data-act="turnos-aprobar" data-arg="${esc2(result.id)}" ${!known || !p.confirmed || p.running ? "disabled" : ""}>Aprobar propuesta como borrador validado</button></div>
+  </section>`;
+  }
+  function vistaExcepcionesTurnos(store2, esc2, fmt2) {
+    if (!store2.state.auth.puedeGestionarAlertas(store2.state.user)) return "";
+    const pending = store2.excepcionesTurnos();
+    if (!pending.length) return "";
+    return `<section class="blk" id="turnos-excepciones"><p class="caption">Autorizaciones de demanda tard\xEDa</p><h2 class="h-md">Solicitudes excepcionales de jefaturas</h2><p class="hint">Solo datos operativos. Autorizar permite confirmar una demanda fuera del plazo ordinario en esta demo; no valida reglas legales ni publica turnos.</p><ul class="rows">${pending.map((p) => `<li class="hrow"><span class="rb-main"><b>${esc2(p.ownerId)} \xB7 semana del ${fmt2(p.week)}</b><span>${esc2(p.reason)}</span></span><button class="btn btn-primary btn-sm" data-act="turnos-autorizar" data-arg="${esc2(`${p.ownerId}|${p.week}`)}">Autorizar excepci\xF3n</button></li>`).join("")}</ul></section>`;
+  }
+  async function submitTurnos(kind, fd, { store: store2, ui: ui2, render: render2, toast }) {
+    const st = estadoUI(store2, ui2);
+    if (kind === "turnos-abrir") {
+      const week = String(fd.get("week") || "");
+      const p2 = store2.planTurnos(week);
+      if (!p2) return toast("No hay una semana preparada con esa fecha en tu sesi\xF3n. Prepara primero el escenario.");
+      st.week = week;
+      st.selected = null;
+      st.compare = "original";
+      return render2();
+    }
+    if (kind === "turnos-preparar") {
+      const settings = {
+        mode: String(fd.get("mode")),
+        morningStart: minutos(fd.get("morningStart")),
+        morningEnd: minutos(fd.get("morningEnd")),
+        afternoonStart: minutos(fd.get("afternoonStart")),
+        afternoonEnd: minutos(fd.get("afternoonEnd")),
+        lockFirst: fd.get("lockFirst") === "on",
+        validated: fd.get("validated") === "on"
+      };
+      for (const k of ["targetHours", "maxHours", "maxDays", "maxDailyHours", "minRestHours", "maxConsecutiveDays"]) settings[k] = fd.get(k) === "" || fd.get(k) === null ? NaN : Number(fd.get(k));
+      const week = String(fd.get("week") || "");
+      if (store2.planTurnos(week)) {
+        ui2.confirm = { act: "turnos-preparar", week, settings, texto: "Reemplazar el escenario de esta semana, incluidos demanda y propuestas de demostraci\xF3n. Los turnos oficiales no cambian." };
+        return render2();
+      }
+      const r = store2.prepararTurnos(week, settings);
+      if (r.ok) {
+        st.week = week;
+        st.selected = null;
+      }
+      return toast(r.ok ? "Semana de demostraci\xF3n preparada. Revisa y guarda la demanda." : r.motivo);
+    }
+    const p = store2.planTurnos(st.week);
+    if (!p) return toast("Prepara una semana autorizada antes de continuar.");
+    if (kind === "turnos-demanda") {
+      const demand = p.model.demand.map((d, i) => ({ ...d, required: fd.get(`d-${i}`) === "" || fd.get(`d-${i}`) === null ? NaN : Number(fd.get(`d-${i}`)) }));
+      const r = store2.guardarDemandaTurnos(st.week, demand);
+      return toast(r.ok ? "Borrador guardado en memoria. Confirma la demanda antes de optimizar." : r.motivo);
+    }
+    if (kind === "turnos-excepcion") {
+      const r = store2.solicitarExcepcionTurnos(st.week, String(fd.get("reason")));
+      return toast(r.ok ? "Solicitud registrada. Personas debe autorizarla desde su vista." : r.motivo);
+    }
+    if (kind === "turnos-generar") {
+      for (const k of Object.keys(SEARCH_DEFAULT)) st.search[k] = fd.get(k) === "" || fd.get(k) === null ? NaN : Number(fd.get(k));
+      for (const k of ORDEN_DEFAULT) st.tolerances[k] = fd.get(`tol-${k}`) === "" || fd.get(`tol-${k}`) === null ? NaN : Number(fd.get(`tol-${k}`));
+      const owner = store2.state.user.usuario_id;
+      const work = store2.generarTurnos(st.week, st.order, { ...st.search, tolerances: st.tolerances, onProgress: () => render2() });
+      render2();
+      const r = await work;
+      if (store2.state.user?.usuario_id !== owner) return render2();
+      if (r.ok) {
+        st.selected = r.id;
+        st.compare = "original";
+      }
+      return toast(r.ok ? "Propuesta factible generada. Revisa los faltantes y comp\xE1rala antes de aprobar." : r.motivo);
+    }
+  }
+  function clickTurnos(act, arg, { store: store2, ui: ui2, render: render2, toast }) {
+    const st = estadoUI(store2, ui2);
+    if (act === "turnos-restablecer") {
+      const r = store2.ordenarTurnos(st.week, ORDEN_DEFAULT);
+      if (r.ok) st.order = [...ORDEN_DEFAULT];
+      return r.ok ? render2() : toast(r.motivo);
+    }
+    if (act === "turnos-cancelar") {
+      const r = store2.cancelarTurnos(st.week);
+      return toast(r.ok ? "Cancelaci\xF3n solicitada." : r.motivo);
+    }
+    if (act === "turnos-confirmar") ui2.confirm = { act, week: st.week, texto: "Confirmar la demanda semanal guardada con la fecha simulada de esta demo. Los cambios posteriores exigir\xE1n una nueva confirmaci\xF3n." };
+    if (act === "turnos-aprobar") ui2.confirm = { act, week: st.week, id: arg, texto: "Validar esta propuesta como borrador de planificaci\xF3n. Revisa los puestos sin cubrir. Esta acci\xF3n no modifica ni publica turnos oficiales." };
+    if (act === "turnos-autorizar") {
+      const [owner, week] = String(arg).split("|");
+      ui2.confirm = { act, owner, week, texto: "Autorizar excepcionalmente la confirmaci\xF3n de esta demanda tard\xEDa en la demostraci\xF3n. La acci\xF3n queda en la bit\xE1cora." };
+    }
+    return render2();
+  }
+  function confirmarTurnos(c, { store: store2, ui: ui2, render: render2, toast }) {
+    const st = estadoUI(store2, ui2);
+    let r;
+    if (c.act === "turnos-confirmar") r = store2.confirmarDemandaTurnos(c.week);
+    if (c.act === "turnos-aprobar") r = store2.aprobarTurnos(c.week, c.id, { confirmado: true });
+    if (c.act === "turnos-autorizar") r = store2.autorizarExcepcionTurnos(c.owner, c.week, { confirmado: true });
+    if (c.act === "turnos-preparar") {
+      r = store2.prepararTurnos(c.week, c.settings);
+      if (r.ok) {
+        st.week = c.week;
+        st.selected = null;
+      }
+    }
+    return r ? toast(r.ok ? "Acci\xF3n registrada en esta demo, sin cambios oficiales." : r.motivo) : render2();
+  }
+  function changeTurnos(el, { store: store2, ui: ui2, render: render2 }) {
+    const st = estadoUI(store2, ui2);
+    if (el.dataset.change === "turnos-prioridad") {
+      const index = st.order.indexOf(el.dataset.arg);
+      const position = Number(el.value);
+      if (index >= 0 && Number.isInteger(position) && position >= 0 && position < 5) {
+        const order = [...st.order];
+        order.splice(position, 0, ...order.splice(index, 1));
+        if (store2.ordenarTurnos(st.week, order).ok) st.order = order;
+      }
+    }
+    if (el.dataset.change === "turnos-seleccionar") st.selected = el.value;
+    if (el.dataset.change === "turnos-comparar") st.compare = el.value;
+    return render2();
   }
 
   // src/ui.js
@@ -1599,6 +2543,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   };
   var store;
   var root;
+  var contextoTurnos = () => ({ store, ui, render, toast: toastMsg });
   var nombreDe = (id) => {
     const { auth, user, idx } = store.state;
     if (!user) return id;
@@ -1636,7 +2581,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     setTimeout(() => {
       if (ui.toast === t) {
         ui.toast = "";
-        render();
+        root.querySelector?.(".toast")?.remove();
       }
     }, 3200);
   };
@@ -1645,7 +2590,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     return data.hitos.filter((h) => auth.puedeVerHito(u, h)).map((h) => ({ h, ev: evaluarHito(h, idx, hoy) }));
   }
   var pad2 = (n) => String(n).padStart(2, "0");
-  var stats = (rows) => `<div class="stats">${rows.map(([l, v, tone]) => `<div><span>${esc(l)}</span><span class="num ${tone ? "tone-" + tone : ""}">${v}</span></div>`).join("")}</div>`;
+  var stats2 = (rows) => `<div class="stats">${rows.map(([l, v, tone]) => `<div><span>${esc(l)}</span><span class="num ${tone ? "tone-" + tone : ""}">${v}</span></div>`).join("")}</div>`;
   var tags = (list) => `<div class="tags caption">${list.filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</div>`;
   var filtros = (grupo, opciones, actual) => `<div class="filters caption" role="group" aria-label="Filtro">${opciones.map(([k, t, n]) => `<button class="${actual === k ? "on" : ""}" data-act="${grupo}" data-arg="${esc(k)}" aria-pressed="${actual === k}">${esc(t)}${n !== void 0 ? ` <span class="num">${n}</span>` : ""}</button>`).join("")}</div>`;
   var SIN_DATO = (txt = "") => `<span class="missing">Sin dato${txt ? ` \xB7 ${esc(txt)}` : ""}</span>`;
@@ -1829,7 +2774,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
           ${porResponder ? '<p class="notice"><b>Tu jefatura envi\xF3 tu ficha de ingreso.</b> Rev\xEDsala y conf\xEDrmala, o av\xEDsanos si algo no coincide.</p><div><a class="btn btn-primary" href="#ficha">Revisar mi ficha</a></div>' : ""}
           ${c.correo_corporativo_activo === "No" ? '<p class="hint">A\xFAn no tienes correo corporativo. Puedes usar esta p\xE1gina desde tu tel\xE9fono igual.</p>' : ""}
         </div>
-        ${stats([
+        ${stats2([
       ["Ingreso", fmt(c.fecha_ingreso)],
       ["Turno", c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Por confirmar</span>'],
       ["Avance", `${av.cumplidos} de ${av.total} ${barra(av)}`],
@@ -1844,7 +2789,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         ${ev.estadoReal === "Por verificar" ? '<span class="missing">Figura como listo, pero falta confirmar la fecha.</span>' : ""}
         ${h.fecha_comprometida && ev.estadoReal !== "Cumplido" ? `<span class="dim">Soporte TI comprometi\xF3 el <span class="nw">${fmt(h.fecha_comprometida)}</span></span>` : ""}</span>${chip(ev)}</li>`).join("")}</ul></section>`).join("")}
     <section class="blk" id="contactos"><p class="caption">A qui\xE9n pedir ayuda</p>
-      ${stats([
+      ${stats2([
       ["Tu jefatura", jef ? esc(nombreDe(jef.usuario_id)) : '<span class="missing">Sin asignar. Personas ya tiene la alerta.</span>'],
       ["Equipo y accesos", "Soporte TI"],
       ["Contrato y dudas generales", "Equipo de Personas"],
@@ -1858,7 +2803,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         <p class="hint">Registramos solo esta categor\xEDa para que Personas revise el caso. No recopilamos relatos ni datos personales adicionales. Tu jefatura no lo ve y no se usa para evaluarte. En esta demo queda solo en memoria.</p>
         <div><button class="btn btn-primary" type="submit">Enviar a Personas</button></div>
       </form>
-      ${misRep.length ? `<div class="stack"><p class="caption">Tus reportes</p>${stats(misRep.map((r) => [r.tipo, `<span class="chip chip-neutral">${esc(r.estado)}</span>`]))}</div>` : ""}
+      ${misRep.length ? `<div class="stack"><p class="caption">Tus reportes</p>${stats2(misRep.map((r) => [r.tipo, `<span class="chip chip-neutral">${esc(r.estado)}</span>`]))}</div>` : ""}
     </section>`}
     <section class="blk blk-tight"><p class="hint">Prueba de permisos: <button class="link" data-act="probar-403" data-arg="COL-014">intentar abrir la ficha de COL-014</button></p></section>`;
     const nav = [
@@ -1898,7 +2843,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       <div class="stack"><p class="caption">Qu\xE9 har\xE1s tu primera semana</p>
         ${enviada ? `<ol class="rows tareas">${[f.tarea_1, f.tarea_2, f.tarea_3].map((t, i) => `<li class="hrow"><span class="caption idx">${pad2(i + 1)}</span><span class="rb-main"><b>${esc(t)}</b></span></li>`).join("")}</ol>` : '<p class="dim">Tu jefatura a\xFAn no completa esta secci\xF3n.</p>'}
       </div>
-      ${stats([
+      ${stats2([
       ["Ingreso", c.fecha_ingreso ? `${fmt(c.fecha_ingreso)} \xB7 hora ${SIN_DATO("no viene en el registro")}` : SIN_DATO()],
       ["Cu\xE1ndo trabajas", c.tipo_turno ? `${esc(c.tipo_turno)} <span class="chip chip-ok">Validado por RR.LL.</span>` : SIN_DATO("Personas lo est\xE1 revisando")],
       ["Jefatura", v.jefatura ? esc(v.jefatura) : SIN_DATO("Personas est\xE1 asignando tu jefatura")],
@@ -1926,7 +2871,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       <div class="detail">
         <form data-form="buscar" class="form"><div class="field"><label for="q">Buscar colaborador por ID</label><input id="q" name="q" placeholder="Ej. COL-014"></div><div><button class="btn btn-ghost" type="submit">Buscar</button></div>
           ${ui.busqueda ? `<p class="notice ${ui.busqueda.ok ? "" : "notice-bad"}">${ui.busqueda.ok ? `${esc(ui.busqueda.id)} est\xE1 en tu equipo.` : `${esc(ui.busqueda.id)} est\xE1 fuera de tu alcance. El intento qued\xF3 registrado en la bit\xE1cora.`}</p>` : ""}</form>
-        ${auth.puedeVerMetricas(u) ? stats([["Personas en tu equipo", String(equipo.length)], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats([["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
+        ${auth.puedeVerMetricas(u) ? stats2([["Personas en tu equipo", String(equipo.length)], ["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""], ["Hitos atrasados del equipo, de cualquier \xE1rea", String(vencEquipo.length), vencEquipo.length ? "bad" : ""]]) : stats2([["Fichas por enviar", String(porEnviar), porEnviar ? "warn" : ""], ["Acciones tuyas por hacer", String(mias.length), mias.length ? "warn" : ""]])}
       </div>
     </section>
     <section class="blk" id="fichas"><p class="caption">Fichas de ingreso</p>
@@ -1960,13 +2905,14 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ""}`;
     const nav = [
       { label: "Resumen", href: "inicio" },
+      ...auth.puedePlanificarTurnos(u) ? [{ label: "Planificaci\xF3n de turnos", href: "turnos" }] : [],
       { label: "Fichas de ingreso", href: "fichas", right: porEnviar },
       { label: "Tus acciones", href: "acciones", right: mias.length },
       { label: "Pr\xF3ximos ingresos", href: "ingresos", right: proximos.length },
       { label: "Personas de tu equipo", href: "equipo", right: equipo.length },
       ...metr ? [{ label: "Cumplimiento", href: "cumplimiento" }] : []
     ];
-    return { nav, body };
+    return { nav, body: body + vistaTurnos(store, ui, esc, fmt) };
   }
   function formFicha(u, colId) {
     const v = store.vistaFicha(colId);
@@ -1974,7 +2920,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const f = v.ficha || {};
     const id = esc(colId);
     const tec = v.hitos.filter((x) => HITOS_TECNICOS.includes(x.h.tipo_hito)).map((x) => `${esc(x.h.tipo_hito)}: ${esc(x.estado)}`).join(" \xB7 ");
-    const solo = stats([
+    const solo = stats2([
       ["Turno (solo lectura)", v.c.tipo_turno ? `${esc(v.c.tipo_turno)} \xB7 validado por RR.LL.` : SIN_DATO("lo corrige Personas")],
       ["Equipo y accesos (solo lectura)", `${tec || "\u2014"} \xB7 lo gestiona TI`]
     ]);
@@ -1995,7 +2941,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     <div class="row"><button class="btn btn-ghost" type="submit" name="op" value="guardar">Guardar borrador</button><button class="btn btn-primary" type="submit" name="op" value="enviar">Enviar ficha</button></div>
     <p class="hint">Al enviar, se notificar\xEDa a la persona por su canal registrado (simulado: no se env\xEDa nada). No ves su canal ni lo que reporte a Personas.</p></form>`;
   }
-  var listaIngresos = (l) => stats(l.map((c) => [nombreDe(c.colaborador_id), `${fmt(c.fecha_ingreso)} \xB7 ${esc(c.modalidad)} \xB7 ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}`]));
+  var listaIngresos = (l) => stats2(l.map((c) => [nombreDe(c.colaborador_id), `${fmt(c.fecha_ingreso)} \xB7 ${esc(c.modalidad)} \xB7 ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}`]));
   function tablaHitos(u, colId) {
     const s = store.state;
     const rows = (s.idx.hitosPorColab.get(colId) || []).filter((h) => s.auth.puedeVerHito(u, h));
@@ -2047,7 +2993,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       <h1>${abiertos.filter((x) => x.ev.estadoReal === "Vencido").length} equipos y accesos est\xE1n atrasados seg\xFAn el plazo del cat\xE1logo.</h1>
       <div class="detail">
         <p class="lead">Ves solo los hitos de Equipo y Acceso, identificados por c\xF3digo. Los nombres y canales de contacto no son necesarios para resolverlos.</p>
-        ${s.auth.puedeVerMetricas(u) ? stats([["Casos t\xE9cnicos abiertos", String(abiertos.length)], ["Vencidos", String(abiertos.filter((x) => x.ev.estadoReal === "Vencido").length), "bad"], ["Sin responsable asignado", String(filtros2.sin.length), filtros2.sin.length ? "warn" : ""], ["Asignados a ti", String(filtros2.mios.length)]]) : ""}
+        ${s.auth.puedeVerMetricas(u) ? stats2([["Casos t\xE9cnicos abiertos", String(abiertos.length)], ["Vencidos", String(abiertos.filter((x) => x.ev.estadoReal === "Vencido").length), "bad"], ["Sin responsable asignado", String(filtros2.sin.length), filtros2.sin.length ? "warn" : ""], ["Asignados a ti", String(filtros2.mios.length)]]) : ""}
       </div>
     </section>
     <section class="blk" id="casos"><p class="caption">${esc(titulo[ui.tiFiltro])} \xB7 ${lista.length}</p>
@@ -2097,7 +3043,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const [, nombreTab, titulo] = TABS.find((t) => t[0] === ui.tab);
     const i = TABS.findIndex((t) => t[0] === ui.tab);
     const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
-    const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === "Administrador" ? "Administraci\xF3n" : "Equipo de Personas", `${pad2(i + 1)} \xB7 ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
+    const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === "Administrador" ? "Administraci\xF3n" : "Equipo de Personas", `${pad2(i + 1)} \xB7 ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}${vistaExcepcionesTurnos(store, esc, fmt)}`;
     const nav = disponibles.map(([k, t], j) => ({
       label: t,
       act: "tab",
@@ -2154,11 +3100,11 @@ fieldset.choice legend { padding: 0 0 .5rem; }
       <div class="stack"><p class="big-num num">${k.pctAntesDia1 === null ? "\u2014" : `${k.pctAntesDia1}%`}</p>
         <p class="lead">de las fichas enviadas se confirmaron antes del d\xEDa 1 (${k.confirmadasAntesDia1} de ${k.enviadas}).</p>
         ${k.enviadas ? "" : '<p class="hint">A\xFAn no hay fichas enviadas. El indicador aparece cuando una jefatura env\xEDa la primera.</p>'}</div>
-      ${stats([["Ingresos en tu alcance", String(k.ingresos)], ["Fichas enviadas", String(k.enviadas)], ["Fichas confirmadas", String(k.confirmadas), k.confirmadas ? "ok" : ""], ["Discrepancias reportadas", String(disc), disc ? "warn" : ""]])}
+      ${stats2([["Ingresos en tu alcance", String(k.ingresos)], ["Fichas enviadas", String(k.enviadas)], ["Fichas confirmadas", String(k.confirmadas), k.confirmadas ? "ok" : ""], ["Discrepancias reportadas", String(disc), disc ? "warn" : ""]])}
     </div></section>
-  <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
+  <section class="blk"><p class="caption">Discrepancias por motivo</p>${stats2(Object.entries(k.porMotivo).map(([m, n]) => [MOTIVOS[m], String(n)]))}</section>
   <section class="blk"><p class="caption">Hitos atrasados por responsable</p>
-    ${k.atrasadosPorResponsable.length ? stats(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), "bad"])) : '<p class="empty">Sin hitos atrasados.</p>'}
+    ${k.atrasadosPorResponsable.length ? stats2(k.atrasadosPorResponsable.map(([r, n]) => [r, String(n), "bad"])) : '<p class="empty">Sin hitos atrasados.</p>'}
     <p class="hint">Indicadores calculados en vivo desde las fichas y los hitos. No se usan para evaluar personas.</p></section>`;
   }
   function tResumen(u) {
@@ -2179,7 +3125,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     return `<section class="blk"><div class="detail">
       <div class="stack"><p class="big-num tone-bad num">${venc}</p><p class="lead">hitos atrasados seg\xFAn el plazo del cat\xE1logo. El registro marca solo ${reg}.</p>
         ${venc > reg ? `<p class="hint">${venc - reg} hitos figuran como "Pendiente", pero su fecha l\xEDmite se movi\xF3 m\xE1s all\xE1 del plazo del cat\xE1logo. Aqu\xED se cuentan como atrasados.</p>` : ""}</div>
-      ${stats([["Hitos abiertos", String(abiertos.length)], ["Atrasados seg\xFAn el cat\xE1logo", String(venc), "bad"], ["Atrasados seg\xFAn el registro", String(reg)], ['"Cumplido" sin respaldo de fecha', String(pv), "warn"], ["Personas con un atraso cr\xEDtico", String(personasCrit), "bad"]])}
+      ${stats2([["Hitos abiertos", String(abiertos.length)], ["Atrasados seg\xFAn el cat\xE1logo", String(venc), "bad"], ["Atrasados seg\xFAn el registro", String(reg)], ['"Cumplido" sin respaldo de fecha', String(pv), "warn"], ["Personas con un atraso cr\xEDtico", String(personasCrit), "bad"]])}
     </div></section>
     <section class="blk"><p class="caption">Cumplimiento real por hito y \xE1rea</p>
       <div class="table-wrap"><table class="heatmap"><thead><tr><th>Hito</th>${areas.map((a) => `<th>${a}</th>`).join("")}<th>Total</th></tr></thead><tbody>
@@ -2233,7 +3179,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   <div class="table-wrap"><table><thead><tr><th>Capacidad</th>${roles.map((r) => `<th>${r}</th>`).join("")}</tr></thead><tbody>
   ${MATRIZ_EFECTIVA.map((m) => `<tr><th scope="row">${esc(m.cap)}</th>${roles.map((r) => `<td>${esc(m[r])}</td>`).join("")}</tr>`).join("")}</tbody></table></div>
   <p class="hint">Acceso efectivo = rol + equipo_asignado + permiso S\xED/No + tipo de responsabilidad. Un "S\xED" del archivo nunca da acceso global por s\xED solo.</p></section>
-  <section class="blk"><p class="caption">Permisos del archivo que se acotaron</p>${stats([
+  <section class="blk"><p class="caption">Permisos del archivo que se acotaron</p>${stats2([
       ["TI \xB7 puede_asignar_responsables = S\xED", "Solo entre cuentas TI, solo Equipo y Acceso"],
       ["TI \xB7 puede_ver_metricas = S\xED", "Solo cifras agregadas de hitos t\xE9cnicos"],
       ["Jefatura \xB7 puede_ver_datos_personales = S\xED", "Solo su equipo, nunca el canal de contacto"],
@@ -2269,6 +3215,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const fd = new FormData(f);
     const kind = f.dataset.form;
     const s = store.state;
+    if (kind.startsWith("turnos-")) return submitTurnos(kind, fd, contextoTurnos());
     if (kind === "col-id") {
       const id = String(fd.get("id") || "").trim().toUpperCase();
       ui.loginStep = { id };
@@ -2400,6 +3347,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     }
   }
   function resetUi() {
+    reiniciarTurnosUI(ui);
     Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: "fichas", detalle: null, tiFiltro: "todos", reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null });
   }
   function onClick(e) {
@@ -2408,6 +3356,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
     const act = b.dataset.act;
     const arg = b.dataset.arg;
     const s = store.state;
+    if (act.startsWith("turnos-")) return clickTurnos(act, arg, contextoTurnos());
     const h = arg ? s.data.hitos.find((x) => x.hito_id === arg) : null;
     if (["completar", "tomar", "reasignar-open"].includes(act) && !h) {
       toastMsg("Ese hito ya no existe. La vista se actualiz\xF3.");
@@ -2518,6 +3467,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
         const c = ui.confirm;
         ui.confirm = null;
         if (!c) return;
+        if (c.act.startsWith("turnos-")) return confirmarTurnos(c, contextoTurnos());
         if (c.act === "completar") {
           const r = store.completar(c.arg);
           return toastMsg(r.ok ? "Hito marcado como cumplido." : r.motivo);
@@ -2566,6 +3516,7 @@ fieldset.choice legend { padding: 0 0 .5rem; }
   function onChange(e) {
     const el = e.target.closest("[data-change]");
     if (!el) return;
+    if (el.dataset.change.startsWith("turnos-")) return changeTurnos(el, contextoTurnos());
     if (el.dataset.change === "rep-estado") {
       const r = store.cambiarEstadoReporte(el.dataset.arg, el.value);
       toastMsg(r.ok ? "Estado actualizado." : r.motivo);

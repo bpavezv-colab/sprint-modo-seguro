@@ -17,6 +17,7 @@ Instrucciones para agentes de código (Codex u otros). Léelas completas antes d
 | `src/store.js` | Estado, acciones (`completar`, `reasignar`, `reportar`…) y bitácora solo en memoria; sin persistencia de datos en el navegador. |
 | `src/ui.js` | Render por rol (strings HTML + delegación de eventos). **Toda** visualización pasa por `auth`. |
 | `src/styles.css` | Lenguaje visual: fondo gris frío, Helvetica, líneas finas, botones celestes con "+", barra lateral. Tokens en `:root` + modo oscuro. Usa siempre tokens. |
+| `src/optimization/` | Extensión autorizada de planificación: modelo, restricciones, objetivos, ALNS lexicográfico, controlador en memoria y UI de jefaturas. `demo.js` contiene únicamente supuestos sintéticos creados por el equipo, separados del kit oficial. |
 | `scripts/build.mjs` | CSV → `src/data.generated.js` → bundle esbuild → `dist/index.html` y `dist/artifact.html`. |
 | `tests/core.test.mjs` | Tests con `node:test`. |
 
@@ -47,6 +48,7 @@ Comandos: `npm install` · `npm test` · `npm run build` (luego abre `dist/index
 - Mensajes de error: qué pasó y qué hacer, en español, sin culpar al usuario.
 
 ## Cómo trabajar
+- Planificación de turnos: no inferir contratos, habilitaciones o preferencias desde los CSV. Mantener el escenario demo separado, restringido al equipo de su jefatura y sin publicación de turnos oficiales. El orden de objetivos es lexicográfico; los pesos adaptativos solo seleccionan operadores ALNS.
 - Cambios de lógica → primero un test en `tests/` que falle, luego el código, luego `npm test`.
 - No agregues dependencias de runtime (el HTML final debe funcionar offline con doble clic). Dev deps OK.
 - No uses `alert()`, `confirm()` ni `prompt()`: usa `ui.confirm` (diálogo propio).

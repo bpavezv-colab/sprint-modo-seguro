@@ -129,6 +129,7 @@ export function crearAuth(data) {
     puedeVerCalidad(u) { return conocido(u) && ['Personas', 'Administrador'].includes(u.rol); },
     puedeCargarArchivos(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
     puedeVerBitacora(u) { return auth.puedeVerCalidad(u) && auth.scope(u).size === ids.length; },
+    puedePlanificarTurnos(u) { return conocido(u) && u.rol === 'Jefatura' && si(u, 'puede_editar_hitos') && auth.scope(u).size > 0; },
 
     // ---------- Ficha de Ingreso ----------
     esPersonas(u) { return conocido(u) && (u.rol === 'Personas' || u.rol === 'Administrador'); },

@@ -4,6 +4,7 @@ import { MATRIZ_EFECTIVA, HITOS_TECNICOS } from './permissions.js';
 import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
+import { vistaTurnos, vistaExcepcionesTurnos, submitTurnos, clickTurnos, confirmarTurnos, changeTurnos, reiniciarTurnosUI } from './optimization/ui.js';
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -29,6 +30,7 @@ const ui = {
   alertaFiltro: 'abierta',
 };
 let store; let root;
+const contextoTurnos = () => ({ store, ui, render, toast: toastMsg });
 
 // ---------- utilidades de presentación ----------
 const nombreDe = id => {
@@ -67,7 +69,7 @@ function barra(av) {
   const pct = av.total ? Math.round(av.cumplidos / av.total * 100) : 0;
   return `<div class="bar" role="img" aria-label="${av.cumplidos} de ${av.total} hitos listos"><span style="width:${pct}%"></span></div>`;
 }
-const toastMsg = t => { ui.toast = t; render(); setTimeout(() => { if (ui.toast === t) { ui.toast = ''; render(); } }, 3200); };
+const toastMsg = t => { ui.toast = t; render(); setTimeout(() => { if (ui.toast === t) { ui.toast = ''; root.querySelector?.('.toast')?.remove(); } }, 3200); };
 
 function hitosVisibles(u) {
   const { data, auth, idx, hoy } = store.state;
@@ -395,13 +397,14 @@ function vJefatura(u) {
     ${metr ? `<section class="blk" id="cumplimiento"><p class="caption">Cumplimiento de tu equipo por hito</p>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
   const nav = [
     { label: 'Resumen', href: 'inicio' },
+    ...(auth.puedePlanificarTurnos(u) ? [{ label: 'Planificación de turnos', href: 'turnos' }] : []),
     { label: 'Fichas de ingreso', href: 'fichas', right: porEnviar },
     { label: 'Tus acciones', href: 'acciones', right: mias.length },
     { label: 'Próximos ingresos', href: 'ingresos', right: proximos.length },
     { label: 'Personas de tu equipo', href: 'equipo', right: equipo.length },
     ...(metr ? [{ label: 'Cumplimiento', href: 'cumplimiento' }] : []),
   ];
-  return { nav, body };
+  return { nav, body: body + vistaTurnos(store, ui, esc, fmt) };
 }
 function formFicha(u, colId) {
   const v = store.vistaFicha(colId); if (!v) return v403();
@@ -523,7 +526,7 @@ function vPersonas(u) {
   const [, nombreTab, titulo] = TABS.find(t => t[0] === ui.tab);
   const i = TABS.findIndex(t => t[0] === ui.tab);
   const contenido = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
-  const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas', `${pad2(i + 1)} · ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}`;
+  const body = `<section class="blk hero hero-sm" id="inicio">${tags([u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas', `${pad2(i + 1)} · ${nombreTab}`])}<h1>${esc(titulo)}</h1></section>${contenido}${vistaExcepcionesTurnos(store, esc, fmt)}`;
   const nav = disponibles.map(([k, t], j) => ({ label: t, act: 'tab', arg: k, n: pad2(j + 1), active: ui.tab === k,
     right: k === 'reportes' ? (rep || undefined) : k === 'calidad' ? reglasAltas : k === 'alertas' ? (store.alertasFicha().filter(a => a.estado === 'abierta').length || undefined) : undefined }));
   return { nav, body };
@@ -687,6 +690,7 @@ async function onSubmit(e) {
   const f = e.target.closest('form[data-form]'); if (!f) return;
   e.preventDefault();
   const fd = new FormData(f); const kind = f.dataset.form; const s = store.state;
+  if (kind.startsWith('turnos-')) return submitTurnos(kind, fd, contextoTurnos());
   if (kind === 'col-id') {
     const id = String(fd.get('id') || '').trim().toUpperCase();
     ui.loginStep = { id }; ui.loginError = ''; return render();
@@ -747,11 +751,12 @@ async function onSubmit(e) {
   }
 }
 
-function resetUi() { Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
+function resetUi() { reiniciarTurnosUI(ui); Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
   const act = b.dataset.act; const arg = b.dataset.arg; const s = store.state;
+  if (act.startsWith('turnos-')) return clickTurnos(act, arg, contextoTurnos());
   const h = arg ? s.data.hitos.find(x => x.hito_id === arg) : null;
   if (['completar', 'tomar', 'reasignar-open'].includes(act) && !h) { toastMsg('Ese hito ya no existe. La vista se actualizó.'); return; }
   switch (act) {
@@ -783,6 +788,7 @@ function onClick(e) {
     case 'cancel': ui.confirm = null; return render();
     case 'confirm-ok': {
       const c = ui.confirm; ui.confirm = null; if (!c) return;
+      if (c.act.startsWith('turnos-')) return confirmarTurnos(c, contextoTurnos());
       if (c.act === 'completar') { const r = store.completar(c.arg); return toastMsg(r.ok ? 'Hito marcado como cumplido.' : r.motivo); }
       if (c.act === 'tomar') { const r = store.reasignar(c.arg, s.user.usuario_id, `Caso tomado por ${s.user.usuario_id}`, { confirmado: true }); return toastMsg(r.ok ? 'Caso asignado a ti.' : r.motivo); }
       if (c.act === 'reasignar') { const r = store.reasignar(c.arg, c.nuevo, c.motivo, { confirmado: true }); if (r.ok) ui.reasignando = null; return toastMsg(r.ok ? 'Responsable reasignado y registrado en la bitácora.' : r.motivo); }
@@ -804,6 +810,7 @@ function selExport() { const t = root.querySelector('#exp'); if (t) { t.focus();
 
 function onChange(e) {
   const el = e.target.closest('[data-change]'); if (!el) return;
+  if (el.dataset.change.startsWith('turnos-')) return changeTurnos(el, contextoTurnos());
   if (el.dataset.change === 'rep-estado') { const r = store.cambiarEstadoReporte(el.dataset.arg, el.value); toastMsg(r.ok ? 'Estado actualizado.' : r.motivo); }
 }
 function onToggle(e) { const d = e.target; if (d.matches && d.matches('details[data-regla]')) ui.alertaAbierta = d.open ? d.dataset.regla : (ui.alertaAbierta === d.dataset.regla ? null : ui.alertaAbierta); }

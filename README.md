@@ -60,3 +60,68 @@ La suite incluye pruebas de reglas, excepciones y privacidad (`tests/core.test.m
 4. **Hugo Personas 01**: "el registro dice 35, en realidad son 90"; Calidad de datos; el reporte de Camila; la bitácora con todo lo anterior.
 
 Ver `AGENTS.md` (reglas para Codex) y `CODEX_TASKS.md` (tareas listas para pegar).
+
+## Planificación Inteligente de Turnos
+
+Extensión de demostración para jefaturas, separada del onboarding oficial. La implementación vive en `src/optimization/` y funciona dentro del mismo HTML offline, sin backend ni dependencias de runtime nuevas.
+
+### Probar el flujo completo
+
+1. Abre `dist/index.html` y selecciona **Jefatura · JEF-002**. En la barra lateral elige **Planificación de turnos**.
+2. La semana sugerida con el corte 04-11-2026 comienza el **16-11-2026**. Revisa los parámetros, marca la confirmación de supuestos y pulsa **Preparar semana de demostración**.
+3. Completa la matriz diaria por módulo y mañana/tarde. Los ceros deben escribirse explícitamente. Pulsa **Guardar borrador de demanda** y luego **Confirmar demanda semanal**.
+4. Cambia los selectores de prioridad. Mover una tarjeta desplaza las demás y nunca duplica una prioridad. Puedes restablecer el orden recomendado.
+5. Pulsa **Generar planificación optimizada**. Puedes ajustar iteraciones, tiempo, estancamiento y semilla, revisar el progreso o cancelar.
+6. Revisa calendario, cobertura por celda, faltantes y métricas. Genera otra propuesta con otras prioridades y usa **Comparar con**. Se conservan hasta seis propuestas de la misma demanda en memoria.
+7. Pulsa **Aprobar propuesta como borrador validado** y confirma. Esta acción no escribe en CSV, no cambia `tipo_turno`, no modifica hitos ni publica un calendario oficial.
+
+Para probar la excepción, prepara la semana del **09-11-2026**. La confirmación ordinaria se bloquea por falta de anticipación. Solicita autorización con un motivo operativo; cambia a **PER-001**, autoriza la solicitud y confirma el diálogo. Vuelve a **JEF-002** y usa **Abrir semana guardada** con el 09-11-2026: recupera la demanda y su autorización sin reiniciarlas. Ahora puedes confirmarla y optimizar.
+
+### Datos y restricciones de la demostración
+
+Los CSV no contienen módulos, disponibilidad semanal, contratos, competencias, preferencias ni un calendario publicado. `src/optimization/demo.js` genera esos datos y los marca como **creados por el equipo**. Solo reutiliza los IDs del `equipo_asignado`; nunca deduce capacidades o preferencias desde área, modalidad, dispositivo, atraso o desempeño. Los archivos oficiales no cambian.
+
+El ejemplo tiene dos módulos y una sede ficticia por jefatura. Usa bloques alternativos 08:00–12:00 y 13:00–17:00, disponibilidad de lunes a viernes, una ausencia de ejemplo sin motivo personal y habilitaciones sintéticas. Los parámetros iniciales son 12 horas objetivo, máximo 20 horas semanales, 5 días, 8 horas diarias, 12 horas de descanso y 5 días consecutivos. **Son supuestos demostrativos, no reglas legales ni contratos reales.** La jefatura debe revisarlos y confirmarlos al preparar la semana. Puede configurar un único bloque continuo indicando su inicio y fin.
+
+Cada asignación representa `x[i,d,s,m] = 1`: un trabajador, un día, un bloque completo y un módulo. Las cantidades de la matriz representan `D[d,s,m]`. La ausencia de una celda impide guardar; no se sustituye por cero.
+
+Las restricciones duras verifican disponibilidad y ausencias conocidas, habilitación, sede, demanda máxima, un bloque indivisible por persona y día, límites diarios/semanales, días consecutivos, descanso entre asignaciones y conservación de turnos bloqueados. Una contradicción entre un bloqueo y la demanda impide confirmar; nunca se elimina un bloqueo para mejorar cobertura. La falta de capacidad se devuelve como demanda desatendida.
+
+### Costos y orden lexicográfico
+
+Todos los objetivos se minimizan. El orden recomendado es cobertura, cambios, horas, preferencias y equidad.
+
+| Objetivo | Definición | Unidad |
+|---|---|---|
+| Cobertura | `Σ max(0, demanda - asignaciones)` por día, módulo y bloque | Puestos sin cubrir |
+| Cambios | Diferencia simétrica entre asignaciones propuestas y calendario previo; un traslado cuenta una baja y un alta | Altas y bajas de asignaciones |
+| Horas | `Σ abs(horas asignadas - horas objetivo conocidas)` | Horas |
+| Preferencias | Bloques/días no preferidos y solicitudes individuales incumplidas; una ausencia sigue siendo una restricción dura | Incumplimientos |
+| Equidad | Suma de desviaciones absolutas respecto de la media de `horas/capacidad` y `horas no deseadas/capacidad` | Dispersión normalizada |
+
+La capacidad proporcional de cada trabajador es el mínimo de horas objetivo conocidas (o su máximo si falta el objetivo), máximo semanal y horas disponibles considerando bloques completos y máximo de días. Quienes tienen capacidad cero se excluyen del denominador. Esta medida no compara únicamente el número bruto de turnos y es una referencia de reparto, no una evaluación de desempeño. Los descansos y la habilitación siguen verificándose como restricciones, independientemente de ese denominador de referencia.
+
+Si faltan preferencias u horas objetivo opcionales, se informa y se excluyen los términos desconocidos. Si no hay calendario previo, cambios se informa como no evaluado; un calendario explícitamente vacío sí permite medir nuevas asignaciones. La interfaz muestra preferencias solo de forma agregada.
+
+La búsqueda tiene cinco etapas. Cada una optimiza su objetivo activo y acepta únicamente soluciones factibles que respetan los valores bloqueados de etapas anteriores. Las tolerancias valen **cero por defecto**. Si se configuran tolerancias positivas, se expresan en las unidades de cada objetivo y sus límites nunca se acumulan ni se amplían entre etapas. Mover cobertura a una prioridad inferior muestra una advertencia; ninguna prioridad relaja las restricciones duras.
+
+### ALNS implementado
+
+- Inicialización greedy: conserva bloqueos, incorpora asignaciones previas factibles y procesa primero los bloques con menos trabajadores elegibles por puesto requerido.
+- Destroy: **Random Removal**, **Worst Removal** según contribución marginal al objetivo activo y **Related Removal** por día, módulo o trabajador. Ninguno retira bloqueos.
+- Repair: **Greedy Insertion**, **Regret-2** con arrepentimiento vectorial y reparación orientada al objetivo activo que primero restaura los límites anteriores. No se suman objetivos con pesos.
+- Dos ruletas independientes seleccionan operadores. Sus pesos positivos se actualizan por desempeño con reacción exponencial; se registran usos, mejoras y aceptaciones. Estos pesos eligen operadores, no combinan los objetivos.
+- Simulated annealing permite explorar valores temporalmente peores del objetivo activo. La mejor incumbente se conserva y los límites lexicográficos anteriores siempre se verifican antes de aceptar.
+- Presupuestos configurables de iteraciones totales, tiempo y estancamiento por etapa. PRNG con semilla; el mismo escenario y presupuesto de iteraciones reproducen la búsqueda si no intervienen cancelación o corte por tiempo. La ejecución asíncrona cede el control entre grupos de iteraciones para actualizar la pantalla.
+
+La referencia conceptual de la selección adaptativa de operadores es [Ropke y Pisinger, 2006, publicación original de ALNS](https://pubsonline.informs.org/doi/10.1287/trsc.1050.0135). El algoritmo de este repositorio se implementó para el modelo de turnos de esta demo; no usa datos externos ni una biblioteca de optimización.
+
+### Acceso, trazabilidad y límites
+
+Solo una cuenta de jefatura válida con permiso de edición y equipo asignado prepara, genera o aprueba su propia planificación. Los módulos están ligados al escenario de esa cuenta. Otras jefaturas, colaboradores, TI y Personas no reciben sus calendarios, disponibilidad ni preferencias. Personas/Administración con permiso de asignación y alcance sobre todo el equipo recibe únicamente la solicitud operativa necesaria para autorizar una demanda tardía.
+
+Preparación, demanda, prioridades, confirmación, excepciones, búsqueda y aprobación dejan bitácora con actor, semana y jefatura. Ningún registro de error copia preferencias, mensajes arbitrarios ni contenido personal. Guardar otra demanda elimina sus propuestas e invalida confirmación y autorización. Un cambio de cuenta, incluso si se vuelve inmediatamente a la anterior, descarta una búsqueda en curso. Una carga CSV o reinicio elimina los escenarios. Todo vive solo en memoria y desaparece al recargar.
+
+La fecha de corte y la selección de cuentas son simuladas: el plazo de siete días y la separación de roles no quedan garantizados en producción. No se valida legislación laboral. El horizonte de descanso comprende la semana planificada; faltan compromisos de semanas contiguas para validar sus fronteras. El tiempo máximo se comprueba durante la búsqueda y puede excederse durante una operación indivisible; para grandes instancias sería necesario un Worker y más datos de capacidad. ALNS no certifica factibilidad operacional con datos desconocidos ni garantiza óptimo global. La aprobación requiere revisión humana y se mantiene como borrador.
+
+Las pruebas de `tests/optimization.test.mjs` y `tests/planning.test.mjs` cubren restricciones, lexicografía, reproducibilidad, equidad proporcional, datos opcionales, presupuesto/cancelación, alcance, demanda tardía, cambio de cuenta y flujo de interfaz. El caso pequeño con dos trabajadores verifica que priorizar cambios conserva a A y priorizar preferencias asigna a B, conservando los valores anteriores de cada etapa.

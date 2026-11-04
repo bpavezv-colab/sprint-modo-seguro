@@ -247,4 +247,32 @@ fieldset.choice legend { padding: 0 0 .5rem; }
 .ficha-form { max-width: 40rem; }
 @media (max-width: 991px) { .btn { min-height: 44px; } .sub-panel { padding: 1rem; } }
 
+/* Planificación semanal: misma tipografía y tokens que el resto del MVP. */
+.turnos-wide { max-width: none; margin-block: 1.5rem; }
+.turnos-wide fieldset { border: 0; padding: 0; margin: 0; display: grid; gap: 1.25rem; min-width: 0; }
+.turnos-wide fieldset:disabled { opacity: .6; }
+.turnos-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: 1.5rem; margin-block: 1rem; }
+.turnos-steps { display: flex; flex-wrap: wrap; list-style: none; padding: 0; gap: .75rem 1.5rem; margin-block: 2rem; color: var(--ink-60); font-size: .8rem; }
+.turnos-steps li { padding-bottom: .5rem; border-bottom: 1px solid var(--line); }
+.turnos-config { border-block: 1px solid var(--line); padding-block: 1rem; margin-block: 1.5rem; }
+.turnos-config summary, #turnos-demanda summary, #turnos-resultados summary { cursor: pointer; font-weight: 500; }
+.turnos-check { display: flex; align-items: flex-start; gap: .75rem; font-size: .9rem; }
+.turnos-check input { accent-color: var(--ink); margin-top: .3rem; }
+.turnos-demand { min-width: 40rem; }
+.turnos-demand input { width: 5rem; padding: .7rem; background: var(--surface); color: var(--ink); border: 1px solid var(--line); font: inherit; }
+.turnos-demand input:focus { outline: 2px solid var(--sky-ink); outline-offset: 2px; }
+.turnos-toolbar { display: flex; flex-wrap: wrap; gap: 1rem; align-items: center; margin-block: 1.5rem; }
+.turnos-priorities { display: grid; margin-block: 2rem; }
+.turnos-priority { display: grid; grid-template-columns: 2rem 1fr 5rem; align-items: start; gap: 1rem; padding-block: 1.5rem; border-bottom: 1px solid var(--line); }
+.turnos-priority h3 { font-size: 1.1rem; line-height: 1.4; font-weight: 500; margin-bottom: .5rem; }
+.turnos-rank { display: grid; place-items: center; width: 2rem; height: 2rem; background: var(--sky); color: var(--sky-ink); border-radius: 50%; }
+.turnos-progress { display: grid; gap: 1rem; padding: 1.5rem; background: var(--surface); }
+.turnos-progress progress { width: 100%; accent-color: var(--ok); }
+.turnos-calendar { min-width: 58rem; font-size: .85rem; }
+.turnos-calendar td, .turnos-calendar th { vertical-align: top; min-width: 7rem; }
+#turnos-resultados h3 { margin-top: 2rem; font-weight: 500; }
+#turnos-resultados .table-wrap { margin-block: 1rem; }
+#turnos-resultados, #turnos-generar, #turnos-prioridades, #turnos-demanda, #turnos { scroll-margin-top: 6rem; }
+@media (max-width: 600px) { .turnos-priority { grid-template-columns: 2rem 1fr; } .turnos-priority .field { grid-column: 2; max-width: 9rem; } .turnos-toolbar .btn { width: 100%; } }
+
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }

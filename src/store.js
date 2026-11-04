@@ -3,16 +3,18 @@ import { indexData, validar, HOY_DEFAULT, isISO, BLOQUEANTES } from './rules.js'
 import { crearAuth } from './permissions.js';
 import { limpiarPersistenciaAnterior, validarCampos, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
 import { ReglasOnboarding, CONFIG, MOTIVOS, MOTIVO_A_REPORTE, ESTADOS_FICHA, POST_ENVIO } from './reglas_onboarding.js';
+import { crearPlanificador } from './optimization/planning.js';
 
 const limpiar = (v, max = 200) => { const t = String(v ?? '').trim().slice(0, max); return t === '' ? null : t; };
 const CAMPOS_FICHA_EDITABLES = ['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'];
 
 export function crearStore(base, { now = () => new Date().toISOString(), config = CONFIG } = {}) {
+  let turnos;
   if (!validarCampos(base, { permitirVacios: true })) throw new Error('Los datos deben contener únicamente los campos del kit sintético.');
   const original = structuredClone(base);
   const s = {
     base: structuredClone(base), data: null, idx: null, auth: null, alertas: [],
-    hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null,
+    hoy: HOY_DEFAULT, overrides: {}, bitacora: [], reportes: [], user: null, sessionVersion: 0,
     config, reglas: null, fichas: {}, alertasFicha: [], alertaEstados: {}, // Ficha de Ingreso (solo en memoria)
     almacenamientoLimpio: limpiarPersistenciaAnterior(),
   };
@@ -55,9 +57,9 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       const u = s.auth.users.get(usuarioId);
       if (!u || !s.auth.puedeVerColaborador(u, [...s.auth.scope(u)][0])) return denegar('ingreso', '—', 'Cuenta sin acceso autorizado');
       if (opciones?.soloInterno && u.rol === 'Colaborador') return denegar('ingreso', usuarioId, 'Los colaboradores ingresan con su código');
-      s.user = u; log('ingreso', usuarioId, 'Selección de cuenta sintética (simulación)'); return { ok: true };
+      s.user = u; s.sessionVersion++; log('ingreso', usuarioId, 'Selección de cuenta sintética (simulación)'); return { ok: true };
     },
-    logout() { if (s.user) log('salida', s.user.usuario_id, ''); s.user = null; },
+    logout() { if (s.user) log('salida', s.user.usuario_id, ''); s.user = null; s.sessionVersion++; },
 
     verColaborador(colId) {
       const u = s.user;
@@ -118,7 +120,7 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
         const r = denegar('carga_archivos', '—', `Carga rechazada: ${errores.length} errores bloqueantes. Los datos actuales no cambiaron.`);
         return { ...r, errores };
       }
-      s.base = candidato; s.overrides = {}; rebuild();
+      s.base = candidato; s.overrides = {}; rebuild(); turnos.limpiar();
       if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
       log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true, sesionCerrada: !s.user };
     },
@@ -273,11 +275,12 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
     },
     reiniciar() {
       if (!s.auth.puedeCargarArchivos(s.user)) return denegar('reiniciar', '—', 'Sin permiso');
-      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {};
+      s.base = structuredClone(original); s.overrides = {}; s.bitacora = []; s.reportes = []; s.hoy = HOY_DEFAULT; s.fichas = {}; s.alertaEstados = {}; turnos.limpiar();
       s.almacenamientoLimpio = limpiarPersistenciaAnterior(); rebuild(); log('reiniciar', '—', 'Datos originales restaurados; reportes y movimientos anteriores eliminados'); s.user = null;
       return { ok: true };
     },
   };
+  turnos = crearPlanificador({ state: () => s, log, denegar }); Object.assign(api, turnos.api);
   // Una entrada inválida o un fallo inesperado nunca escapa a los handlers de la UI.
   for (const nombre of Object.keys(api)) {
     if (typeof api[nombre] !== 'function') continue;
@@ -287,8 +290,8 @@ export function crearStore(base, { now = () => new Date().toISOString(), config 
       catch {
         log('error', '—', 'No se pudo completar la acción; no se registra su contenido', 'error');
         if (nombre === 'verColaborador') return null;
-        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias'].includes(nombre)) return [];
-        if (['vistaFicha', 'indicadores'].includes(nombre)) return null;
+        if (['reportesVisibles', 'misReportes', 'ingresos', 'companerosPara', 'casosTI', 'alertasFicha', 'discrepancias', 'excepcionesTurnos'].includes(nombre)) return [];
+        if (['vistaFicha', 'indicadores', 'planTurnos'].includes(nombre)) return null;
         return { ok: false, motivo: 'No se pudo completar la acción. Revisa los datos e intenta nuevamente.' };
       }
     };
