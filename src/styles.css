@@ -184,3 +184,16 @@ td .row { min-width: 140px; }
   .search input { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* ---------- Ficha de Ingreso ---------- */
+.mono { font-family: var(--f-mono); font-variant-numeric: tabular-nums; }
+.ficha .kv dd { font-weight: 600; }
+.tareas { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+.fixed { font-size: .88rem; color: var(--ink); background: var(--surface-2); border-radius: 8px; padding: 8px 12px; }
+.radio { display: flex; gap: 10px; align-items: center; font-weight: 400; min-height: 44px; }
+.radio input { width: 20px; height: 20px; }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin: 0; }
+legend { font-weight: 700; font-size: .9rem; padding: 0 4px; }
+.result h2 { font-size: 1.3rem; }
+.ficha-form input, .ficha-form select { width: 100%; }
+.btn { min-height: 44px; }

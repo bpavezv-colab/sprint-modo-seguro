@@ -3,6 +3,7 @@ import { evaluarHito, avanceColaborador, agruparAlertas, fmt, diffDays, NOMBRE_H
 import { MATRIZ_EFECTIVA, HITOS_TECNICOS } from './permissions.js';
 import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
+import { MOTIVOS, ESTADOS_FICHA, TIPOS_ALERTA } from './reglas_onboarding.js';
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -19,6 +20,13 @@ const ui = {
   exportTexto: null,
   alertaAbierta: null,
   cargaErrores: null,
+  fichaAbierta: null,   // jefatura: colaborador con formulario de ficha abierto
+  fichaErrores: null,   // lista de faltantes al enviar
+  discrepancia: false,  // colaborador: formulario "Algo no coincide" abierto
+  resultado: null,      // colaborador: 'confirmada' | 'con_discrepancia'
+  denegado: null,       // pantalla 403
+  fichaFiltro: 'accion',
+  alertaFiltro: 'abierta',
 };
 let store; let root;
 
@@ -66,6 +74,22 @@ function hitosVisibles(u) {
   return data.hitos.filter(h => auth.puedeVerHito(u, h)).map(h => ({ h, ev: evaluarHito(h, idx, hoy) }));
 }
 
+// ---------- utilidades de la ficha ----------
+const SIN_DATO = (txt = '') => `<span class="missing">Sin dato${txt ? ` · ${esc(txt)}` : ''}</span>`;
+const fmtDT = v => { if (!v) return '—'; const [d, t] = String(v).split('T'); return `${fmt(d)} ${t ? t.slice(0, 5) : ''}`.trim(); };
+const TONO_FICHA = { incompleta: 'neutral', lista: 'warn', enviada: 'warn', confirmada: 'ok', con_discrepancia: 'bad', requiere_reconfirmacion: 'bad' };
+const chipFicha = (est, texto) => `<span class="chip chip-${TONO_FICHA[est] || 'neutral'}">${esc(texto || ESTADOS_FICHA[est])}</span>`;
+const TONO_HITO = { Listo: 'ok', Pendiente: 'neutral', Atrasado: 'bad', 'Por verificar': 'warn', 'Sin fecha': 'bad' };
+const chipHito = e => `<span class="chip chip-${TONO_HITO[e] || 'neutral'}">${esc(e)}</span>`;
+const TONO_PRIO = { Urgente: 'bad', Alta: 'bad', Media: 'warn', Baja: 'neutral' };
+const chipPrio = p => `<span class="chip chip-${TONO_PRIO[p] || 'neutral'}">${esc(p)}</span>`;
+const semaforo = sm => `${dot(sm.color)} <b>${esc(sm.texto)}</b><br><small class="muted">${esc(sm.motivos.join(' · '))}</small>`;
+function v403() {
+  return `<section class="card" role="alert"><p class="eyebrow">Error 403</p><h1>No tienes acceso a esta ficha</h1>
+    <p>Tu cuenta solo puede ver la información de su propio alcance. El intento quedó registrado en la bitácora.</p>
+    <div><button class="btn btn-primary" data-act="volver">Volver a mi inicio</button></div></section>`;
+}
+
 // ---------- shell ----------
 function header() {
   const s = store.state; const u = s.user;
@@ -99,6 +123,7 @@ function render() {
   try {
     if (!u) body = vLogin();
     else if (!s.auth.cuentaValida(u) || !VISTAS[u.rol]) body = vDenegado(); // denegar por defecto
+    else if (ui.denegado) body = v403();
     else body = VISTAS[u.rol](u);
   } catch (err) {
     console.error(err);
@@ -149,7 +174,7 @@ function vLogin() {
       <p class="eyebrow">Nexo Laboral Group · Piloto</p>
       <h1>Qué falta para tu ingreso, quién lo resuelve y para cuándo.</h1>
       <p class="lead">Cada persona ve solo lo que necesita: el colaborador su checklist, la jefatura su equipo, TI los equipos y accesos, y Personas el proceso completo.</p>
-      <p class="notice">Simulación con cuentas sintéticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la página.</p>
+      <p class="notice"><b>Inicio de sesión simulado.</b> Simulación con cuentas sintéticas. No ingreses datos reales. Los cambios y las solicitudes se borran al recargar la página.</p>
     </div>
     <div class="login-grid">
       <div class="card"><h2>Soy colaborador/a</h2>${ui.loginError ? `<p class="err" role="alert">${esc(ui.loginError)}</p>` : ''}${paso}</div>
@@ -186,6 +211,7 @@ function vColaborador(u) {
       ${vencidos.length ? `<p class="notice notice-bad">${vencidos.length} ${vencidos.length === 1 ? 'tarea está atrasada' : 'tareas están atrasadas'}, y ninguna depende de ti. Los responsables las tienen en su bandeja.</p>` : ''}
       ${c.correo_corporativo_activo === 'No' ? '<p class="notice">Aún no tienes correo corporativo. Puedes usar esta página desde tu teléfono igual.</p>' : ''}
     </section>
+    ${fichaColaborador(u)}
     ${GRUPOS.map(([g, tipos]) => `<section class="group"><h2 class="h-sm">${g}</h2><ul class="checklist">
       ${items.filter(x => tipos.includes(x.h.tipo_hito)).map(({ h, ev }) => `<li class="check check-${ev.estadoReal === 'Cumplido' ? 'ok' : ev.estadoReal === 'Vencido' ? 'bad' : ev.estadoReal === 'Por verificar' ? 'warn' : 'neutral'}">
         <div><b>${esc(NOMBRE_HITO[h.tipo_hito])}</b><small>Lo gestiona: ${esc(h.responsable_tipo === 'Jefatura' ? 'tu jefatura' : funcion[h.responsable_tipo])} · Plazo <span class="nw">${fmt(ev.limite)}</span></small>
@@ -197,7 +223,7 @@ function vColaborador(u) {
       <dt>Contrato y dudas generales</dt><dd>Equipo de Personas</dd>
       <dt>Tu canal registrado</dt><dd>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin canal registrado</span>'}</dd>
     </dl></section>
-    <section class="card"><h2 class="h-sm">¿Algo no coincide con lo que te dijeron?</h2>
+    ${['enviada', 'confirmada', 'con_discrepancia', 'requiere_reconfirmacion'].includes(store.vistaFicha(u.usuario_id)?.est) ? '' : `<section class="card"><h2 class="h-sm">¿Algo no coincide con lo que te dijeron?</h2>
       <form data-form="reporte" class="stack">
         <label for="rep-tipo">Qué pasó</label>
         <select id="rep-tipo" name="tipo">
@@ -206,8 +232,49 @@ function vColaborador(u) {
         <button class="btn btn-primary" type="submit">Enviar a Personas</button>
       </form>
       ${misRep.length ? `<ul class="mini">${misRep.map(r => `<li>${esc(r.tipo)} <span class="chip chip-neutral">${esc(r.estado)}</span></li>`).join('')}</ul>` : ''}
-    </section>
+    </section>`}
+    <p class="hint">Prueba de permisos: <button class="link" data-act="probar-403" data-arg="COL-014">intentar abrir la ficha de COL-014</button></p>
   </div>`;
+}
+
+function fichaColaborador(u) {
+  const v = store.vistaFicha(u.usuario_id);
+  if (!v) return '';
+  const { c, ficha: f, est } = v;
+  const fijo = '<p class="fixed"><b>Lo revisa Personas, no tu jefatura. No se usa para evaluarte.</b></p>';
+  if (ui.resultado) {
+    const ok = ui.resultado === 'confirmada';
+    return `<section class="card result" role="status"><p class="eyebrow">Tu respuesta quedó registrada</p>
+      <h2>${ok ? 'Confirmaste tu ficha' : 'Recibimos tu aviso'}</h2>
+      <p><b>Próximo paso:</b> ${ok ? `reunión con ${esc(v.jefatura || 'tu jefatura')} el <span class="mono">${esc(fmtDT(f?.reunion_at))}</span>.`
+        : `Personas revisará lo que no coincide y te contactará ${c.canal_contacto ? 'por tu canal registrado' : '(no tienes canal registrado: Personas ya tiene la alerta)'}. Se notificaría a Personas por correo (simulado).`}</p>
+      ${fijo}<div><button class="btn btn-ghost" data-act="ver-ficha">Ver mi ficha</button></div></section>`;
+  }
+  const enviada = !!f;
+  const tareas = enviada ? `<ol class="tareas">${[f.tarea_1, f.tarea_2, f.tarea_3].map(t => `<li>${esc(t)}</li>`).join('')}</ol>` : '<p class="muted">Tu jefatura aún no completa esta sección.</p>';
+  const respondible = ['enviada', 'requiere_reconfirmacion'].includes(est);
+  const acciones = respondible ? `<div class="row"><button class="btn btn-primary" data-act="ficha-confirmar">Todo claro, confirmo</button>
+      <button class="btn btn-ghost" data-act="ficha-disc">Algo no coincide</button></div>
+      ${ui.discrepancia ? `<form data-form="discrepancia" class="stack"><fieldset class="stack"><legend>¿Qué no coincide?</legend>
+        ${Object.entries(MOTIVOS).map(([k, t]) => `<label class="radio"><input type="radio" name="motivo" value="${esc(k)}"> ${esc(t)}</label>`).join('')}</fieldset>
+        <p class="hint">Solo eliges el motivo: no pedimos relatos ni datos personales adicionales.</p>
+        <div class="row"><button class="btn btn-primary" type="submit">Enviar a Personas</button><button class="btn btn-ghost" type="button" data-act="ficha-disc-cerrar">Cancelar</button></div></form>` : ''}`
+    : est === 'confirmada' ? `<p>${chipFicha(est)} Confirmaste tu ficha el <span class="mono">${esc(fmtDT(f.respondida_at))}</span>.</p>`
+    : est === 'con_discrepancia' ? `<p>${chipFicha(est)} Avisaste que algo no coincide (${esc(MOTIVOS[f.motivo] || '')}). Personas lo está revisando.</p>`
+    : '<p class="muted">Podrás confirmar cuando tu jefatura envíe la ficha.</p>';
+  return `<section class="card ficha"><div class="row-between"><h2 class="h-sm">Tu ficha de ingreso</h2>${chipFicha(est)}</div>
+    ${!enviada ? '<p class="notice">Tu jefatura todavía no envía tu ficha. Cuando lo haga, aquí verás tus tareas, tu compañero o compañera de apoyo y la reunión.</p>' : ''}
+    <dl class="kv">
+      <dt>Ingreso</dt><dd>${c.fecha_ingreso ? `<span class="mono">${fmt(c.fecha_ingreso)}</span> · hora: ${SIN_DATO('no viene en el registro')}` : SIN_DATO()}</dd>
+      <dt>Cuándo</dt><dd>${c.tipo_turno ? `${esc(c.tipo_turno)} <span class="chip chip-ok">Turno inicial validado por RR.LL.</span>` : SIN_DATO('Personas lo está revisando')}</dd>
+      <dt>Jefatura</dt><dd>${v.jefatura ? esc(v.jefatura) : SIN_DATO('Personas está asignando tu jefatura')}</dd>
+      <dt>Compañero/a de apoyo</dt><dd>${v.companero ? esc(v.companero) : '<span class="muted">Pendiente de tu jefatura</span>'}</dd>
+      <dt>Reunión con jefatura</dt><dd>${enviada ? `<span class="mono">${esc(fmtDT(f.reunion_at))}</span>` : '<span class="muted">Pendiente de tu jefatura</span>'}</dd>
+    </dl>
+    <h3 class="h-xs">Qué harás</h3>${tareas}
+    <h3 class="h-xs">Antes de empezar</h3>
+    <ul class="mini">${v.hitos.map(x => `<li>${esc(NOMBRE_HITO[x.h.tipo_hito])} · ${chipHito(x.estado)} · fecha comprometida <span class="mono">${x.fecha ? fmt(x.fecha) : 'Sin dato'}</span></li>`).join('')}</ul>
+    ${acciones}${fijo}</section>`;
 }
 
 // ---------- jefatura ----------
@@ -239,17 +306,46 @@ function vJefatura(u) {
       ${recientes.length ? `<h3 class="h-xs">Ingresaron en los últimos 30 días</h3>${listaIngresos(recientes)}` : ''}
     </section>
     <section class="card"><h2 class="h-sm">Personas de tu equipo</h2>
-      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th></th></tr></thead><tbody>
+      <div class="table-wrap"><table><thead><tr><th>Persona</th><th>Ingreso</th><th>Turno</th><th>Correo corp.</th><th>Avance</th><th>Estado</th><th>Ficha</th><th></th></tr></thead><tbody>
       ${equipo.map(c => { const av = avanceColaborador(c.colaborador_id, idx, hoy); return `<tr>
         <td><b>${esc(nombreDe(c.colaborador_id))}</b><br><code>${esc(c.colaborador_id)}</code></td><td class="num">${fmt(c.fecha_ingreso)}</td>
         <td>${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">Sin dato</span>'}</td><td>${esc(c.correo_corporativo_activo)}</td>
-        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>
+        <td class="num">${av.cumplidos}/${av.total} ${barra(av)}</td><td>${dot(av.semaforo)} ${semTxt[av.semaforo]}</td>${celdaFicha(c.colaborador_id)}
         <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Ver hitos'}</button></td></tr>
-        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`; }).join('')}
+        ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="8">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}
+        ${ui.fichaAbierta === c.colaborador_id ? `<tr class="sub"><td colspan="8">${formFicha(u, c.colaborador_id)}</td></tr>` : ''}`; }).join('')}
       </tbody></table></div>
       <p class="hint">No ves canales de contacto ni los reportes que las personas envían a Personas.</p>
     </section>
     ${metr ? `<section class="card"><h2 class="h-sm">Cumplimiento de tu equipo por hito</h2>${metr}<p class="hint">Solo datos agregados de tu equipo.</p></section>` : ''}`;
+}
+function celdaFicha(colId) {
+  const v = store.vistaFicha(colId);
+  if (!v) return '<td>—</td>';
+  return `<td>${chipFicha(v.est, v.estadoVisible)}<br><button class="btn btn-primary btn-sm" data-act="ficha-abrir" data-arg="${esc(colId)}">${ui.fichaAbierta === colId ? 'Cerrar ficha' : ['incompleta', 'lista'].includes(v.est) ? 'Completar ficha' : 'Ver ficha'}</button></td>`;
+}
+function formFicha(u, colId) {
+  const v = store.vistaFicha(colId); if (!v) return v403();
+  const f = v.ficha || {}; const id = esc(colId);
+  const tec = v.hitos.filter(x => HITOS_TECNICOS.includes(x.h.tipo_hito)).map(x => `${esc(x.h.tipo_hito)} ${chipHito(x.estado)}`).join(' · ');
+  const solo = `<dl class="kv"><dt>Turno (solo lectura)</dt><dd>${v.c.tipo_turno ? `${esc(v.c.tipo_turno)} · Turno inicial validado por RR.LL.` : SIN_DATO('lo corrige Personas')}</dd>
+    <dt>Equipo y accesos (solo lectura)</dt><dd>${tec || '—'} · lo gestiona TI</dd></dl>`;
+  if (!['incompleta', 'lista'].includes(v.est)) {
+    return `<div class="stack">${solo}<p>${chipFicha(v.est, v.estadoVisible)} ${f.enviada_at ? `Enviada el <span class="mono">${esc(fmtDT(f.enviada_at))}</span>.` : ''}</p>
+      <ol class="tareas">${[f.tarea_1, f.tarea_2, f.tarea_3].map(t => `<li>${esc(t)}</li>`).join('')}</ol>
+      <p>Compañero/a de apoyo: <b>${esc(v.companero || '—')}</b> · Reunión: <span class="mono">${esc(fmtDT(f.reunion_at))}</span></p>
+      ${v.est === 'con_discrepancia' ? '<p class="notice">La persona avisó que algo no coincide. Está en revisión por Personas; aquí no se muestra el motivo.</p>' : ''}</div>`;
+  }
+  const comps = store.companerosPara(colId);
+  return `<form data-form="ficha" data-arg="${id}" class="stack ficha-form">${solo}
+    ${[1, 2, 3].map(i => `<label for="t${i}-${id}">Tarea ${i}</label><input id="t${i}-${id}" name="tarea_${i}" maxlength="160" value="${esc(f[`tarea_${i}`] || '')}" placeholder="Qué hará la persona su primera semana">`).join('')}
+    <label for="cp-${id}">Compañero o compañera de apoyo</label>
+    <select id="cp-${id}" name="companero_id"><option value="">Elige una persona de tu equipo</option>${comps.map(x => `<option value="${esc(x.id)}" ${x.id === f.companero_id ? 'selected' : ''}>${esc(x.nombre)} (${esc(x.id)})</option>`).join('')}</select>
+    <label for="rn-${id}">Reunión con la persona (fecha y hora)</label>
+    <input id="rn-${id}" type="datetime-local" name="reunion_at" value="${esc(f.reunion_at || '')}">
+    ${ui.fichaErrores ? `<div class="notice notice-bad" role="alert"><b>No se puede enviar todavía.</b><ul class="mini">${ui.fichaErrores.map(e => `<li>${esc(e)}</li>`).join('')}</ul></div>` : ''}
+    <div class="row"><button class="btn btn-ghost" type="submit" name="op" value="guardar">Guardar borrador</button><button class="btn btn-primary" type="submit" name="op" value="enviar">Enviar ficha</button></div>
+    <p class="hint">Al enviar, se notificaría a la persona por su canal registrado (simulado: no se envía nada). No ves su canal ni lo que reporte a Personas.</p></form>`;
 }
 const listaIngresos = l => `<ul class="mini">${l.map(c => `<li><b>${esc(nombreDe(c.colaborador_id))}</b> · ${fmt(c.fecha_ingreso)} · ${esc(c.modalidad)} · ${c.tipo_turno ? esc(c.tipo_turno) : '<span class="missing">turno sin dato</span>'}</li>`).join('')}</ul>`;
 const kpi = (n, t, tone = '') => `<div class="kpi ${tone ? 'kpi-' + tone : ''}"><b>${n}</b><span>${esc(t)}</span></div>`;
@@ -309,21 +405,29 @@ function vTI(u) {
       ${kpi(filtros.mios.length, 'asignados a ti')}
     </div>` : ''}
     <div class="segs" role="group" aria-label="Filtro">${btnF('todos', 'Todos')}${btnF('mios', 'Mis casos')}${btnF('sin', 'Sin responsable')}</div>
-    <section class="card"><div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th></th></tr></thead><tbody>
+    <section class="card"><div class="table-wrap"><table><thead><tr><th>Caso</th><th>Necesita</th><th>Contexto</th><th>Debía estar</th><th>Estado</th><th>Responsable</th><th>Fecha comprometida</th><th></th></tr></thead><tbody>
     ${lista.map(({ h, ev }) => { const c = store.verColaborador(h.colaborador_id); const pc = s.auth.puedeCompletar(u, h, s.hoy); const pr = s.auth.puedeReasignar(u, h);
       return `<tr><td><code>${esc(h.hito_id)}</code><br><small><code>${esc(h.colaborador_id)}</code></small></td><td><b>${esc(h.tipo_hito)}</b><br><small>Criticidad ${esc(ev.crit)}</small></td>
       <td><small>${esc(c.sede)} · ${esc(c.modalidad)}<br>Usa ${esc(c.dispositivo_principal).toLowerCase()} · correo corp. ${esc(c.correo_corporativo_activo)}</small></td>
       <td class="num">${fmt(ev.limite)}</td><td>${chip(ev)}</td>
-      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar</span>'}</td>
+      <td>${h.responsable_id ? `<code>${esc(h.responsable_id)}</code>` : '<span class="missing">Sin asignar · TI por regla</span>'}</td><td>${tiPendiente(u, h)}</td>
       <td><div class="row">${pc.ok ? `<button class="btn btn-primary btn-sm" data-act="completar" data-arg="${esc(h.hito_id)}">Marcar entregado</button>` : ''}
         ${!h.responsable_id && pr.ok ? `<button class="btn btn-primary btn-sm" data-act="tomar" data-arg="${esc(h.hito_id)}">Tomar caso</button>` : ''}
         ${h.responsable_id && pr.ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
-      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="7">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="7" class="empty">Sin casos en este filtro.</td></tr>'}
+      ${ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="8" class="empty">Sin casos en este filtro.</td></tr>'}
     </tbody></table></div></section>`;
 }
 
+function tiPendiente(u, h) {
+  const p = store.state.auth.puedeGestionarTecnico(u, h);
+  if (!p.ok) return `<small class="muted">${esc(p.motivo)}</small>`;
+  const id = esc(h.hito_id);
+  return `<form data-form="ti-pendiente" data-arg="${id}" class="inline-form"><label for="fc-${id}" class="sr">Fecha comprometida para ${id}</label>
+    <input type="date" id="fc-${id}" name="fecha" value="${esc(h.fecha_comprometida || '')}"><button class="btn btn-ghost btn-sm" type="submit">Pendiente con fecha</button></form>`;
+}
+
 // ---------- Personas / Administrador ----------
-const TABS = [['resumen', 'Resumen'], ['casos', 'Casos críticos'], ['calidad', 'Calidad de datos'], ['reportes', 'Reportes'], ['permisos', 'Permisos'], ['bitacora', 'Bitácora'], ['datos', 'Datos']];
+const TABS = [['fichas', 'Fichas de ingreso'], ['alertas', 'Alertas'], ['indicadores', 'Indicadores'], ['resumen', 'Resumen'], ['casos', 'Casos críticos'], ['calidad', 'Calidad de datos'], ['reportes', 'Reportes'], ['permisos', 'Permisos'], ['bitacora', 'Bitácora'], ['datos', 'Datos']];
 function vPersonas(u) {
   const { auth } = store.state;
   const disponibles = TABS.filter(([k]) => (k !== 'resumen' || auth.puedeVerMetricas(u))
@@ -331,10 +435,60 @@ function vPersonas(u) {
     && (k !== 'datos' || auth.puedeCargarArchivos(u)));
   if (!disponibles.some(([k]) => k === ui.tab)) ui.tab = disponibles[0][0];
   const rep = auth.puedeVerReportes(u) ? store.reportesVisibles().filter(r => r.estado !== 'Cerrado').length : 0;
-  const body = { resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
+  const body = { fichas: tFichas, alertas: tAlertas, indicadores: tIndicadores, resumen: tResumen, casos: tCasos, calidad: tCalidad, reportes: tReportes, permisos: tPermisos, bitacora: tBitacora, datos: tDatos }[ui.tab](u);
   return `<div class="page-head"><div><p class="eyebrow">${u.rol === 'Administrador' ? 'Administración' : 'Equipo de Personas'}</p><h1>Proceso de ingreso completo</h1></div></div>
     <nav class="tabs" role="tablist">${disponibles.map(([k, t]) => `<button role="tab" aria-selected="${ui.tab === k}" class="tab ${ui.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${t}${k === 'reportes' && rep ? ` <span class="badge">${rep}</span>` : ''}${k === 'calidad' ? ` <span class="badge badge-soft" title="Reglas con alertas de severidad alta">${new Set(alertasVisibles(u).filter(a => a.sev === 'alta').map(a => a.regla)).size}</span>` : ''}</button>`).join('')}</nav>
     ${body}`;
+}
+
+function tFichas(u) {
+  const todas = store.ingresos();
+  const F = {
+    accion: ['Requieren acción', todas.filter(v => v.semaforo.color === 'rojo')],
+    atrasados: ['Atrasados', todas.filter(v => v.hitos.some(x => x.estado === 'Atrasado'))],
+    confirmados: ['Confirmados', todas.filter(v => v.est === 'confirmada')],
+    todos: ['Todos', todas],
+  };
+  const lista = F[ui.fichaFiltro][1];
+  return `<p class="hint">Sede piloto: el kit no la define, se muestran todos los ingresos de tu alcance (supuesto declarado). Datos minimizados.</p>
+  <div class="segs" role="group" aria-label="Filtro de fichas">${Object.entries(F).map(([k, [t, l]]) => `<button class="seg ${ui.fichaFiltro === k ? 'on' : ''}" data-act="ficha-filtro" data-arg="${k}" aria-pressed="${ui.fichaFiltro === k}">${t} <span class="num">${l.length}</span></button>`).join('')}</div>
+  <section class="card"><div class="table-wrap"><table><thead><tr><th>Semáforo</th><th>Persona</th><th>Área</th><th>Ingreso</th><th>Jefatura</th><th>Ficha</th><th>Motivo</th></tr></thead><tbody>
+  ${lista.map(v => `<tr><td>${semaforo(v.semaforo)}</td><td><b>${esc(v.c.nombre || v.c.colaborador_id)}</b><br><code>${esc(v.c.colaborador_id)}</code></td><td>${esc(v.c.area)}</td>
+    <td class="num">${v.c.fecha_ingreso ? fmt(v.c.fecha_ingreso) : SIN_DATO()}</td><td>${v.c.jefatura_id ? `<code>${esc(v.c.jefatura_id)}</code>` : SIN_DATO()}</td>
+    <td>${chipFicha(v.est)}</td><td>${v.ficha?.motivo ? esc(MOTIVOS[v.ficha.motivo]) : '—'}</td></tr>`).join('') || '<tr><td colspan="7" class="empty">Sin personas en este filtro.</td></tr>'}
+  </tbody></table></div></section>`;
+}
+const PESO_PRIO = { Urgente: 4, Alta: 3, Media: 2, Baja: 1 };
+function tAlertas(u) {
+  const todas = store.alertasFicha().sort((a, b) => PESO_PRIO[b.prioridad] - PESO_PRIO[a.prioridad] || String(a.plazo).localeCompare(String(b.plazo)));
+  const F = { abierta: 'Abiertas', contactado: 'Contactadas', escalada: 'Escaladas', todas: 'Todas' };
+  const lista = ui.alertaFiltro === 'todas' ? todas : todas.filter(a => a.estado === ui.alertaFiltro);
+  const s = store.state;
+  return `<p class="hint">Cada alerta indica responsable, acción requerida, plazo y prioridad. Las notificaciones son simuladas: no se envía nada.</p>
+  <div class="segs" role="group" aria-label="Filtro de alertas">${Object.entries(F).map(([k, t]) => `<button class="seg ${ui.alertaFiltro === k ? 'on' : ''}" data-act="alerta-filtro" data-arg="${k}" aria-pressed="${ui.alertaFiltro === k}">${t} <span class="num">${k === 'todas' ? todas.length : todas.filter(a => a.estado === k).length}</span></button>`).join('')}</div>
+  <section class="card"><div class="table-wrap"><table><thead><tr><th>Prioridad</th><th>Alerta</th><th>Persona</th><th>Responsable</th><th>Acción requerida</th><th>Plazo</th><th>Estado</th><th></th></tr></thead><tbody>
+  ${lista.slice(0, 150).map(a => { const h = a.hito_id ? s.data.hitos.find(x => x.hito_id === a.hito_id) : null;
+    return `<tr><td>${chipPrio(a.prioridad)}</td><td><b>${esc(a.titulo)}</b><br><small class="muted">${esc(TIPOS_ALERTA[a.tipo] || a.tipo)}${a.hito_id ? ` · <code>${esc(a.hito_id)}</code>` : ''}</small></td>
+    <td><code>${esc(a.colaborador_id)}</code></td><td>${esc(a.responsable.etiqueta)}</td><td>${esc(a.accion_requerida)}</td>
+    <td class="num">${a.plazo < s.hoy ? `<span class="chip chip-bad">Venció ${fmt(a.plazo)}</span>` : fmt(a.plazo)}</td><td>${esc(a.estado)}</td>
+    <td><div class="row">${a.estado !== 'contactado' ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="contactado" data-arg="${esc(a.id)}">Marcar contactado</button>` : ''}
+      ${a.estado !== 'escalada' ? `<button class="btn btn-ghost btn-sm" data-act="alerta" data-estado="escalada" data-arg="${esc(a.id)}">Escalar</button>` : ''}
+      ${h && s.auth.puedeReasignar(u, h).ok ? `<button class="btn btn-ghost btn-sm" data-act="reasignar-open" data-arg="${esc(h.hito_id)}">Reasignar</button>` : ''}</div></td></tr>
+    ${h && ui.reasignando === h.hito_id ? `<tr class="sub"><td colspan="8">${formReasignar(u, h)}</td></tr>` : ''}`; }).join('') || '<tr><td colspan="8" class="empty">Sin alertas en este filtro.</td></tr>'}
+  </tbody></table></div>${lista.length > 150 ? `<p class="hint">Se muestran 150 de ${lista.length}.</p>` : ''}</section>`;
+}
+function tIndicadores() {
+  const k = store.indicadores(); if (!k) return '';
+  return `<div class="kpis">
+    ${kpi(k.pctAntesDia1 === null ? '—' : `${k.pctAntesDia1}%`, `fichas confirmadas antes del día 1 (${k.confirmadasAntesDia1} de ${k.enviadas} enviadas)`)}
+    ${kpi(k.confirmadas, 'fichas confirmadas')}
+    ${kpi(Object.values(k.porMotivo).reduce((a, b) => a + b, 0), 'discrepancias reportadas', 'warn')}
+  </div>
+  <section class="card"><h2 class="h-sm">Discrepancias por motivo</h2><div class="table-wrap"><table><thead><tr><th>Motivo</th><th>Cantidad</th></tr></thead><tbody>
+    ${Object.entries(k.porMotivo).map(([m, n]) => `<tr><td>${esc(MOTIVOS[m])}</td><td class="num">${n}</td></tr>`).join('')}</tbody></table></div></section>
+  <section class="card"><h2 class="h-sm">Hitos atrasados por responsable</h2><div class="table-wrap"><table><thead><tr><th>Responsable</th><th>Hitos atrasados</th></tr></thead><tbody>
+    ${k.atrasadosPorResponsable.map(([r, n]) => `<tr><td>${esc(r)}</td><td class="num">${n}</td></tr>`).join('') || '<tr><td colspan="2" class="empty">Sin hitos atrasados.</td></tr>'}</tbody></table></div>
+    <p class="hint">Indicadores calculados en vivo desde las fichas y los hitos. No se usan para evaluar personas.</p></section>`;
 }
 
 function tResumen(u) {
@@ -456,6 +610,20 @@ async function onSubmit(e) {
     ui.loginStep = null; ui.loginError = ''; resetUi(); return render();
   }
   if (kind === 'staff') { const r = store.login(String(fd.get('id')), 'acceso interno', { soloInterno: true }); resetUi(); if (!r.ok) ui.loginError = r.motivo; return render(); }
+  if (kind === 'discrepancia') {
+    const r = store.reportarDiscrepancia(String(fd.get('motivo') || ''));
+    if (r.ok) { ui.resultado = 'con_discrepancia'; ui.discrepancia = false; return render(); }
+    return toastMsg(r.motivo);
+  }
+  if (kind === 'ficha') {
+    const op = e.submitter?.value === 'enviar' ? 'enviar' : 'guardar';
+    const campos = Object.fromEntries(['tarea_1', 'tarea_2', 'tarea_3', 'companero_id', 'reunion_at'].map(k => [k, String(fd.get(k) || '')]));
+    const r = op === 'enviar' ? store.enviarFicha(f.dataset.arg, campos) : store.guardarFicha(f.dataset.arg, campos);
+    if (!r.ok) { ui.fichaErrores = r.faltan || [r.motivo]; render(); return toastMsg(r.motivo); }
+    ui.fichaErrores = null;
+    return toastMsg(op === 'enviar' ? `Ficha enviada. ${r.aviso}` : `Borrador guardado: ${ESTADOS_FICHA[r.estado]}.`);
+  }
+  if (kind === 'ti-pendiente') { const r = store.marcarPendiente(f.dataset.arg, String(fd.get('fecha') || '')); return toastMsg(r.ok ? 'Fecha comprometida guardada.' : r.motivo); }
   if (kind === 'reporte') { const r = store.reportar(String(fd.get('tipo'))); return toastMsg(r.ok ? 'Solicitud creada en esta demo para revisión de Personas. Se borra al recargar.' : r.motivo); }
   if (kind === 'buscar') {
     const id = String(fd.get('q') || '').trim().toUpperCase(); if (!id) return;
@@ -491,7 +659,7 @@ async function onSubmit(e) {
   }
 }
 
-function resetUi() { Object.assign(ui, { tab: 'resumen', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
+function resetUi() { Object.assign(ui, { fichaAbierta: null, fichaErrores: null, discrepancia: false, resultado: null, denegado: null, tab: 'fichas', detalle: null, tiFiltro: 'todos', reasignando: null, confirm: null, busqueda: null, exportTexto: null, cargaErrores: null }); }
 
 function onClick(e) {
   const b = e.target.closest('[data-act]'); if (!b) return;
@@ -505,6 +673,20 @@ function onClick(e) {
     case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; return render();
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();
     case 'ti-filtro': ui.tiFiltro = arg; return render();
+    case 'ficha-filtro': ui.fichaFiltro = arg; return render();
+    case 'alerta-filtro': ui.alertaFiltro = arg; return render();
+    case 'volver': ui.denegado = null; return render();
+    case 'probar-403': { const r = store.entrar('/ficha', arg); ui.denegado = r.ok ? null : arg; return render(); }
+    case 'ficha-abrir': {
+      if (ui.fichaAbierta === arg) { ui.fichaAbierta = null; return render(); }
+      const r = store.entrar('/ficha', arg); if (!r.ok) { ui.denegado = arg; return render(); }
+      ui.fichaAbierta = arg; ui.fichaErrores = null; ui.detalle = null; return render();
+    }
+    case 'ficha-confirmar': { const r = store.confirmarFicha(); if (r.ok) { ui.resultado = 'confirmada'; return render(); } return toastMsg(r.motivo); }
+    case 'ficha-disc': ui.discrepancia = true; return render();
+    case 'ficha-disc-cerrar': ui.discrepancia = false; return render();
+    case 'ver-ficha': ui.resultado = null; return render();
+    case 'alerta': { const r = store.gestionarAlerta(arg, b.dataset.estado); return toastMsg(r.ok ? (r.aviso || 'Alerta marcada como contactada.') : r.motivo); }
     case 'reasignar-open': ui.reasignando = arg; return render();
     case 'reasignar-close': ui.reasignando = null; return render();
     case 'completar': ui.confirm = { texto: `Marcar "${NOMBRE_HITO[h.tipo_hito]}" de ${esc(h.colaborador_id)} como cumplido con fecha ${fmt(s.hoy)}. Queda registrado con tu usuario.`, act: 'completar', arg }; return render();
