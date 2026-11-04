@@ -1,4 +1,4 @@
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Sprint Onboarding Seguro</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <style>/* Layout: barra superior flotante + columna lateral fija con la navegación de la vista + contenido en bloques separados por líneas finas. */
@@ -234,6 +234,20 @@ table.inner th, table.inner td { padding-left: .5rem; }
   .row-btn code { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Asistente de dudas */
+.chat-fab { position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 25; min-height: 44px; }
+.chat { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: min(380px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 32px));
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; padding: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+.chat-head { display: flex; justify-content: space-between; align-items: center; }
+.chat-log { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 120px; flex: 1; }
+.msg { padding: 8px 10px; border-radius: 8px; font-size: .9rem; max-width: 92%; }
+.msg-bot { background: var(--surface-2, #eef0f4); align-self: flex-start; }
+.msg-tu { background: var(--brand, #0F4C81); color: #fff; align-self: flex-end; }
+.chat-sug { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-sug .seg { min-height: 36px; }
+.chat-form { display: flex; gap: 6px; }
+.chat-form input { flex: 1; min-width: 0; }
 </style>
 <div id="app"></div>
 <script>(() => {
@@ -904,6 +918,10 @@ table.inner th, table.inner td { padding-left: .5rem; }
         log("carga_archivos", "\u2014", "Carga del kit sint\xE9tico validada; datos solo en memoria");
         return { ok: true, sesionCerrada: !s.user };
       },
+      registrarCorreo(colId, resultado) {
+        log("alerta_correo", colId, `Alerta por correo: ${resultado}`, resultado === "error" ? "error" : "ok");
+        return { ok: true };
+      },
       registrarError() {
         log("error", "\u2014", "Error inesperado; no se registra el mensaje ni su contenido", "error");
       },
@@ -946,6 +964,71 @@ table.inner th, table.inner td { padding-left: .5rem; }
     return api;
   }
 
+  // src/asistente.js
+  var QUIEN = { Personas: "el Equipo de Personas", TI: "Soporte TI", Jefatura: "tu jefatura" };
+  var ESTADO = { Cumplido: "listo", Pendiente: "pendiente", Vencido: "atrasado", "Por verificar": "por verificar" };
+  var norm = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+  var tiene = (q, ...p) => p.some((x) => q.includes(x));
+  var SUGERENCIAS = {
+    Colaborador: ["\xBFA qui\xE9n le pregunto?", "\xBFQu\xE9 me falta?", "\xBFCu\xE1l es mi turno?", "\xBFCu\xE1ndo es mi ingreso?", "No tengo computador", "Algo no coincide"],
+    Jefatura: ["\xBFQui\xE9n tiene atrasos?", "\xBFQu\xE9 acciones tengo?", "\xBFQui\xE9nes ingresan pronto?"],
+    TI: ["\xBFQu\xE9 casos est\xE1n vencidos?", "\xBFQu\xE9 casos no tienen responsable?"],
+    Personas: ["\xBFCu\xE1ntos hitos atrasados hay?", "\xBFQui\xE9n no tiene jefatura?", "\xBFQu\xE9 casos son cr\xEDticos?"]
+  };
+  function responder(pregunta, store2) {
+    const s = store2.state;
+    const u = s.user;
+    if (!u) return "Primero ingresa con una cuenta.";
+    const q = norm(pregunta);
+    if (!q.trim()) return "Escribe tu pregunta o usa una de las sugerencias.";
+    const hitos = s.data.hitos.filter((h) => s.auth.puedeVerHito(u, h)).map((h) => ({ h, ev: evaluarHito(h, s.idx, s.hoy) }));
+    const linea = ({ h, ev }) => `${NOMBRE_HITO[h.tipo_hito]}: ${ESTADO[ev.estadoReal] || ev.estadoReal}, plazo ${fmt(ev.limite)}, lo gestiona ${QUIEN[h.responsable_tipo] || h.responsable_tipo}`;
+    const lista = (l, vacio) => l.length ? l.map((x) => `\u2022 ${x}`).join("\n") : vacio;
+    if (u.rol === "Colaborador") {
+      const c = store2.verColaborador(u.usuario_id) || {};
+      const jef = c.jefatura_id ? s.auth.users.get(c.jefatura_id)?.nombre_ficticio : null;
+      const jefTxt = jef ? `${jef} (tu jefatura)` : "tu jefatura (a\xFAn no tienes una asignada: Personas ya tiene la alerta)";
+      const de = (tipos) => hitos.filter((x) => tipos.includes(x.h.tipo_hito));
+      if (tiene(q, "no coincide", "reclamo", "reportar", "problema", "distinto", "cambio")) return 'Usa "\xBFAlgo no coincide?" al final de tu p\xE1gina y elige la categor\xEDa. Lo revisa el Equipo de Personas, no tu jefatura, y no se usa para evaluarte.';
+      if (tiene(q, "computador", "notebook", "equipo", "acceso", "cuenta", "clave", "contrasena", "correo", "sistema")) return `Equipos, accesos y cuentas los resuelve Soporte TI.
+${lista(de(["Equipo", "Acceso"]).map(linea), "No tienes hitos t\xE9cnicos registrados.")}`;
+      if (tiene(q, "contrato", "firma", "sueldo", "documento")) return `El contrato lo gestiona el Equipo de Personas.
+${lista(de(["Contrato"]).map(linea), "No hay hito de contrato registrado.")}`;
+      if (tiene(q, "reunion", "plan", "tareas", "que hare", "que voy a hacer", "funciones")) return `Tu reuni\xF3n y tu plan de primera semana los coordina ${jefTxt}.
+${lista(de(["Reuni\xF3n", "Plan"]).map(linea), "Sin hitos de reuni\xF3n o plan.")}`;
+      if (tiene(q, "jefe", "jefa", "jefatura", "supervisor")) return `Tu jefatura es ${jefTxt}.`;
+      if (tiene(q, "turno", "horario", "jornada", "hora")) return c.tipo_turno ? `Tu turno registrado es: ${c.tipo_turno}.` : "Tu turno no est\xE1 registrado (Sin dato). Personas lo est\xE1 validando; no te damos un horario inventado.";
+      if (tiene(q, "ingreso", "empiezo", "primer dia", "comienzo", "fecha")) return c.fecha_ingreso ? `Tu fecha de ingreso es el ${fmt(c.fecha_ingreso)}. Sede: ${c.sede || "Sin dato"}. Modalidad: ${c.modalidad || "Sin dato"}.` : "Tu fecha de ingreso no est\xE1 registrada (Sin dato). Consulta al Equipo de Personas.";
+      if (tiene(q, "atras", "venc", "demora")) return lista(hitos.filter((x) => x.ev.estadoReal === "Vencido").map(linea), "No tienes tareas atrasadas.") + "\nNinguna depende de ti: el responsable ya la tiene en su bandeja.";
+      if (tiene(q, "falta", "pendiente", "que tengo", "estado", "avance", "checklist")) return lista(hitos.filter((x) => x.ev.estadoReal !== "Cumplido").map(linea), "\xA1Tienes todo listo!");
+      if (tiene(q, "quien", "pregunt", "ayuda", "contacto", "duda", "hablar")) return `Seg\xFAn el tema:
+\u2022 Equipo, accesos y cuentas: Soporte TI
+\u2022 Contrato y dudas generales: Equipo de Personas
+\u2022 Tareas, reuni\xF3n y plan: ${jefTxt}${c.canal_contacto ? `
+Te contactar\xE1n por: ${c.canal_contacto}.` : ""}`;
+      return "No encontr\xE9 esa informaci\xF3n en tu p\xE1gina. Puedo responder sobre a qui\xE9n preguntar, qu\xE9 te falta, tu turno, tu fecha de ingreso, tu jefatura, equipo y accesos, contrato o reuni\xF3n.";
+    }
+    const abiertos = hitos.filter((x) => x.ev.estadoReal !== "Cumplido");
+    const venc = hitos.filter((x) => x.ev.estadoReal === "Vencido");
+    const porPersona = (l) => [...new Set(l.map((x) => x.h.colaborador_id))];
+    if (u.rol === "Jefatura") {
+      if (tiene(q, "accion", "mio", "mias", "tengo que", "hacer")) return lista(abiertos.filter((x) => x.h.responsable_id === u.usuario_id).map((x) => `${x.h.colaborador_id} \xB7 ${linea(x)}`), "No tienes acciones pendientes.");
+      if (tiene(q, "ingres", "pronto", "nuev")) return lista([...s.auth.scope(u)].map((id) => s.idx.colab.get(id)).filter((c) => c && c.fecha_ingreso > s.hoy).map((c) => `${c.colaborador_id}: ingresa el ${fmt(c.fecha_ingreso)}`), `No hay ingresos despu\xE9s del ${fmt(s.hoy)} en tu equipo.`);
+      if (tiene(q, "atras", "venc", "problema")) return lista(porPersona(venc).map((id) => `${id}: ${venc.filter((x) => x.h.colaborador_id === id).length} hitos atrasados`), "Tu equipo no tiene atrasos.");
+      return "Puedo decirte qu\xE9 acciones tienes, qui\xE9n de tu equipo tiene atrasos o qui\xE9nes ingresan pronto. Solo veo a tu equipo asignado.";
+    }
+    if (u.rol === "TI") {
+      if (tiene(q, "sin responsable", "sin asignar", "nadie")) return lista(abiertos.filter((x) => !x.h.responsable_id).map((x) => `${x.h.hito_id} (${x.h.tipo_hito} de ${x.h.colaborador_id})`), "Todos los casos tienen responsable.");
+      if (tiene(q, "venc", "atras", "urgente")) return `${venc.length} casos vencidos.
+${lista(venc.slice(0, 8).map((x) => `${x.h.hito_id} (${x.h.tipo_hito} de ${x.h.colaborador_id}), venci\xF3 el ${fmt(x.ev.limite)}`), "")}`;
+      return `Tienes ${abiertos.length} casos t\xE9cnicos abiertos y ${venc.length} vencidos. Pregunta por vencidos o sin responsable. Solo ves IDs, sin datos personales.`;
+    }
+    if (tiene(q, "jefatura", "jefe")) return lista(s.data.colaboradores.filter((c) => !c.jefatura_id).map((c) => `${c.colaborador_id}: sin jefatura asignada`), "Todos tienen jefatura.");
+    if (tiene(q, "critic", "urgente", "grave")) return lista(porPersona(venc.filter((x) => x.ev.crit === "Alto")).slice(0, 10).map((id) => `${id}: atraso cr\xEDtico`), "No hay atrasos cr\xEDticos.");
+    if (tiene(q, "atras", "venc", "cuant")) return `${venc.length} hitos atrasados seg\xFAn el cat\xE1logo (el registro marca ${hitos.filter((x) => x.h.estado === "Atrasado").length}). Afectan a ${porPersona(venc).length} personas.`;
+    return "Puedo responder cu\xE1ntos hitos atrasados hay, qui\xE9n no tiene jefatura o qu\xE9 casos son cr\xEDticos.";
+  }
+
   // src/ui.js
   var esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
   var ui = {
@@ -966,7 +1049,11 @@ table.inner th, table.inner td { padding-left: .5rem; }
     // { id, ok }
     exportTexto: null,
     alertaAbierta: null,
-    cargaErrores: null
+    cargaErrores: null,
+    chatOpen: false,
+    // asistente de dudas
+    chat: []
+    // [{ de: 'tu'|'bot', texto }] solo en memoria
   };
   var store;
   var root;
@@ -1058,6 +1145,52 @@ table.inner th, table.inner td { padding-left: .5rem; }
   function avisos() {
     return store.state.almacenamientoLimpio ? "" : '<div class="blk blk-tight"><p class="notice notice-bad" role="alert">No pudimos borrar los datos de la versi\xF3n anterior. Borra los datos de este sitio desde tu navegador. Esta versi\xF3n no guarda nuevos datos.</p></div>';
   }
+  function asistente() {
+    const u = store.state.user;
+    if (!u || !store.state.auth.cuentaValida(u)) return "";
+    if (!ui.chatOpen) return '<button class="btn btn-primary chat-fab" data-act="chat-toggle" aria-expanded="false">Asistente</button>';
+    const sug = SUGERENCIAS[u.rol] || SUGERENCIAS.Personas;
+    return `<section class="chat" role="dialog" aria-label="Asistente de dudas">
+    <div class="chat-head"><b>Asistente</b><button class="btn btn-ghost btn-sm" data-act="chat-toggle" aria-label="Cerrar asistente">Cerrar</button></div>
+    <div class="chat-log" aria-live="polite">${ui.chat.length ? ui.chat.map((m) => `<p class="msg msg-${m.de}">${esc(m.texto).replace(/\n/g, "<br>")}</p>`).join("") : '<p class="msg msg-bot">Hola. Respondo con la informaci\xF3n de esta p\xE1gina que tu cuenta puede ver. \xBFEn qu\xE9 te ayudo?</p>'}</div>
+    <div class="chat-sug">${sug.map((t) => `<button class="seg" data-act="chat-sug" data-q="${esc(t)}">${esc(t)}</button>`).join("")}</div>
+    <form data-form="chat" class="chat-form"><label for="chat-q" class="sr">Tu pregunta</label>
+      <input id="chat-q" name="q" maxlength="200" autocomplete="off" placeholder="Escribe tu duda"><button class="btn btn-primary" type="submit">Preguntar</button></form>
+    <p class="hint">Respuestas autom\xE1ticas por reglas, sin IA. No guarda la conversaci\xF3n.</p></section>`;
+  }
+  function preguntar(q) {
+    const t = String(q || "").trim().slice(0, 200);
+    if (!t) return;
+    ui.chat.push({ de: "tu", texto: t }, { de: "bot", texto: responder(t, store) });
+    ui.chat = ui.chat.slice(-20);
+    render();
+    const log = root.querySelector(".chat-log");
+    if (log) log.scrollTop = log.scrollHeight;
+    root.querySelector("#chat-q")?.focus();
+  }
+  async function enviarCorreo(colId) {
+    const s = store.state;
+    const u = s.user;
+    if (!s.auth.puedeVerCalidad(u) || !s.auth.puedeVerColaborador(u, colId)) return toastMsg("No tienes permiso para avisar sobre esta persona.");
+    const venc = (s.idx.hitosPorColab.get(colId) || []).map((h) => ({ h, ev: evaluarHito(h, s.idx, s.hoy) })).filter((x) => x.ev.estadoReal === "Vencido");
+    const body = {
+      colaborador_id: colId,
+      enviado_por: u.usuario_id,
+      atrasados: venc.length,
+      criticos: venc.filter((x) => x.ev.crit === "Alto").length,
+      responsables: [...new Set(venc.map((x) => x.h.responsable_id || `${x.h.responsable_tipo} (sin cuenta)`))].join(", "),
+      accion: "Resolver los hitos atrasados y registrar la fecha"
+    };
+    if (location.protocol === "file:") return toastMsg('Para enviar correos abre la demo con "npm start" (http://localhost:3000).');
+    toastMsg("Enviando alerta\u2026");
+    try {
+      const r = await fetch("/api/alerta", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((x) => x.json());
+      store.registrarCorreo?.(colId, r.ok ? r.simulado ? "simulado" : "enviado" : "error");
+      toastMsg(!r.ok ? r.motivo : r.simulado ? `Correo simulado (falta .env): "${r.asunto}"` : `Correo enviado a ${r.para}.`);
+    } catch {
+      toastMsg("No se pudo conectar con el servidor local.");
+    }
+  }
   function render() {
     const s = store.state;
     const u = s.user;
@@ -1076,7 +1209,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
     }
     if (typeof v === "string") v = { nav: [], body: v };
     const cta = u && u.rol === "Colaborador" && s.auth.cuentaValida(u) ? '<a class="btn btn-primary cta" href="#ayuda">Necesito ayuda</a>' : "";
-    root.innerHTML = topbar() + `<div class="layout ${v.nav.length ? "" : "no-side"}">${v.nav.length ? sidebar(v) : ""}<main id="main">${mnav(v)}${avisos()}${v.body}</main></div>` + cta + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : "");
+    root.innerHTML = topbar() + `<div class="layout ${v.nav.length ? "" : "no-side"}">${v.nav.length ? sidebar(v) : ""}<main id="main">${mnav(v)}${avisos()}${v.body}</main></div>` + cta + asistente() + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : "");
     espiar();
   }
   var spy;
@@ -1416,7 +1549,8 @@ table.inner th, table.inner td { padding-left: .5rem; }
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
     <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small class="dim">(${av.vencidosAltos} cr\xEDticos)</small>` : ""}${av.porVerificar ? `<br><small class="dim">${av.porVerificar} por verificar</small>` : ""}</td>
-    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Abrir"}</button></td></tr>
+    <td><div class="row"><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? "Cerrar" : "Abrir"}</button>
+      ${av.vencidos ? `<button class="btn btn-ghost btn-sm" data-act="correo" data-arg="${esc(c.colaborador_id)}">Avisar por correo</button>` : ""}</div></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ""}`).join("")}
   </tbody></table></div></section>`;
   }
@@ -1479,6 +1613,7 @@ table.inner th, table.inner td { padding-left: .5rem; }
     const fd = new FormData(f);
     const kind = f.dataset.form;
     const s = store.state;
+    if (kind === "chat") return preguntar(fd.get("q"));
     if (kind === "col-id") {
       const id = String(fd.get("id") || "").trim().toUpperCase();
       ui.loginStep = { id };
@@ -1605,9 +1740,18 @@ table.inner th, table.inner td { padding-left: .5rem; }
         resetUi();
         return render();
       }
+      case "correo":
+        return enviarCorreo(arg);
+      case "chat-toggle":
+        ui.chatOpen = !ui.chatOpen;
+        return render();
+      case "chat-sug":
+        return preguntar(b.dataset.q);
       case "logout":
         store.logout();
         resetUi();
+        ui.chat = [];
+        ui.chatOpen = false;
         ui.loginStep = null;
         return render();
       case "login-back":

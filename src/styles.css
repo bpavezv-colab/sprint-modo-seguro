@@ -231,3 +231,17 @@ table.inner th, table.inner td { padding-left: .5rem; }
   .row-btn code { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+
+/* Asistente de dudas */
+.chat-fab { position: fixed; left: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 25; min-height: 44px; }
+.chat { position: fixed; right: 16px; bottom: calc(16px + env(safe-area-inset-bottom, 0px)); z-index: 25; width: min(380px, calc(100vw - 32px)); max-height: min(560px, calc(100vh - 32px));
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; gap: 8px; padding: 12px; box-shadow: 0 6px 20px rgba(0,0,0,.15); }
+.chat-head { display: flex; justify-content: space-between; align-items: center; }
+.chat-log { overflow-y: auto; display: flex; flex-direction: column; gap: 6px; min-height: 120px; flex: 1; }
+.msg { padding: 8px 10px; border-radius: 8px; font-size: .9rem; max-width: 92%; }
+.msg-bot { background: var(--surface-2, #eef0f4); align-self: flex-start; }
+.msg-tu { background: var(--brand, #0F4C81); color: #fff; align-self: flex-end; }
+.chat-sug { display: flex; flex-wrap: wrap; gap: 6px; }
+.chat-sug .seg { min-height: 36px; }
+.chat-form { display: flex; gap: 6px; }
+.chat-form input { flex: 1; min-width: 0; }

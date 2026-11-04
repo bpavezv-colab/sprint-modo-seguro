@@ -108,6 +108,7 @@ export function crearStore(base, { now = () => new Date().toISOString() } = {}) 
       if (s.user && !s.auth.cuentaValida(s.user)) s.user = null;
       log('carga_archivos', '—', 'Carga del kit sintético validada; datos solo en memoria'); return { ok: true, sesionCerrada: !s.user };
     },
+    registrarCorreo(colId, resultado) { log('alerta_correo', colId, `Alerta por correo: ${resultado}`, resultado === 'error' ? 'error' : 'ok'); return { ok: true }; },
     registrarError() { log('error', '—', 'Error inesperado; no se registra el mensaje ni su contenido', 'error'); },
     exportar(tipo) {
       if (!s.auth.puedeVerCalidad(s.user)) return denegar('exportar', '—', 'Sin permiso para exportar');

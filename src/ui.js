@@ -3,6 +3,7 @@ import { evaluarHito, avanceColaborador, agruparAlertas, fmt, diffDays, NOMBRE_H
 import { MATRIZ_EFECTIVA, HITOS_TECNICOS } from './permissions.js';
 import { parseCSV, toCSV } from './csv.js';
 import { ARCHIVOS, TIPOS_REPORTE, ESTADOS_REPORTE } from './privacy.js';
+import { responder, SUGERENCIAS } from './asistente.js';
 
 export const esc = v => String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -19,6 +20,8 @@ const ui = {
   exportTexto: null,
   alertaAbierta: null,
   cargaErrores: null,
+  chatOpen: false,     // asistente de dudas
+  chat: [],            // [{ de: 'tu'|'bot', texto }] solo en memoria
 };
 let store; let root;
 
@@ -115,6 +118,44 @@ function avisos() {
   return store.state.almacenamientoLimpio ? '' : '<div class="blk blk-tight"><p class="notice notice-bad" role="alert">No pudimos borrar los datos de la versión anterior. Borra los datos de este sitio desde tu navegador. Esta versión no guarda nuevos datos.</p></div>';
 }
 
+function asistente() {
+  const u = store.state.user;
+  if (!u || !store.state.auth.cuentaValida(u)) return '';
+  if (!ui.chatOpen) return '<button class="btn btn-primary chat-fab" data-act="chat-toggle" aria-expanded="false">Asistente</button>';
+  const sug = SUGERENCIAS[u.rol] || SUGERENCIAS.Personas;
+  return `<section class="chat" role="dialog" aria-label="Asistente de dudas">
+    <div class="chat-head"><b>Asistente</b><button class="btn btn-ghost btn-sm" data-act="chat-toggle" aria-label="Cerrar asistente">Cerrar</button></div>
+    <div class="chat-log" aria-live="polite">${ui.chat.length ? ui.chat.map(m => `<p class="msg msg-${m.de}">${esc(m.texto).replace(/\n/g, '<br>')}</p>`).join('')
+      : '<p class="msg msg-bot">Hola. Respondo con la información de esta página que tu cuenta puede ver. ¿En qué te ayudo?</p>'}</div>
+    <div class="chat-sug">${sug.map(t => `<button class="seg" data-act="chat-sug" data-q="${esc(t)}">${esc(t)}</button>`).join('')}</div>
+    <form data-form="chat" class="chat-form"><label for="chat-q" class="sr">Tu pregunta</label>
+      <input id="chat-q" name="q" maxlength="200" autocomplete="off" placeholder="Escribe tu duda"><button class="btn btn-primary" type="submit">Preguntar</button></form>
+    <p class="hint">Respuestas automáticas por reglas, sin IA. No guarda la conversación.</p></section>`;
+}
+function preguntar(q) {
+  const t = String(q || '').trim().slice(0, 200); if (!t) return;
+  ui.chat.push({ de: 'tu', texto: t }, { de: 'bot', texto: responder(t, store) });
+  ui.chat = ui.chat.slice(-20); render();
+  const log = root.querySelector('.chat-log'); if (log) log.scrollTop = log.scrollHeight;
+  root.querySelector('#chat-q')?.focus();
+}
+
+// Envía la alerta al servidor local (server.mjs). Solo IDs y conteos; el destinatario lo fija el servidor.
+async function enviarCorreo(colId) {
+  const s = store.state; const u = s.user;
+  if (!s.auth.puedeVerCalidad(u) || !s.auth.puedeVerColaborador(u, colId)) return toastMsg('No tienes permiso para avisar sobre esta persona.');
+  const venc = (s.idx.hitosPorColab.get(colId) || []).map(h => ({ h, ev: evaluarHito(h, s.idx, s.hoy) })).filter(x => x.ev.estadoReal === 'Vencido');
+  const body = { colaborador_id: colId, enviado_por: u.usuario_id, atrasados: venc.length, criticos: venc.filter(x => x.ev.crit === 'Alto').length,
+    responsables: [...new Set(venc.map(x => x.h.responsable_id || `${x.h.responsable_tipo} (sin cuenta)`))].join(', '), accion: 'Resolver los hitos atrasados y registrar la fecha' };
+  if (location.protocol === 'file:') return toastMsg('Para enviar correos abre la demo con "npm start" (http://localhost:3000).');
+  toastMsg('Enviando alerta…');
+  try {
+    const r = await fetch('/api/alerta', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }).then(x => x.json());
+    store.registrarCorreo?.(colId, r.ok ? (r.simulado ? 'simulado' : 'enviado') : 'error');
+    toastMsg(!r.ok ? r.motivo : r.simulado ? `Correo simulado (falta .env): "${r.asunto}"` : `Correo enviado a ${r.para}.`);
+  } catch { toastMsg('No se pudo conectar con el servidor local.'); }
+}
+
 function render() {
   const s = store.state; const u = s.user;
   let v;
@@ -131,7 +172,7 @@ function render() {
   const cta = u && u.rol === 'Colaborador' && s.auth.cuentaValida(u) ? '<a class="btn btn-primary cta" href="#ayuda">Necesito ayuda</a>' : '';
   root.innerHTML = topbar()
     + `<div class="layout ${v.nav.length ? '' : 'no-side'}">${v.nav.length ? sidebar(v) : ''}<main id="main">${mnav(v)}${avisos()}${v.body}</main></div>`
-    + cta + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
+    + cta + asistente() + modal() + (ui.toast ? `<div class="toast" role="status" aria-live="polite">${esc(ui.toast)}</div>` : '');
   espiar();
 }
 
@@ -452,7 +493,8 @@ function tCasos(u) {
     <td>${c.jefatura_id ? `<code>${esc(c.jefatura_id)}</code>` : '<span class="chip chip-bad">Sin jefatura</span>'}</td>
     <td>${c.canal_contacto ? esc(c.canal_contacto) : '<span class="missing">Sin dato</span>'}</td>
     <td class="num">${av.cumplidos}/${av.total}</td><td class="num">${av.vencidos}${av.vencidosAltos ? ` <small class="dim">(${av.vencidosAltos} críticos)</small>` : ''}${av.porVerificar ? `<br><small class="dim">${av.porVerificar} por verificar</small>` : ''}</td>
-    <td><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button></td></tr>
+    <td><div class="row"><button class="btn btn-ghost btn-sm" data-act="detalle" data-arg="${esc(c.colaborador_id)}">${ui.detalle === c.colaborador_id ? 'Cerrar' : 'Abrir'}</button>
+      ${av.vencidos ? `<button class="btn btn-ghost btn-sm" data-act="correo" data-arg="${esc(c.colaborador_id)}">Avisar por correo</button>` : ''}</div></td></tr>
     ${ui.detalle === c.colaborador_id ? `<tr class="sub"><td colspan="7">${tablaHitos(u, c.colaborador_id)}</td></tr>` : ''}`).join('')}
   </tbody></table></div></section>`;
 }
@@ -519,6 +561,7 @@ async function onSubmit(e) {
   const f = e.target.closest('form[data-form]'); if (!f) return;
   e.preventDefault();
   const fd = new FormData(f); const kind = f.dataset.form; const s = store.state;
+  if (kind === 'chat') return preguntar(fd.get('q'));
   if (kind === 'col-id') {
     const id = String(fd.get('id') || '').trim().toUpperCase();
     ui.loginStep = { id }; ui.loginError = ''; return render();
@@ -574,7 +617,10 @@ function onClick(e) {
   if (['completar', 'tomar', 'reasignar-open'].includes(act) && !h) { toastMsg('Ese hito ya no existe. La vista se actualizó.'); return; }
   switch (act) {
     case 'quick': { const r = store.login(arg, 'recorrido de demo'); if (!r.ok) return toastMsg(r.motivo); resetUi(); return render(); }
-    case 'logout': store.logout(); resetUi(); ui.loginStep = null; return render();
+    case 'correo': return enviarCorreo(arg);
+    case 'chat-toggle': ui.chatOpen = !ui.chatOpen; return render();
+    case 'chat-sug': return preguntar(b.dataset.q);
+    case 'logout': store.logout(); resetUi(); ui.chat = []; ui.chatOpen = false; ui.loginStep = null; return render();
     case 'login-back': ui.loginStep = null; ui.loginError = ''; return render();
     case 'tab': ui.tab = arg; ui.detalle = null; ui.reasignando = null; ui.exportTexto = null; render(); return window.scrollTo(0, 0);
     case 'detalle': ui.detalle = ui.detalle === arg ? null : arg; ui.reasignando = null; return render();

@@ -24,7 +24,7 @@ const res = await build({ entryPoints: [fileURLToPath(new URL('../src/main.js', 
 const js = res.outputFiles[0].text.replace(/<\/script/gi, '<\\/script');
 const css = r('src/styles.css');
 // Sin fuentes, analítica ni conexiones externas. El HTML funciona offline.
-const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
+const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src 'none'; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">`;
 const head = `${csp}\n<title>Sprint Onboarding Seguro</title>\n<meta name="claude:viewport-fit-sides" content="cover">\n<style>${css}</style>`;
 const bodyHtml = `<div id="app"></div>\n<script>${js}</script>`;
 
