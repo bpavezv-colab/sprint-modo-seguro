@@ -2,6 +2,13 @@
 
 MVP para la Prueba 2 del Talent Tech Hack 2026 (Personas y organizaciones). Checklist de ingreso con acceso seguro por rol sobre los 4 CSV sintéticos del caso.
 
+## Inicio rápido (Windows): doble clic en **`Iniciar Sprint.bat`**
+1. Instala **Node.js LTS** desde https://nodejs.org (solo la primera vez; si falta, el lanzador abre esa página).
+2. **IA con Gemini (opcional):** crea una clave gratis en https://aistudio.google.com/apikey y pégala en el archivo **`.env`** de esta carpeta, en la línea `GEMINI_API_KEY=` (sin espacios ni comillas). Si no hay `.env`, el lanzador lo crea copiando `.env.example`. **No subas `.env` a GitHub**: está en `.gitignore`.
+3. Doble clic en **`Iniciar Sprint.bat`**. Instala lo necesario la primera vez, prepara la página, inicia el servidor y abre **http://localhost:3000**. Para apagarlo, cierra la ventana negra.
+
+Arriba de la página se ve el modo: **IA activa** (Gemini responde el asistente y redacta "Sugerir reparto") o **IA sin clave · reglas** (responde con reglas y el cálculo simple). Si un modelo de Gemini está saturado, el servidor prueba otro automáticamente (`gemini-3.5-flash-lite` → `gemini-flash-lite-latest` → `gemini-3.1-flash-lite` → `gemini-3.8-flash`).
+
 ## Correr
 - **Sin instalar nada:** abre `dist/index.html` con doble clic. Funciona todo, salvo la IA y el correo (la página lo indica arriba).
 - **Con IA y correo:** `npm install` → `npm run build` → `npm start` y abre **http://localhost:3000**. Ver "Cómo correr en otro computador".

@@ -26,7 +26,13 @@ export function configDesdeEnv(env = process.env) {
   return {
     port: Number.isInteger(puerto) && puerto > 0 && puerto < 65536 ? puerto : 3000,
     apiKey: (env.ANTHROPIC_API_KEY || '').trim(),
-    modelo: (env.IA_MODELO || '').trim() || 'claude-haiku-5-5',
+    geminiKey: (env.GEMINI_API_KEY || '').trim(),
+    // Con GEMINI_API_KEY se usa Gemini; un IA_MODELO de Claude se ignora en ese caso.
+    modelo: (() => {
+      const m = (env.IA_MODELO || '').trim();
+      if ((env.GEMINI_API_KEY || '').trim()) return m && !m.startsWith('claude') ? m : 'gemini-3.5-flash-lite';
+      return m || 'claude-haiku-5-5';
+    })(),
     smtpUser: (env.SMTP_USER || '').trim(),
     smtpPass: (env.SMTP_PASS || '').replace(/\s+/g, ''), // Google muestra la contraseña de aplicación con espacios
     alertaPara: (env.ALERTA_PARA || '').trim(),
@@ -41,9 +47,47 @@ export function cargarBase(raiz = RAIZ) {
 // Oculta la casilla al informar el estado a la página: d***@gmail.com
 export const enmascarar = correo => { const [u, d] = String(correo).split('@'); return d ? `${u.slice(0, 1)}***@${d}` : '***'; };
 
+// Cliente de Gemini (API REST de Google AI Studio) con la misma forma que usa el resto del servidor:
+// messages.create({ model, max_tokens, system, messages }) → { content: [{ type: 'text', text }] }.
+// La clave viaja solo en el encabezado desde este servidor; nunca llega al navegador.
+// Si el modelo principal está saturado (503/429) o retirado (404), se prueba el siguiente de la lista.
+export const GEMINI_RESPALDO = ['gemini-flash-lite-latest', 'gemini-3.1-flash-lite', 'gemini-3.8-flash'];
+export function clienteGemini(apiKey, fetchImpl = globalThis.fetch, respaldo = GEMINI_RESPALDO) {
+  return {
+    proveedor: 'gemini',
+    messages: {
+      async create({ model, max_tokens = 500, system = '', messages = [] }) {
+        const cuerpo = JSON.stringify({
+          systemInstruction: { parts: [{ text: String(system) }] },
+          contents: messages.map(m => ({ role: 'user', parts: [{ text: String(m.content) }] })),
+          generationConfig: { maxOutputTokens: max_tokens, temperature: 0.3 },
+        });
+        let ultimo;
+        for (const m of [...new Set([model, ...respaldo])]) {
+          let r;
+          try {
+            r = await fetchImpl(`https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(m)}:generateContent`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey }, body: cuerpo, signal: AbortSignal.timeout(8000),
+            });
+          } catch (err) { ultimo = err; continue; } // sin respuesta a tiempo: probar el siguiente modelo
+          if (r.ok) {
+            const d = await r.json();
+            const text = (d.candidates?.[0]?.content?.parts || []).map(p => p.text || '').join('').trim();
+            return { content: [{ type: 'text', text }], modelo_usado: m };
+          }
+          ultimo = new Error(`Gemini respondió ${r.status}`); ultimo.status = r.status;
+          if (![404, 429, 500, 503].includes(r.status)) break; // clave inválida u otro error: no insistir
+        }
+        throw ultimo;
+      },
+    },
+  };
+}
+
 async function crearClientes(cfg) {
   let anthropic = null; let mailer = null;
-  if (cfg.apiKey) { const { default: Anthropic } = await import('@anthropic-ai/sdk'); anthropic = new Anthropic({ apiKey: cfg.apiKey, timeout: 20000, maxRetries: 1 }); }
+  if (cfg.geminiKey) anthropic = clienteGemini(cfg.geminiKey);
+  else if (cfg.apiKey) { const { default: Anthropic } = await import('@anthropic-ai/sdk'); anthropic = new Anthropic({ apiKey: cfg.apiKey, timeout: 20000, maxRetries: 1 }); }
   if (cfg.smtpUser && cfg.smtpPass && cfg.alertaPara) {
     const { default: nodemailer } = await import('nodemailer');
     mailer = nodemailer.createTransport({ service: 'gmail', auth: { user: cfg.smtpUser, pass: cfg.smtpPass } });
