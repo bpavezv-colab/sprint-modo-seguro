@@ -9,6 +9,20 @@ MVP para la Prueba 2 del Talent Tech Hack 2026 (Personas y organizaciones). Chec
 
 Arriba de la página se ve el modo: **IA activa** (Gemini responde el asistente y redacta "Sugerir reparto") o **IA sin clave · reglas** (responde con reglas y el cálculo simple). Si un modelo de Gemini está saturado, el servidor prueba otro automáticamente (`gemini-3.5-flash-lite` → `gemini-flash-lite-latest` → `gemini-3.1-flash-lite` → `gemini-3.8-flash`).
 
+## Publicar en un servidor
+La app está lista para desplegarse con Docker (`Dockerfile`) o en Render con un clic (`render.yaml`).
+- **Render:** render.com → New → Blueprint → este repositorio. En *Environment* pega `GEMINI_API_KEY` (y las del correo si las usas). Queda en `https://sprint-ficha-de-ingreso.onrender.com`; si usas otro nombre, cambia `PUBLIC_HOST`.
+- **Cualquier servidor con Docker:**
+  ```
+  docker build -t sprint .
+  docker run -d -p 3000:3000 -e PUBLIC_HOST=midominio.cl -e GEMINI_API_KEY=... sprint
+  ```
+  y pon delante un proxy con HTTPS (Nginx, Caddy o el de la plataforma).
+- Variables: `HOST=0.0.0.0` (escuchar fuera del equipo), `PUBLIC_HOST` (dominios aceptados, separados por coma; el resto se rechaza), `PORT` (lo entrega la plataforma).
+- Las claves van en las variables de entorno del servidor, **nunca en el repositorio**.
+
+**Pendiente antes de usar datos reales (fuera del alcance del piloto):** inicio de sesión corporativo en lugar del simulado, base de datos en vez de memoria (hoy todo se borra al reiniciar) y validar con TI la política de seguridad y el proveedor de IA.
+
 ## Correr
 - **Sin instalar nada:** abre `dist/index.html` con doble clic. Funciona todo, salvo la IA y el correo (la página lo indica arriba).
 - **Con IA y correo:** `npm install` → `npm run build` → `npm start` y abre **http://localhost:3000**. Ver "Cómo correr en otro computador".

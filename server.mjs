@@ -25,6 +25,9 @@ export function configDesdeEnv(env = process.env) {
   const puerto = Number.parseInt(env.PORT, 10);
   return {
     port: Number.isInteger(puerto) && puerto > 0 && puerto < 65536 ? puerto : 3000,
+    // Despliegue: HOST=0.0.0.0 para escuchar fuera del equipo y PUBLIC_HOST=midominio.com (separados por coma) para aceptarlo.
+    host: (env.HOST || '').trim() || '127.0.0.1',
+    publicos: (env.PUBLIC_HOST || '').split(',').map(s => s.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/\/.*$/, '')).filter(Boolean),
     apiKey: (env.ANTHROPIC_API_KEY || '').trim(),
     geminiKey: (env.GEMINI_API_KEY || '').trim(),
     // Con GEMINI_API_KEY se usa Gemini; un IA_MODELO de Claude se ignora en ese caso.
@@ -96,7 +99,7 @@ async function crearClientes(cfg) {
 }
 
 export function crearServidor({ cfg = configDesdeEnv(), base = cargarBase(), anthropic = null, mailer = null, distDir = new URL('dist/', RAIZ), log = console } = {}) {
-  const permitidos = new Set([`localhost:${cfg.port}`, `127.0.0.1:${cfg.port}`]);
+  const permitidos = new Set([`localhost:${cfg.port}`, `127.0.0.1:${cfg.port}`, ...(cfg.publicos || [])]);
   const golpes = new Map(); // límite simple por IP y ruta
   const limite = (clave, max) => { const ahora = Date.now(); const l = (golpes.get(clave) || []).filter(t => ahora - t < 60000); l.push(ahora); golpes.set(clave, l); return l.length > max; };
 
@@ -229,8 +232,8 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const { anthropic, mailer } = await crearClientes(cfg);
   const srv = crearServidor({ cfg, anthropic, mailer });
   srv.on('error', err => { console.error(err.code === 'EADDRINUSE' ? `El puerto ${cfg.port} está ocupado. Cambia PORT en .env o cierra la otra app.` : 'No se pudo iniciar el servidor.'); process.exit(1); });
-  srv.listen(cfg.port, '127.0.0.1', () => {
-    console.log(`Sprint en http://localhost:${cfg.port}`);
+  srv.listen(cfg.port, cfg.host, () => {
+    console.log(`Sprint en http://localhost:${cfg.port}${cfg.publicos.length ? ` · público: https://${cfg.publicos.join(', https://')}` : ''}`);
     console.log(`IA: ${anthropic ? `activa (${cfg.modelo})` : 'sin clave (reglas)'}`);
     console.log(`Correo: ${mailer ? `real a ${cfg.alertaPara}` : 'simulado (falta .env)'}`);
     if (!existsSync(new URL('dist/index.html', RAIZ))) console.log('Falta dist/index.html: corre "npm run build".');

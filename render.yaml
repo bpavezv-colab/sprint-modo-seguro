@@ -1,0 +1,21 @@
+# Despliegue en Render (render.com → New → Blueprint → este repositorio).
+# Las claves se escriben en el panel de Render (Environment), nunca en el repositorio.
+services:
+  - type: web
+    name: sprint-ficha-de-ingreso
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/estado
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: PUBLIC_HOST
+        value: sprint-ficha-de-ingreso.onrender.com
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: ALERTA_PARA
+        sync: false

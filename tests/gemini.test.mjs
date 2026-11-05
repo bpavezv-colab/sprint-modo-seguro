@@ -43,3 +43,12 @@ test('Config: con GEMINI_API_KEY el modelo por defecto es Gemini aunque IA_MODEL
   assert.equal(configDesdeEnv({ GEMINI_API_KEY: 'x', IA_MODELO: 'gemini-2.0-flash' }).modelo, 'gemini-2.0-flash');
   assert.equal(configDesdeEnv({}).modelo, 'claude-haiku-5-5');
 });
+
+test('Despliegue: HOST y PUBLIC_HOST se leen del entorno; por defecto solo localhost', () => {
+  const local = configDesdeEnv({});
+  assert.equal(local.host, '127.0.0.1');
+  assert.deepEqual(local.publicos, []);
+  const pub = configDesdeEnv({ HOST: '0.0.0.0', PUBLIC_HOST: 'https://sprint.onrender.com/, demo.nexo.cl' });
+  assert.equal(pub.host, '0.0.0.0');
+  assert.deepEqual(pub.publicos, ['sprint.onrender.com', 'demo.nexo.cl']);
+});
