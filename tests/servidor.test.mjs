@@ -193,5 +193,5 @@ test('ninguna clave ni correo real en el código ni en dist/', () => {
     assert.ok(!/[A-Za-z0-9._%+-]+@gmail\.com/.test(t), `${f}: sin casillas de Gmail escritas en el código`);
     if (f.startsWith('dist/')) assert.ok(!/ANTHROPIC_API_KEY|SMTP_PASS|process\.env/.test(t), `${f}: el navegador no recibe configuración del servidor`);
   }
-  assert.ok(readFileSync(new URL('../.gitignore', import.meta.url), 'utf8').split('\n').includes('.env'));
+  assert.ok(readFileSync(new URL('../.gitignore', import.meta.url), 'utf8').split(/\r?\n/).includes('.env')); // \r?\n: en Windows git deja CRLF
 });
